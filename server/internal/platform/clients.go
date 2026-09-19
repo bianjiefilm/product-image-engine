@@ -77,6 +77,49 @@ func (c *TaskClient) Submit(ctx context.Context, req SubmitRequest) (SubmitResul
 	return out, json.Unmarshal(b, &out)
 }
 
+// TaskStatusResult 任务状态事实(只存 ID 与状态;资金事实在 billing)。
+// result 保留原始载荷(成功任务的成果引用/测试链路 data_b64 由上层解释)。
+type TaskStatusResult struct {
+	TaskID string         `json:"task_id"`
+	Status string         `json:"status"` // pending|running|succeeded|failed(以平台为准)
+	Result map[string]any `json:"result"`
+}
+
+// Status 查询任务状态(HUI-1704 批量收集用;PROVISIONAL 形状,同 Submit 口径:
+// 不可达/5xx 一律 ErrUnavailable,上层 fail-closed,不伪造状态)。
+func (c *TaskClient) Status(ctx context.Context, taskID string) (TaskStatusResult, error) {
+	var out TaskStatusResult
+	if strings.TrimSpace(taskID) == "" {
+		return out, fmt.Errorf("task status: task_id 为空")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(c.BaseURL, "/")+"/internal/v1/tasks/"+url.PathEscape(taskID), nil) // PROVISIONAL
+	if err != nil {
+		return out, err
+	}
+	httpReq.Header.Set("X-App-ID", c.AppID)
+	httpReq.Header.Set(internalTokenHeader, c.Token)
+	res, err := c.httpClient().Do(httpReq)
+	if err != nil {
+		return out, fmt.Errorf("%w: task status: %v", ErrUnavailable, err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode >= 500 {
+		return out, fmt.Errorf("%w: task status: status %d", ErrUnavailable, res.StatusCode)
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return out, fmt.Errorf("task status: status %d: %s", res.StatusCode, string(b))
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return out, fmt.Errorf("task status 解析失败: %w", err)
+	}
+	if out.TaskID == "" {
+		out.TaskID = taskID
+	}
+	return out, nil
+}
+
 // BillingClient platform-billing 客户端(钱包主账在 billing.db,本产品零资金账本)。
 type BillingClient struct {
 	BaseURL string

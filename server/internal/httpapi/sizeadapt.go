@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -105,33 +107,59 @@ func (s *Server) handleCreateSizeVariant(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusServiceUnavailable, "presets_unavailable", "尺寸适配预设集未装配,拒绝服务(fail-closed)")
 		return
 	}
-	preset, ok := s.Presets.Get(strings.TrimSpace(req.PresetName))
-	if !ok {
-		writeErr(w, http.StatusBadRequest, "unknown_preset", "未知预设:"+req.PresetName+"(GET /api/v1/size-adapt/presets 查看可用列表)")
+	preset, aerr := s.resolvePreset(strings.TrimSpace(req.PresetName))
+	if aerr != nil {
+		aerr.write(w)
 		return
 	}
-	// 5) 幂等裁决:同 (源,预设,模式) 已有变体 → 原样返回,不重复变换/登记。
-	//    (首个变体的输出格式胜出:格式不在唯一键内,拍板口径见计划 §1.3。)
-	if existing, err := s.St.FindSizeVariantByKey(ctx, tenant, src.ID, preset.Name, string(preset.Mode)); err == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"variant": existing, "duplicate": true})
-		return
-	}
-	// 6) 输入门(魔数/大小/解码/像素上限;分类错误 → 400/413)。
+	// 输入门(魔数/大小/解码/像素上限;分类错误 → 400/413)。
 	img, err := sizeadapt.DecodePNG(data)
 	if err != nil {
 		writeSizeInputErr(w, err)
 		return
 	}
-	// 7) 平台登记 fail-closed(与生成/计费开关无关;登记失败不落变体)。
-	if s.Uploads == nil || s.Cfg.UploadBaseURL == "" || s.Cfg.UploadToken == "" {
-		writeErr(w, http.StatusServiceUnavailable, "upload_not_configured",
-			"素材登记服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN),不伪造登记成功")
+	// 5-8) 幂等裁决 → 变换 → 平台登记 → 落行(与批次收集共用同一链路,HUI-1704)。
+	variant, dup, aerr := s.adaptRegisterVariant(ctx, tenant, projID, src, preset, format, img)
+	if aerr != nil {
+		aerr.write(w)
 		return
+	}
+	if dup {
+		writeJSON(w, http.StatusOK, map[string]any{"variant": variant, "duplicate": true})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"variant": variant, "duplicate": false})
+}
+
+// resolvePreset 预设解析(调用方先保证 Presets 非nil)。
+func (s *Server) resolvePreset(name string) (sizeadapt.Preset, *apiErr) {
+	preset, ok := s.Presets.Get(name)
+	if !ok {
+		return sizeadapt.Preset{}, &apiErr{http.StatusBadRequest, "unknown_preset",
+			"未知预设:" + name + "(GET /api/v1/size-adapt/presets 查看可用列表)"}
+	}
+	return preset, nil
+}
+
+// adaptRegisterVariant 1703 变体链核心(与 HUI-1704 批次收集共用):
+// 幂等裁决(唯一键三元组)→ 确定性变换 → 平台登记 fail-closed → 落变体行+字节
+// (唯一键兜底并发,冲突即重读幂等返回)。输入门/租户门/内容指纹绑定由调用方完成。
+// 返回 (变体, 是否幂等命中既有)。
+func (s *Server) adaptRegisterVariant(ctx context.Context, tenant, projID string, src store.ProjectOutput,
+	preset sizeadapt.Preset, format sizeadapt.Format, img image.Image) (store.ProjectOutput, bool, *apiErr) {
+	// 幂等裁决:同 (源,预设,模式) 已有变体 → 原样返回,不重复变换/登记。
+	// (首个变体的输出格式胜出:格式不在唯一键内,拍板口径见计划 §1.3。)
+	if existing, err := s.St.FindSizeVariantByKey(ctx, tenant, src.ID, preset.Name, string(preset.Mode)); err == nil {
+		return existing, true, nil
+	}
+	// 平台登记 fail-closed(与生成/计费开关无关;登记失败不落变体)。
+	if s.Uploads == nil || s.Cfg.UploadBaseURL == "" || s.Cfg.UploadToken == "" {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusServiceUnavailable, "upload_not_configured",
+			"素材登记服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN),不伪造登记成功"}
 	}
 	outBytes, vw, vh, err := sizeadapt.Adapt(img, preset, format)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", "尺寸变换失败:"+err.Error())
-		return
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "尺寸变换失败:" + err.Error()}
 	}
 	reg, err := s.Uploads.RegisterAsset(ctx, platform.RegisterAssetRequest{
 		FileName: variantFileName(src.FileName, preset.Name, format),
@@ -139,10 +167,9 @@ func (s *Server) handleCreateSizeVariant(w http.ResponseWriter, r *http.Request)
 		SHA256: sha256Hex(outBytes), ContentB64: base64.StdEncoding.EncodeToString(outBytes),
 	})
 	if err != nil {
-		s.mapPlatformErr(w, "素材登记", err)
-		return
+		return store.ProjectOutput{}, false, platformErrToApiErr("素材登记", err)
 	}
-	// 8) 落变体行 + 内容字节(单事务;唯一键兜底并发,冲突即重读幂等返回)。
+	// 落变体行 + 内容字节(单事务;唯一键兜底并发,冲突即重读幂等返回)。
 	variant, err := s.St.CreateSizeVariant(ctx, store.ProjectOutput{
 		TenantScope: tenant, ProjectID: projID,
 		PlatformAssetID: reg.AssetID,
@@ -154,17 +181,15 @@ func (s *Server) handleCreateSizeVariant(w http.ResponseWriter, r *http.Request)
 	}, outBytes)
 	if errors.Is(err, store.ErrConflict) {
 		if existing, gerr := s.St.FindSizeVariantByKey(ctx, tenant, src.ID, preset.Name, string(preset.Mode)); gerr == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"variant": existing, "duplicate": true})
-			return
+			return existing, true, nil
 		}
-		writeErr(w, http.StatusConflict, "variant_conflict", "同键变体并发写入冲突,请重试")
-		return
+		return store.ProjectOutput{}, false, &apiErr{http.StatusConflict, "variant_conflict", "同键变体并发写入冲突,请重试"}
 	}
 	if err != nil {
-		writeStoreErr(w, err)
-		return
+		log.Printf("store error: %v", err)
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"variant": variant, "duplicate": false})
+	return variant, false, nil
 }
 
 // ---- GET /api/v1/projects/{id}/size-adapt -----------------------------------

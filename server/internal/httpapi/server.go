@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
@@ -32,6 +33,11 @@ type Server struct {
 	// Presets 尺寸适配预设集(HUI-1703 FEAT-0204;main 装配,内嵌默认或
 	// PRODUCT_SIZE_PRESETS 覆盖)。nil 时尺寸适配端点 fail-closed 503。
 	Presets *sizeadapt.PresetSet
+
+	// batchSubmitSem 批量提交进程内信号量(HUI-1704 拍板:并发上限 4,超出排队)。
+	// 惰性初始化;semMu 仅保护初始化。
+	semMu          sync.Mutex
+	batchSubmitSem chan struct{}
 }
 
 type ctxKey int
@@ -78,6 +84,16 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/receipts/{id}/resend", s.guard(true, s.handleResendReceipt))
 
 	mux.Handle("GET /api/v1/billing/balance", s.guard(true, s.handleBillingBalance))
+
+	// 批量生成批次编排(HUI-1704 / FEAT-0205):创建/提交/收集/重试/取消。
+	// 生成门在提交步把关(FEATURE_GENERATION_ENABLED off → 创建成功、提交全 blocked)。
+	mux.Handle("POST /api/v1/batches", s.guard(true, s.handleCreateBatch))
+	mux.Handle("GET /api/v1/batches", s.guard(true, s.handleListBatches))
+	mux.Handle("GET /api/v1/batches/{id}", s.guard(true, s.handleGetBatch))
+	mux.Handle("POST /api/v1/batches/{id}/submit", s.guard(true, s.handleSubmitBatch))
+	mux.Handle("POST /api/v1/batches/{id}/collect", s.guard(true, s.handleCollectBatch))
+	mux.Handle("POST /api/v1/batches/{id}/retry-failed", s.guard(true, s.handleRetryFailedBatch))
+	mux.Handle("POST /api/v1/batches/{id}/cancel", s.guard(true, s.handleCancelBatch))
 
 	// 电商尺寸适配(HUI-1703 / FEAT-0204):纯确定性变换,与生成/计费零耦合。
 	// 开关 FEATURE_SIZE_ADAPT off → 路由不注册 = 404 不可见(fail-closed)。
