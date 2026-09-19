@@ -25,6 +25,16 @@ export interface ServerCallInit {
   accessToken?: string;
 }
 
+// serverHeaders 调 Go server 的公共头(内部凭据 + 可选用户访问令牌)。
+// callServer 之外,二进制代理(尺寸变体下载)也复用。
+export function serverHeaders(accessToken?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-Product-Internal-Token": SERVER_TOKEN,
+  };
+  if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+  return headers;
+}
+
 // callServer 调 Go server;网络失败 → 503(中文),非 2xx → 原样状态码+错误体。
 export async function callServer(
   path: string,
@@ -32,9 +42,8 @@ export async function callServer(
 ): Promise<Record<string, unknown>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Product-Internal-Token": SERVER_TOKEN,
+    ...serverHeaders(init.accessToken),
   };
-  if (init.accessToken) headers["Authorization"] = `Bearer ${init.accessToken}`;
   let res: Response;
   try {
     res = await fetch(SERVER_BASE + path, {

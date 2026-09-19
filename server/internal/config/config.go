@@ -38,6 +38,12 @@ type Config struct {
 	// 回执 HMAC 专用密钥,格式 app_id:secret;...(对端来源 app 专用)。
 	RegistryManifestPath string
 	ReceiptKeys          string
+
+	// --- HUI-1703 FEAT-0204:电商尺寸适配(纯确定性,不触生成/计费) ---
+	SizeAdaptEnabled bool // FEATURE_SIZE_ADAPT,默认 off(off 时尺寸适配路由不注册=404 不可见)
+	// PRODUCT_SIZE_PRESETS:预设集 JSON 路径(可选;缺省用内嵌公开常见规格整理,
+	// 商家可自定义覆盖;加载即校验,非法拒绝启动)。
+	SizePresetsPath string
 }
 
 // ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
@@ -80,6 +86,9 @@ func Load() Config {
 		AppID:                getEnv("PRODUCT_APP_ID", "product-image-engine"),
 		RegistryManifestPath: os.Getenv("PRODUCT_REGISTRY_MANIFEST"),
 		ReceiptKeys:          os.Getenv("PRODUCT_RECEIPT_KEYS"),
+
+		SizeAdaptEnabled: getBoolEnv("FEATURE_SIZE_ADAPT", false),
+		SizePresetsPath:  os.Getenv("PRODUCT_SIZE_PRESETS"),
 	}
 }
 

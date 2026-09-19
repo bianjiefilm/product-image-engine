@@ -18,6 +18,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
+	"github.com/bianjiefilm/product-image-engine/server/internal/sizeadapt"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -145,6 +146,9 @@ func newFixture(t *testing.T, mutate func(*config.Config)) *fixture {
 	}
 	if reg, err := appregistry.DefaultManifest(); err == nil {
 		s.Registry = reg
+	}
+	if p, err := sizeadapt.DefaultPresets(); err == nil {
+		s.Presets = p // 尺寸适配预设集(路由注册仍由 FEATURE_SIZE_ADAPT 决定)
 	}
 	ts := httptest.NewServer(s.Router())
 	t.Cleanup(ts.Close)
