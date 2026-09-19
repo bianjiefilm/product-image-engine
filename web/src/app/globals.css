@@ -1,0 +1,73 @@
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --border: #e3e6ea;
+  --text: #1c2430;
+  --muted: #66707d;
+  --accent: #2563eb;
+  --danger: #b91c1c;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 14px;
+}
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 24px;
+  background: #101828;
+  color: #fff;
+}
+.topbar .brand { font-weight: 600; font-size: 16px; }
+.topbar .sub { color: #98a2b3; font-size: 12px; }
+.main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.card h2 { margin: 0 0 12px; font-size: 15px; }
+label { display: block; margin: 8px 0 4px; color: var(--muted); }
+input, select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 140px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; }
+.banner {
+  border: 1px solid #f2c4c4;
+  background: #fdf1f1;
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  white-space: pre-wrap;
+}
+.banner.warn { border-color: #e6d28a; background: #fdf9ec; color: #7a5c00; }
+.muted { color: var(--muted); }
+.link { color: var(--accent); text-decoration: none; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+.error { color: var(--danger); }

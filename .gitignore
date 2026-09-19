@@ -1,0 +1,24 @@
+# 报告不入库(工单约定)
+_reports/
+
+# 本地数据与密钥
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+.env.*.local
+deploy/*.local.env
+
+# Go 构建产物
+server/bin/
+*.exe
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
