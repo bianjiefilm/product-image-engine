@@ -205,6 +205,45 @@ func TestTaskSubmitHeadersAndUnavailable(t *testing.T) {
 	}
 }
 
+func TestTaskStatusParseAndUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/internal/v1/tasks/task_7" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Header.Get("X-PilotSeaView-Internal-Token") != "tk" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"task_id": "task_7", "status": "succeeded",
+			"result": map[string]any{"data_b64": "aGVsbG8=", "file_name": "out.png"},
+		})
+	}))
+	defer srv.Close()
+	c := &TaskClient{BaseURL: srv.URL, AppID: "product-image", Token: "tk"}
+	out, err := c.Status(context.Background(), "task_7")
+	if err != nil || out.Status != "succeeded" || out.TaskID != "task_7" {
+		t.Fatalf("status: %v %+v", err, out)
+	}
+	if out.Result["data_b64"] != "aGVsbG8=" {
+		t.Fatalf("result 载荷应原样保留: %+v", out.Result)
+	}
+	// 空任务 id 拒绝;不可达/5xx → ErrUnavailable(与 Submit 同口径)
+	if _, err := c.Status(context.Background(), " "); err == nil {
+		t.Fatalf("空 task_id 应报错")
+	}
+	cDead := &TaskClient{BaseURL: "http://127.0.0.1:1", AppID: "a", Token: "t"}
+	if _, err := cDead.Status(context.Background(), "t1"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("不可达应 ErrUnavailable, got %v", err)
+	}
+	srv500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(502) }))
+	defer srv500.Close()
+	if _, err := (&TaskClient{BaseURL: srv500.URL, AppID: "a", Token: "t"}).Status(context.Background(), "t1"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("5xx 应 ErrUnavailable, got %v", err)
+	}
+}
+
 func TestBillingLedgerAndEnsure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

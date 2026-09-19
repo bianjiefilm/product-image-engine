@@ -480,31 +480,8 @@ func (s *Server) handleRegisterOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, err := base64.StdEncoding.DecodeString(req.DataB64)
-	if err != nil || len(data) == 0 {
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_request", "data_b64 必须是非空 base64")
-		return
-	}
-	if len(data) > 8<<20 {
-		writeErr(w, http.StatusRequestEntityTooLarge, "too_large", "测试用合法图片上限 8 MiB")
-		return
-	}
-	// "真实可打开":只收 PNG 签名(测试用合法 PNG,标注仅验证集成)。
-	if !bytesHasPrefix(data, pngMagic) {
-		writeErr(w, http.StatusBadRequest, "invalid_request", "仅接受合法 PNG(魔数校验失败)")
-		return
-	}
-	mediaType := req.ContentType
-	if mediaType == "" {
-		mediaType = "image/png"
-	}
-	if mediaType != "image/png" {
-		writeErr(w, http.StatusBadRequest, "invalid_request", "仅接受 image/png(测试合法图片)")
-		return
-	}
-	// upload 客户端可用性 fail-closed(与生成/计费开关无关:登记产出≠生成)。
-	if s.Uploads == nil || s.Cfg.UploadBaseURL == "" || s.Cfg.UploadToken == "" {
-		writeErr(w, http.StatusServiceUnavailable, "upload_not_configured",
-			"素材登记服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN),不伪造登记成功")
 		return
 	}
 	ctx := r.Context()
@@ -513,45 +490,108 @@ func (s *Server) handleRegisterOutput(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
+	out, dup, aerr := s.registerOutputBytes(ctx, p.Tenant(), projID, req.FileName, req.ContentType, data, s.bindingOutputContext)
+	if aerr != nil {
+		aerr.write(w)
+		return
+	}
+	if dup {
+		writeJSON(w, http.StatusOK, map[string]any{"output": out, "duplicate": true})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"output": out})
+}
+
+// apiErr HTTP 层可直写的领域错误(状态码+错误码+中文消息)。
+type apiErr struct {
+	status int
+	code   string
+	msg    string
+}
+
+func (e *apiErr) write(w http.ResponseWriter) { writeErr(w, e.status, e.code, e.msg) }
+
+// platformErrToApiErr 平台调用错误 → apiErr(与 mapPlatformErr 同口径,供返回值式助手用)。
+func platformErrToApiErr(svc string, err error) *apiErr {
+	if errors.Is(err, platform.ErrUnavailable) {
+		return &apiErr{http.StatusServiceUnavailable, "upstream_unavailable",
+			svc + "服务不可达或暂时故障,已拒绝本次请求(不伪造成功)"}
+	}
+	return &apiErr{http.StatusBadGateway, "upstream_rejected", svc + "服务拒绝了本次请求:" + err.Error()}
+}
+
+// outputContextEnricher 登记输出时附加的需求版本上下文(可空)。
+type outputContextEnricher func(ctx context.Context, tenant, projID string) (snapshotID, briefVersion, sourceRevision string)
+
+// bindingOutputContext 记录选择时的需求版本上下文(回执据此判定"旧需求版本回执"负例)。
+func (s *Server) bindingOutputContext(ctx context.Context, tenant, projID string) (string, string, string) {
+	if binding, err := s.St.GetBindingByProject(ctx, tenant, projID); err == nil && binding.CurrentSnapshotID != "" {
+		if snap, err := s.St.GetSnapshot(ctx, tenant, binding.CurrentSnapshotID); err == nil {
+			return snap.ID, snap.BriefVersion, snap.SourceRevision
+		}
+	}
+	return "", "", ""
+}
+
+// registerOutputBytes 既有 outputs 登记路径核心(HUI-1704 批次收集复用同一事实路径):
+// 输入门(PNG 魔数/≤8MiB/media type)→ upload fail-closed 门 → sha256 内容幂等 →
+// RegisterAsset 平台登记 → 落 kind=result 行(唯一键冲突时重读幂等返回)。
+// 返回 (输出, 是否幂等命中既有)。调用方负责工程租户门控;enrich 可为 nil。
+func (s *Server) registerOutputBytes(ctx context.Context, tenant, projID, fileName, contentType string, data []byte, enrich outputContextEnricher) (store.ProjectOutput, bool, *apiErr) {
+	if len(data) == 0 {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusBadRequest, "invalid_request", "data_b64 必须是非空 base64"}
+	}
+	if len(data) > 8<<20 {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusRequestEntityTooLarge, "too_large", "测试用合法图片上限 8 MiB"}
+	}
+	// "真实可打开":只收 PNG 签名(测试用合法 PNG,标注仅验证集成)。
+	if !bytesHasPrefix(data, pngMagic) {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusBadRequest, "invalid_request", "仅接受合法 PNG(魔数校验失败)"}
+	}
+	mediaType := contentType
+	if mediaType == "" {
+		mediaType = "image/png"
+	}
+	if mediaType != "image/png" {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusBadRequest, "invalid_request", "仅接受 image/png(测试合法图片)"}
+	}
+	// upload 客户端可用性 fail-closed(与生成/计费开关无关:登记产出≠生成)。
+	if s.Uploads == nil || s.Cfg.UploadBaseURL == "" || s.Cfg.UploadToken == "" {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusServiceUnavailable, "upload_not_configured",
+			"素材登记服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN),不伪造登记成功"}
+	}
 	sum := sha256.Sum256(data)
 	shaHex := hex.EncodeToString(sum[:])
 	// 重复提交幂等:同工程同内容已登记 → 返回既有输出(不二次登记)。
-	if existing, err := s.St.FindOutputByContent(ctx, p.Tenant(), projID, shaHex); err == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"output": existing, "duplicate": true})
-		return
+	if existing, err := s.St.FindOutputByContent(ctx, tenant, projID, shaHex); err == nil {
+		return existing, true, nil
 	}
 	reg, err := s.Uploads.RegisterAsset(ctx, platform.RegisterAssetRequest{
-		FileName: req.FileName, ContentType: mediaType, SizeBytes: int64(len(data)),
+		FileName: fileName, ContentType: mediaType, SizeBytes: int64(len(data)),
 		SHA256: shaHex, ContentB64: base64.StdEncoding.EncodeToString(data),
 	})
 	if err != nil {
-		s.mapPlatformErr(w, "素材登记", err)
-		return
+		return store.ProjectOutput{}, false, platformErrToApiErr("素材登记", err)
 	}
-	// 记录选择时的需求版本上下文(回执据此判定"旧需求版本回执"负例)。
 	out := store.ProjectOutput{
-		TenantScope: p.Tenant(), ProjectID: projID, PlatformAssetID: reg.AssetID,
+		TenantScope: tenant, ProjectID: projID, PlatformAssetID: reg.AssetID,
 		ResultSHA256: shaHex, ResultSize: int64(len(data)), MediaType: mediaType,
-		FileName: req.FileName, PlatformTaskID: "",
+		FileName: fileName, PlatformTaskID: "",
 	}
-	if binding, err := s.St.GetBindingByProject(ctx, p.Tenant(), projID); err == nil && binding.CurrentSnapshotID != "" {
-		if snap, err := s.St.GetSnapshot(ctx, p.Tenant(), binding.CurrentSnapshotID); err == nil {
-			out.SnapshotID, out.BriefVersion, out.SourceRevision = snap.ID, snap.BriefVersion, snap.SourceRevision
-		}
+	if enrich != nil {
+		out.SnapshotID, out.BriefVersion, out.SourceRevision = enrich(ctx, tenant, projID)
 	}
 	created, err := s.St.CreateOutput(ctx, out)
 	if errors.Is(err, store.ErrConflict) {
-		existing, gerr := s.St.FindOutputByContent(ctx, p.Tenant(), projID, shaHex)
-		if gerr == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"output": existing, "duplicate": true})
-			return
+		if existing, gerr := s.St.FindOutputByContent(ctx, tenant, projID, shaHex); gerr == nil {
+			return existing, true, nil
 		}
 	}
 	if err != nil {
-		writeStoreErr(w, err)
-		return
+		log.Printf("store error: %v", err)
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"output": created})
+	return created, false, nil
 }
 
 func bytesHasPrefix(b, prefix []byte) bool {
