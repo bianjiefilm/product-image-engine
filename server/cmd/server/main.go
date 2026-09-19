@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/httpapi"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
@@ -40,8 +42,15 @@ func main() {
 	}
 	defer st.Close()
 
+	// 应用登记表(HUI-1745 I1):优先 PRODUCT_REGISTRY_MANIFEST 文件;
+	// 缺省内嵌 PROVISIONAL 样例。加载即校验,失败拒绝启动(fail-closed)。
+	registry, err := loadRegistry(cfg.RegistryManifestPath)
+	if err != nil {
+		log.Fatalf("product-image-server: %v", err)
+	}
+
 	s := &httpapi.Server{
-		Cfg: cfg, St: st,
+		Cfg: cfg, St: st, Registry: registry,
 		Ident:   &platform.IdentityClient{BaseURL: cfg.IdentityBaseURL, AppID: cfg.IdentityAppID, Token: cfg.IdentityToken},
 		Verify:  platform.NewVerifier(cfg.IdentityBaseURL, cfg.IdentityAppID, cfg.IdentityIssuer),
 		Tasks:   &platform.TaskClient{BaseURL: cfg.TaskBaseURL, AppID: cfg.IdentityAppID, Token: cfg.TaskToken},
@@ -57,4 +66,24 @@ func main() {
 	if err := (&http.Server{Handler: s.Router()}).Serve(ln); err != nil {
 		log.Fatalf("product-image-server: serve: %v", err)
 	}
+}
+
+// loadRegistry 装配应用登记表:配置了路径则读文件,否则内嵌缺省样例。
+func loadRegistry(path string) (*appregistry.Manifest, error) {
+	if path == "" {
+		m, err := appregistry.DefaultManifest()
+		if err != nil {
+			return nil, fmt.Errorf("内嵌应用登记表校验失败: %w", err)
+		}
+		return m, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("读取应用登记表 %s 失败: %w", path, err)
+	}
+	m, err := appregistry.LoadManifest(raw)
+	if err != nil {
+		return nil, fmt.Errorf("应用登记表 %s 校验失败: %w", path, err)
+	}
+	return m, nil
 }

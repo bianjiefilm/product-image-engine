@@ -30,6 +30,29 @@ type Config struct {
 
 	BillingEnabled    bool // ECO_BILLING_ENABLED,默认 off
 	GenerationEnabled bool // FEATURE_GENERATION_ENABLED,默认 off
+
+	// --- HUI-1745 I1:跨应用续接与成果回流 ---
+	AppID string // PRODUCT_APP_ID,默认 product-image-engine(交接 target_app 校验/回执 source_app)
+	// PRODUCT_REGISTRY_MANIFEST:app-registry/v1 清单文件路径(可选;
+	// 缺省用内嵌样例,E2E 指向本地 stub 目标)。PRODUCT_RECEIPT_KEYS:
+	// 回执 HMAC 专用密钥,格式 app_id:secret;...(对端来源 app 专用)。
+	RegistryManifestPath string
+	ReceiptKeys          string
+}
+
+// ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
+func (c Config) ReceiptKeyFor(appID string) string {
+	for _, part := range strings.Split(c.ReceiptKeys, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) == 2 && kv[0] == appID {
+			return kv[1]
+		}
+	}
+	return ""
 }
 
 // Load 从进程环境读取配置,补默认值。
@@ -53,6 +76,10 @@ func Load() Config {
 
 		BillingEnabled:    getBoolEnv("ECO_BILLING_ENABLED", false),
 		GenerationEnabled: getBoolEnv("FEATURE_GENERATION_ENABLED", false),
+
+		AppID:                getEnv("PRODUCT_APP_ID", "product-image-engine"),
+		RegistryManifestPath: os.Getenv("PRODUCT_REGISTRY_MANIFEST"),
+		ReceiptKeys:          os.Getenv("PRODUCT_RECEIPT_KEYS"),
 	}
 }
 

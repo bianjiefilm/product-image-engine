@@ -214,3 +214,60 @@ func (c *UploadClient) CreateUploadSession(ctx context.Context, fileName, conten
 	}
 	return out, nil
 }
+
+// RegisterAssetRequest 成果登记请求(I1,PROVISIONAL 形状)。
+type RegisterAssetRequest struct {
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	SHA256      string `json:"sha256"`
+	ContentB64  string `json:"content_b64"` // 测试用合法 PNG 等小文件(E2E/非收费链路)
+}
+
+// RegisterAssetResult 登记事实:平台 asset_id 引用(本产品不存文件)。
+type RegisterAssetResult struct {
+	AssetID string `json:"asset_id"`
+}
+
+// RegisterAsset 经平台 upload 设施登记成果文件,返回 asset_id 引用。
+// 端点路径 PROVISIONAL(I0 报告 §6):integration-guide 未给出 upload 内部端点
+// 形状,平台侧真实形状以 FEAT 票核对为准,不一致只改这里的 path 常量与请求体。
+func (c *UploadClient) RegisterAsset(ctx context.Context, req RegisterAssetRequest) (RegisterAssetResult, error) {
+	var out RegisterAssetResult
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return out, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(c.BaseURL, "/")+"/internal/v1/upload/assets", bytes.NewReader(raw)) // PROVISIONAL
+	if err != nil {
+		return out, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-App-ID", c.AppID)
+	httpReq.Header.Set(internalTokenHeader, c.Token)
+	res, err := (func() *http.Client {
+		if c.HTTP != nil {
+			return c.HTTP
+		}
+		return &http.Client{Timeout: 15 * time.Second}
+	}()).Do(httpReq)
+	if err != nil {
+		return out, fmt.Errorf("%w: upload register: %v", ErrUnavailable, err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode >= 500 {
+		return out, fmt.Errorf("%w: upload register: status %d", ErrUnavailable, res.StatusCode)
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return out, fmt.Errorf("upload register: status %d: %s", res.StatusCode, string(b))
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return out, fmt.Errorf("upload register 解析失败: %w", err)
+	}
+	if out.AssetID == "" {
+		return out, fmt.Errorf("upload register: 应答缺 asset_id(不伪造登记成功)")
+	}
+	return out, nil
+}

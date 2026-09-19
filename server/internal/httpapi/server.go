@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
@@ -25,6 +26,8 @@ type Server struct {
 	Tasks   *platform.TaskClient
 	Uploads *platform.UploadClient
 	Billing *platform.BillingClient
+	// Registry 应用登记表(HUI-1745 I1;nil 时回执/返回来源 fail-closed)。
+	Registry *appregistry.Manifest
 }
 
 type ctxKey int
@@ -57,6 +60,18 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("DELETE /api/v1/projects/{id}/inputs/{inputId}", s.guard(true, s.handleDeleteInput))
 	mux.Handle("GET /api/v1/projects/{id}/versions", s.guard(true, s.handleListVersions))
 	mux.Handle("POST /api/v1/projects/{id}/versions", s.guard(true, s.handleSubmitVersion))
+
+	// 跨应用续接与成果回流(HUI-1745 I1)。
+	mux.Handle("POST /api/v1/handoffs/accept", s.guard(true, s.handleAcceptHandoff))
+	mux.Handle("GET /api/v1/bindings", s.guard(true, s.handleListBindings))
+	mux.Handle("GET /api/v1/bindings/{id}", s.guard(true, s.handleGetBinding))
+	mux.Handle("GET /api/v1/bindings/{id}/return-target", s.guard(true, s.handleBindingReturnTarget))
+	mux.Handle("POST /api/v1/bindings/{id}/adopt", s.guard(true, s.handleAdoptSnapshot))
+	mux.Handle("POST /api/v1/projects/{id}/outputs", s.guard(true, s.handleRegisterOutput))
+	mux.Handle("GET /api/v1/projects/{id}/outputs", s.guard(true, s.handleListOutputs))
+	mux.Handle("POST /api/v1/projects/{id}/outputs/{outputId}/receipt", s.guard(true, s.handleSendReceipt))
+	mux.Handle("GET /api/v1/projects/{id}/receipts", s.guard(true, s.handleListReceipts))
+	mux.Handle("POST /api/v1/receipts/{id}/resend", s.guard(true, s.handleResendReceipt))
 
 	mux.Handle("GET /api/v1/billing/balance", s.guard(true, s.handleBillingBalance))
 
