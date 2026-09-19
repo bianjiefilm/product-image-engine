@@ -31,6 +31,55 @@ interface VersionItem {
   status: string;
   created_at: string;
 }
+interface SourceContext {
+  source_kind?: string;
+  source_app?: string;
+  principal_id?: string;
+  order_ref?: string;
+  stage_ref?: string;
+  campaign_ref?: string;
+  scopes?: string[];
+  assets?: { asset_ref?: string; media_type?: string }[];
+  delivery_spec?: { description?: string; media_type?: string };
+}
+interface Binding {
+  id: string;
+  source_app: string;
+  source_ref: string;
+  purpose: string;
+  current_snapshot_id: string;
+}
+interface SnapshotItem {
+  id: string;
+  handoff_id: string;
+  brief_version: string;
+  source_revision: string;
+}
+interface BindingAgg {
+  binding?: Binding;
+  snapshots?: SnapshotItem[];
+  source_context?: SourceContext;
+}
+interface OutputItem {
+  id: string;
+  platform_asset_id: string;
+  file_name: string;
+  result_sha256: string;
+  result_size: number;
+  media_type: string;
+  brief_version: string;
+  created_at: string;
+}
+interface ReceiptItem {
+  id: string;
+  output_id: string;
+  event_id: string;
+  target_app: string;
+  status: string;
+  attempts: number;
+  last_error: string;
+  updated_at: string;
+}
 
 // 工程详情:用途/尺寸/已选输入/任务与费用事实;返回来源入口(无来源也可完整用)。
 export default function ProjectDetailPage() {
@@ -58,6 +107,43 @@ export default function ProjectDetailPage() {
     snapshot_content_type: "image/png",
   });
   const [balance, setBalance] = useState<string>("");
+
+  // ---- 跨应用续接(HUI-1745 I1):来源绑定 / 待采用新版 / 成果回执 ----
+  const [binding, setBinding] = useState<Binding | null>(null);
+  const [bindingAgg, setBindingAgg] = useState<BindingAgg | null>(null);
+  const [pendingSnap, setPendingSnap] = useState<SnapshotItem | null>(null);
+  const [returnURL, setReturnURL] = useState("");
+  const [outputs, setOutputs] = useState<OutputItem[]>([]);
+  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
+  const [srcNotice, setSrcNotice] = useState("");
+  const [outputFile, setOutputFile] = useState<File | null>(null);
+
+  const loadSource = useCallback(async () => {
+    if (!id) return;
+    // 来源绑定(可空:standalone 完整保留,无来源不影响任何功能)。
+    const bres = await fetch(`/api/bindings?project_id=${id}`);
+    const bdata = await bres.json().catch(() => null);
+    const b = (bdata?.bindings ?? [])[0] as Binding | undefined;
+    setBinding(b ?? null);
+    if (!b) return;
+    const aggRes = await fetch(`/api/bindings/${b.id}`);
+    const agg = (await aggRes.json().catch(() => null)) as BindingAgg | null;
+    setBindingAgg(agg);
+    // 待采用新版:绑定下最新快照 ≠ 当前已采用快照。
+    const snaps = agg?.snapshots ?? [];
+    setPendingSnap(
+      snaps.length > 0 && snaps[0].id !== b.current_snapshot_id
+        ? snaps[0]
+        : null
+    );
+    // 成果与回执。
+    const ores = await fetch(`/api/projects/${id}/outputs`);
+    const odata = await ores.json().catch(() => null);
+    setOutputs((odata?.outputs ?? []) as OutputItem[]);
+    const rres = await fetch(`/api/projects/${id}/receipts`);
+    const rdata = await rres.json().catch(() => null);
+    setReceipts((rdata?.receipts ?? []) as ReceiptItem[]);
+  }, [id]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -92,8 +178,9 @@ export default function ProjectDetailPage() {
         return;
       }
       await load();
+      await loadSource();
     })();
-  }, [load, router]);
+  }, [load, loadSource, router]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -171,6 +258,103 @@ export default function ProjectDetailPage() {
     setBalance(`余额 ¥${data?.balance_cny}(account ${data?.account_id})`);
   }
 
+  // ---- 来源面板动作(HUI-1745 I1) ------------------------------------------
+
+  // 采用新版需求:仅移动绑定指针;人工编辑与已选输出不动。
+  async function adoptPending() {
+    if (!binding || !pendingSnap) return;
+    setSrcNotice("");
+    const res = await fetch(`/api/bindings/${binding.id}/adopt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshot_id: pendingSnap.id }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setSrcNotice(data?.error?.message ?? `采用失败(HTTP ${res.status})`);
+      return;
+    }
+    setSrcNotice("已采用新版需求(人工编辑与已选输出保留)");
+    await loadSource();
+  }
+
+  // 返回来源:登记表白名单内的 launch target;解析失败仅提示,不影响编辑。
+  async function goBackToSource() {
+    if (!binding) return;
+    setSrcNotice("");
+    const res = await fetch(`/api/bindings/${binding.id}/return-target`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setSrcNotice(data?.error?.message ?? "来源暂不可返回;本工程可继续编辑");
+      return;
+    }
+    setReturnURL(data?.url ?? "");
+  }
+
+  // 登记成果:本地选择合法 PNG → 经平台资产设施登记(不触发生成/扣费)。
+  async function registerOutput(e: React.FormEvent) {
+    e.preventDefault();
+    if (!outputFile || !id) return;
+    setSrcNotice("");
+    const buf = await outputFile.arrayBuffer();
+    let bin = "";
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const res = await fetch(`/api/projects/${id}/outputs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_name: outputFile.name,
+        content_type: outputFile.type || "image/png",
+        data_b64: btoa(bin),
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setSrcNotice(data?.error?.message ?? `登记失败(HTTP ${res.status})`);
+      return;
+    }
+    setSrcNotice(data?.duplicate ? "同内容成果已登记过(幂等返回)" : "成果已登记");
+    setOutputFile(null);
+    await loadSource();
+  }
+
+  // 回传来源:定向回执,只回传既有成果;失败不追加生成任务或扣费。
+  async function sendReceipt(outputId: string) {
+    setSrcNotice("");
+    const res = await fetch(
+      `/api/projects/${id}/outputs/${outputId}/receipt`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setSrcNotice(data?.error?.message ?? `回执失败(HTTP ${res.status})`);
+      return;
+    }
+    const st = data?.receipt?.status;
+    setSrcNotice(
+      data?.duplicate ? "该成果已回执过(幂等返回)" : `回执已投递(${st})`
+    );
+    await loadSource();
+  }
+
+  // 查询恢复:失败/超时/重复场景只重传既有结果。
+  async function resendReceipt(receiptId: string) {
+    setSrcNotice("");
+    const res = await fetch(`/api/receipts/${receiptId}/resend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setSrcNotice(data?.error?.message ?? `重传失败(HTTP ${res.status})`);
+      return;
+    }
+    setSrcNotice(data?.resent ? "已重传既有成果" : "已投递,无需重传");
+    await loadSource();
+  }
+
   if (loadError) {
     return (
       <div className="card">
@@ -199,15 +383,7 @@ export default function ProjectDetailPage() {
               <span className="pill">
                 {project.source_type} · {project.source_ref}
               </span>{" "}
-              <button
-                onClick={() =>
-                  setNotice(
-                    "返回来源入口:跨应用跳转由后续接入票实现(来源引用已保存)。"
-                  )
-                }
-              >
-                返回来源
-              </button>
+              <span className="muted">(来源详情与回传入口见下方卡片)</span>
             </>
           ) : (
             "独立制作(无来源,不影响任何功能)"
@@ -392,6 +568,196 @@ export default function ProjectDetailPage() {
         <p className="muted" style={{ marginBottom: 0 }}>
           生成能力与计费开关默认关闭;失败时这里只会展示真实原因,不会伪造成功。
         </p>
+      </div>
+
+      {binding && bindingAgg ? (
+        <div className="card">
+          <h2>来源信息(跨应用续接)</h2>
+          <table>
+            <tbody>
+              <tr>
+                <th>来源</th>
+                <td>
+                  <span className="pill">
+                    {bindingAgg.source_context?.source_kind} ·{" "}
+                    {bindingAgg.source_context?.source_app}
+                  </span>{" "}
+                  {bindingAgg.source_context?.order_ref ? (
+                    <span className="pill">
+                      订单 {bindingAgg.source_context.order_ref}
+                      {bindingAgg.source_context.stage_ref
+                        ? ` · 阶段 ${bindingAgg.source_context.stage_ref}`
+                        : ""}
+                    </span>
+                  ) : null}
+                  {bindingAgg.source_context?.campaign_ref ? (
+                    <span className="pill">
+                      活动 {bindingAgg.source_context.campaign_ref}
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+              <tr>
+                <th>付款主体</th>
+                <td>{bindingAgg.source_context?.principal_id ?? "—"}</td>
+              </tr>
+              <tr>
+                <th>需求版本</th>
+                <td>
+                  {bindingAgg.snapshots?.find(
+                    (s) => s.id === binding.current_snapshot_id
+                  )?.brief_version ?? "—"}
+                </td>
+              </tr>
+              <tr>
+                <th>用途 / 交付</th>
+                <td>
+                  {binding.purpose} ·{" "}
+                  {bindingAgg.source_context?.delivery_spec?.media_type ?? "—"}
+                </td>
+              </tr>
+              <tr>
+                <th>素材(交接输入)</th>
+                <td>
+                  {(bindingAgg.source_context?.assets ?? []).length === 0
+                    ? "—"
+                    : (bindingAgg.source_context?.assets ?? []).map((a, i) => (
+                        <span className="pill" key={i}>
+                          {a.asset_ref}
+                        </span>
+                      ))}
+                </td>
+              </tr>
+              <tr>
+                <th>授权范围</th>
+                <td>
+                  {(bindingAgg.source_context?.scopes ?? []).join(" / ") || "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="row" style={{ marginTop: 12 }}>
+            <div style={{ flex: 0 }}>
+              <button onClick={goBackToSource}>返回来源</button>
+            </div>
+            {returnURL ? (
+              <div style={{ flex: 0 }}>
+                <a className="link" href={returnURL} target="_blank" rel="noreferrer">
+                  打开来源应用 ↗
+                </a>
+              </div>
+            ) : null}
+            <div style={{ flex: 2 }}>
+              <span className="muted">
+                来源文本仅作数据展示;续接编辑在本工程进行。
+              </span>
+            </div>
+          </div>
+          {pendingSnap ? (
+            <div className="banner warn" style={{ marginTop: 8 }}>
+              来源需求已有新版({pendingSnap.brief_version},handoff{" "}
+              {pendingSnap.handoff_id})待确认。
+              <button onClick={adoptPending} style={{ marginLeft: 8 }}>
+                确认并采用新版
+              </button>
+              <span className="muted">
+                (采用只切换需求版本;人工编辑与已选输出不会被覆盖)
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="card">
+          <h2>来源信息</h2>
+          <p className="muted" style={{ margin: 0 }}>
+            独立制作(无来源绑定);不影响任何功能。需要从订单 / 活动续接时,在
+            <Link className="link" href="/handoff">
+              接受跨应用交接
+            </Link>
+            页粘贴交接文档。
+          </p>
+        </div>
+      )}
+
+      <div className="card">
+        <h2>成果登记与回传来源</h2>
+        <p className="muted" style={{ marginTop: 4 }}>
+          明确选择输出版本后登记(合法 PNG,经平台资产设施);回传来源只发送既有成果的
+          不可变引用与任务事实,回执失败不追加生成任务、不扣费。
+        </p>
+        <form onSubmit={registerOutput} className="row">
+          <div style={{ flex: 2 }}>
+            <label>选择成果文件(仅 PNG)</label>
+            <input
+              type="file"
+              accept="image/png"
+              onChange={(e) => setOutputFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          <div style={{ flex: 0, alignSelf: "flex-end" }}>
+            <button className="primary" type="submit" disabled={!outputFile}>
+              登记成果
+            </button>
+          </div>
+        </form>
+        {outputs.length === 0 ? (
+          <p className="muted">尚未登记成果。</p>
+        ) : (
+          <table style={{ marginTop: 12 }}>
+            <thead>
+              <tr>
+                <th>文件</th>
+                <th>资产引用</th>
+                <th>需求版本</th>
+                <th>大小</th>
+                <th>登记时间</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {outputs.map((o) => {
+                const rcpt = receipts.find((r) => r.output_id === o.id);
+                return (
+                  <tr key={o.id}>
+                    <td>{o.file_name || "—"}</td>
+                    <td>{o.platform_asset_id}</td>
+                    <td>{o.brief_version || "—"}</td>
+                    <td>{o.result_size}</td>
+                    <td className="muted">{o.created_at}</td>
+                    <td>
+                      {binding ? (
+                        rcpt ? (
+                          <span>
+                            <span className="pill">
+                              回执 {rcpt.status}
+                              {rcpt.attempts > 1 ? ` ×${rcpt.attempts}` : ""}
+                            </span>{" "}
+                            {rcpt.status !== "delivered" ? (
+                              <button onClick={() => resendReceipt(rcpt.id)}>
+                                重传
+                              </button>
+                            ) : null}
+                          </span>
+                        ) : (
+                          <button onClick={() => sendReceipt(o.id)}>
+                            回传来源
+                          </button>
+                        )
+                      ) : (
+                        <span className="muted">无来源,不回传</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {srcNotice ? (
+          <div className="banner warn" style={{ marginTop: 8 }}>
+            {srcNotice}
+          </div>
+        ) : null}
       </div>
     </div>
   );

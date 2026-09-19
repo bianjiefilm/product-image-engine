@@ -83,6 +83,9 @@ export default function ProjectsPage() {
       <div className="card">
         <div className="row" style={{ alignItems: "center" }}>
           <h2 style={{ flex: 1, margin: 0 }}>我的制作工程</h2>
+          <Link className="link" href="/handoff">
+            接受跨应用交接
+          </Link>
           <button className="primary" onClick={() => setShowCreate((v) => !v)}>
             {showCreate ? "收起" : "新建工程"}
           </button>

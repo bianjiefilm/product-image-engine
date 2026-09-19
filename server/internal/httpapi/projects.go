@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -231,6 +232,7 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrValidation):
 		writeErr(w, http.StatusBadRequest, "invalid_request", err.Error())
 	default:
+		log.Printf("store error: %v", err)
 		writeErr(w, http.StatusInternalServerError, "internal", "服务内部错误")
 	}
 }

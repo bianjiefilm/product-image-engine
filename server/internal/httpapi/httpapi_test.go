@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
@@ -105,6 +106,7 @@ type fixture struct {
 	stub    *idStub
 	cfg     config.Config
 	st      *store.Store
+	srv     *Server
 	deadURL string // 指向封闭端口,用于“服务不可达”
 }
 
@@ -120,6 +122,7 @@ func newFixture(t *testing.T, mutate func(*config.Config)) *fixture {
 	cfg := config.Config{
 		Addr: "127.0.0.1:0", InternalToken: "it-test",
 		DBPath: filepath.Join(t.TempDir(), "x.db"),
+		AppID:  "product-image-engine", // 与 handoffDoc 的 target_app 对齐
 
 		IdentityBaseURL: stub.srv.URL,
 		IdentityAppID:   "product-image",
@@ -140,9 +143,21 @@ func newFixture(t *testing.T, mutate func(*config.Config)) *fixture {
 		Uploads: &platform.UploadClient{BaseURL: cfg.UploadBaseURL, AppID: cfg.IdentityAppID, Token: cfg.UploadToken},
 		Billing: &platform.BillingClient{BaseURL: cfg.BillingBaseURL, AppID: cfg.IdentityAppID, Token: cfg.BillingToken},
 	}
+	if reg, err := appregistry.DefaultManifest(); err == nil {
+		s.Registry = reg
+	}
 	ts := httptest.NewServer(s.Router())
 	t.Cleanup(ts.Close)
-	return &fixture{ts: ts, stub: stub, cfg: cfg, st: st, deadURL: dead}
+	return &fixture{ts: ts, stub: stub, cfg: cfg, st: st, srv: s, deadURL: dead}
+}
+
+// rearm 用(可能已被测试改写的)Server 重建 HTTP 测试服务(模拟重启装配)。
+func (f *fixture) rearm(t *testing.T) {
+	t.Helper()
+	old := f.ts
+	f.ts = httptest.NewServer(f.srv.Router())
+	t.Cleanup(f.ts.Close)
+	old.Close()
 }
 
 func (f *fixture) do(t *testing.T, method, path, bearer string, body any) (int, map[string]any) {

@@ -1,0 +1,49 @@
+{
+  "manifest_version": "app-registry/v1",
+  "apps": [
+    {
+      "app_id": "orders",
+      "display_name": "观澜接单(锚点应用,样例)",
+      "enabled": true,
+      "supported_source_kinds": ["order"],
+      "capabilities": [
+        {"name": "order.handoff", "menu_visible": true, "requires_billing": false}
+      ],
+      "launch_targets": [
+        {"target_id": "ti-orders-web", "kind": "launch", "url": "https://guanlan-order.example.invalid/launch"}
+      ],
+      "receipt_targets": [
+        {"target_id": "rc-orders-main", "kind": "receipt", "url": "https://guanlan-order.example.invalid/api/handoff/receipts"}
+      ]
+    },
+    {
+      "app_id": "campaign-tool",
+      "display_name": "碰一碰活动工具(样例,未立项)",
+      "enabled": false,
+      "supported_source_kinds": ["campaign", "standalone"],
+      "capabilities": [
+        {"name": "image.generate", "menu_visible": false, "requires_billing": true}
+      ],
+      "launch_targets": [
+        {"target_id": "ti-campaign-web", "kind": "launch", "url": "https://campaign-tool.example.invalid/launch"}
+      ],
+      "receipt_targets": []
+    },
+    {
+      "app_id": "product-image-engine",
+      "display_name": "产品图引擎(本应用)",
+      "enabled": true,
+      "supported_source_kinds": ["order", "standalone", "campaign"],
+      "capabilities": [
+        {"name": "image.generate", "menu_visible": true, "requires_billing": true},
+        {"name": "image.preview", "menu_visible": true, "requires_billing": false}
+      ],
+      "launch_targets": [
+        {"target_id": "ti-product-image-engine-web", "kind": "launch", "url": "https://product-image-engine.example.invalid/launch"}
+      ],
+      "receipt_targets": [
+        {"target_id": "rc-product-image-engine-main", "kind": "receipt", "url": "https://product-image-engine.example.invalid/api/receipts"}
+      ]
+    }
+  ]
+}
