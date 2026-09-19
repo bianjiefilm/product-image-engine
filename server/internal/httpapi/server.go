@@ -14,6 +14,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
+	"github.com/bianjiefilm/product-image-engine/server/internal/sizeadapt"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
@@ -28,6 +29,9 @@ type Server struct {
 	Billing *platform.BillingClient
 	// Registry 应用登记表(HUI-1745 I1;nil 时回执/返回来源 fail-closed)。
 	Registry *appregistry.Manifest
+	// Presets 尺寸适配预设集(HUI-1703 FEAT-0204;main 装配,内嵌默认或
+	// PRODUCT_SIZE_PRESETS 覆盖)。nil 时尺寸适配端点 fail-closed 503。
+	Presets *sizeadapt.PresetSet
 }
 
 type ctxKey int
@@ -74,6 +78,15 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/receipts/{id}/resend", s.guard(true, s.handleResendReceipt))
 
 	mux.Handle("GET /api/v1/billing/balance", s.guard(true, s.handleBillingBalance))
+
+	// 电商尺寸适配(HUI-1703 / FEAT-0204):纯确定性变换,与生成/计费零耦合。
+	// 开关 FEATURE_SIZE_ADAPT off → 路由不注册 = 404 不可见(fail-closed)。
+	if s.Cfg.SizeAdaptEnabled {
+		mux.Handle("GET /api/v1/size-adapt/presets", s.guard(true, s.handleListSizePresets))
+		mux.Handle("POST /api/v1/projects/{id}/size-adapt", s.guard(true, s.handleCreateSizeVariant))
+		mux.Handle("GET /api/v1/projects/{id}/size-adapt", s.guard(true, s.handleListSizeVariants))
+		mux.Handle("GET /api/v1/projects/{id}/size-adapt/{variantId}/download", s.guard(true, s.handleDownloadSizeVariant))
+	}
 
 	return logRequests(mux)
 }
@@ -163,6 +176,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	fatal := s.Cfg.FatalProblems()
 	genSt, genMsg := s.Cfg.GenerationUsable()
 	billSt, billMsg := s.Cfg.BillingUsable()
+	sizePresets := 0
+	if s.Presets != nil {
+		sizePresets = len(s.Presets.List())
+	}
 	body := map[string]any{
 		"ok":    len(fatal) == 0,
 		"fatal": fatal,
@@ -170,6 +187,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"identity":   map[string]any{"configured": true, "base_url_configured": s.Cfg.IdentityBaseURL != ""},
 			"generation": map[string]any{"enabled": s.Cfg.GenerationEnabled, "usable": genSt == 0, "reason": genMsg},
 			"billing":    map[string]any{"enabled": s.Cfg.BillingEnabled, "usable": billSt == 0, "reason": billMsg},
+			"size_adapt": map[string]any{"enabled": s.Cfg.SizeAdaptEnabled, "presets_loaded": sizePresets},
 		},
 	}
 	status := http.StatusOK

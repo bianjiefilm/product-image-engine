@@ -1,0 +1,13 @@
+{
+  "_comment": "公开常见电商规格整理(非官方同步):商家可用 PRODUCT_SIZE_PRESETS 指向自定义 JSON 覆盖;以各平台当时官方要求为准。height=0(仅 pad)= fit-width:宽缩放到精确值,高按源等比,不填充。schema = {name,width,height,mode} 三元组。",
+  "presets": [
+    { "name": "taobao_main", "width": 800, "height": 800, "mode": "pad", "label": "淘宝主图 800×800(白底)" },
+    { "name": "tmall_main", "width": 800, "height": 800, "mode": "pad", "label": "天猫主图 800×800(白底)" },
+    { "name": "tmall_detail_w790", "width": 790, "height": 0, "mode": "pad", "label": "天猫详情 宽790 等比" },
+    { "name": "jd_main", "width": 800, "height": 800, "mode": "pad", "label": "京东主图 800×800(白底)" },
+    { "name": "pdd_main", "width": 750, "height": 750, "mode": "pad", "label": "拼多多主图 750×750(白底)" },
+    { "name": "douyin_ad", "width": 1080, "height": 1440, "mode": "cover", "label": "抖音广告 1080×1440(裁切)" },
+    { "name": "xhs_cover", "width": 1080, "height": 1440, "mode": "cover", "label": "小红书封面 1080×1440(裁切)" },
+    { "name": "generic_square_1024", "width": 1024, "height": 1024, "mode": "pad", "label": "通用方图 1024×1024(白底)" }
+  ]
+}

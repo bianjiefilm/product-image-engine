@@ -17,6 +17,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/httpapi"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
+	"github.com/bianjiefilm/product-image-engine/server/internal/sizeadapt"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
@@ -49,8 +50,15 @@ func main() {
 		log.Fatalf("product-image-server: %v", err)
 	}
 
+	// 尺寸适配预设集(HUI-1703 FEAT-0204):优先 PRODUCT_SIZE_PRESETS 文件;
+	// 缺省内嵌公开常见规格整理。加载即校验,失败拒绝启动(fail-closed)。
+	presets, err := loadSizePresets(cfg.SizePresetsPath)
+	if err != nil {
+		log.Fatalf("product-image-server: %v", err)
+	}
+
 	s := &httpapi.Server{
-		Cfg: cfg, St: st, Registry: registry,
+		Cfg: cfg, St: st, Registry: registry, Presets: presets,
 		Ident:   &platform.IdentityClient{BaseURL: cfg.IdentityBaseURL, AppID: cfg.IdentityAppID, Token: cfg.IdentityToken},
 		Verify:  platform.NewVerifier(cfg.IdentityBaseURL, cfg.IdentityAppID, cfg.IdentityIssuer),
 		Tasks:   &platform.TaskClient{BaseURL: cfg.TaskBaseURL, AppID: cfg.IdentityAppID, Token: cfg.TaskToken},
@@ -86,4 +94,20 @@ func loadRegistry(path string) (*appregistry.Manifest, error) {
 		return nil, fmt.Errorf("应用登记表 %s 校验失败: %w", path, err)
 	}
 	return m, nil
+}
+
+// loadSizePresets 装配尺寸适配预设集:配置了路径则读文件,否则内嵌矩阵。
+func loadSizePresets(path string) (*sizeadapt.PresetSet, error) {
+	if path == "" {
+		return sizeadapt.DefaultPresets()
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("读取尺寸适配预设集 %s 失败: %w", path, err)
+	}
+	s, err := sizeadapt.LoadPresets(raw)
+	if err != nil {
+		return nil, fmt.Errorf("尺寸适配预设集 %s 校验失败: %w", path, err)
+	}
+	return s, nil
 }

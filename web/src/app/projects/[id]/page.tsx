@@ -80,6 +80,24 @@ interface ReceiptItem {
   last_error: string;
   updated_at: string;
 }
+interface SizePreset {
+  name: string;
+  width: number;
+  height: number; // 0 = fit-width(等比)
+  mode: string; // pad | cover
+  label?: string;
+}
+interface VariantItem {
+  id: string;
+  file_name: string;
+  preset_name: string;
+  variant_mode: string;
+  variant_width: number;
+  variant_height: number;
+  result_size: number;
+  media_type: string;
+  created_at: string;
+}
 
 // 工程详情:用途/尺寸/已选输入/任务与费用事实;返回来源入口(无来源也可完整用)。
 export default function ProjectDetailPage() {
@@ -118,6 +136,16 @@ export default function ProjectDetailPage() {
   const [srcNotice, setSrcNotice] = useState("");
   const [outputFile, setOutputFile] = useState<File | null>(null);
 
+  // ---- 尺寸适配(HUI-1703 FEAT-0204):预设探测 off → 面板隐藏 ----
+  const [sizePresets, setSizePresets] = useState<SizePreset[] | null>(null);
+  const [variants, setVariants] = useState<VariantItem[]>([]);
+  const [saSource, setSaSource] = useState("");
+  const [saFile, setSaFile] = useState<File | null>(null);
+  const [saSelected, setSaSelected] = useState<string[]>([]);
+  const [saFormat, setSaFormat] = useState("png");
+  const [saNotice, setSaNotice] = useState("");
+  const [saBusy, setSaBusy] = useState(false);
+
   const loadSource = useCallback(async () => {
     if (!id) return;
     // 来源绑定(可空:standalone 完整保留,无来源不影响任何功能)。
@@ -143,6 +171,18 @@ export default function ProjectDetailPage() {
     const rres = await fetch(`/api/projects/${id}/receipts`);
     const rdata = await rres.json().catch(() => null);
     setReceipts((rdata?.receipts ?? []) as ReceiptItem[]);
+    // 尺寸适配探测:预设 404(开关 off)→ 面板整体隐藏;on → 拉变体列表。
+    const presRes = await fetch(`/api/size-adapt/presets`);
+    if (presRes.ok) {
+      const pdata = await presRes.json().catch(() => null);
+      setSizePresets((pdata?.presets ?? []) as SizePreset[]);
+      const vres = await fetch(`/api/projects/${id}/size-adapt`);
+      const vdata = await vres.json().catch(() => null);
+      setVariants((vdata?.variants ?? []) as VariantItem[]);
+    } else {
+      setSizePresets(null);
+      setVariants([]);
+    }
   }, [id]);
 
   const load = useCallback(async () => {
@@ -353,6 +393,59 @@ export default function ProjectDetailPage() {
     }
     setSrcNotice(data?.resent ? "已重传既有成果" : "已投递,无需重传");
     await loadSource();
+  }
+
+  // ---- 尺寸适配动作(HUI-1703 FEAT-0204) -------------------------------------
+
+  function togglePreset(name: string) {
+    setSaSelected((cur) =>
+      cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]
+    );
+  }
+
+  // 生成尺寸变体:纯确定性变换,不触发生成/扣费。成果登记只存平台引用,
+  // 每次生成需重携源 PNG 字节,服务端按 sha256 与登记成果绑定校验。
+  // 同 (源,预设,模式) 重复请求幂等返回既有变体(不重复变换)。
+  async function generateVariants() {
+    if (!id || !saFile || !saSource || saSelected.length === 0) return;
+    setSaNotice("");
+    setSaBusy(true);
+    try {
+      const buf = await saFile.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const dataB64 = btoa(bin);
+      const made: string[] = [];
+      const dups: string[] = [];
+      for (const p of saSelected) {
+        const res = await fetch(`/api/projects/${id}/size-adapt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_output_id: saSource,
+            preset_name: p,
+            format: saFormat,
+            data_b64: dataB64,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          setSaNotice(
+            data?.error?.message ?? `生成失败(HTTP ${res.status},预设 ${p})`
+          );
+          return;
+        }
+        (data?.duplicate ? dups : made).push(p);
+      }
+      const parts: string[] = [];
+      if (made.length) parts.push(`已生成:${made.join("、")}`);
+      if (dups.length) parts.push(`已有变体(幂等返回):${dups.join("、")}`);
+      setSaNotice(parts.join(";"));
+      await loadSource();
+    } finally {
+      setSaBusy(false);
+    }
   }
 
   if (loadError) {
@@ -759,6 +852,127 @@ export default function ProjectDetailPage() {
           </div>
         ) : null}
       </div>
+
+      {sizePresets ? (
+        <div className="card">
+          <h2>尺寸适配(电商规格)</h2>
+          <p className="muted" style={{ marginTop: 4 }}>
+            纯确定性变换(等比缩放 + 白底填充 / 居中裁切),不调用 AI、不产生任务与费用。
+            预设为公开常见规格整理,商家可自定义覆盖;以各平台当时官方要求为准。
+            成果登记只存平台引用,生成时请重新提供对应源 PNG(服务端按 sha256 校验一致性)。
+          </p>
+          <div className="row" style={{ alignItems: "flex-end" }}>
+            <div>
+              <label>源成果</label>
+              <select
+                value={saSource}
+                onChange={(e) => setSaSource(e.target.value)}
+              >
+                <option value="">— 选择 —</option>
+                {outputs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.file_name || o.id}({o.result_size}B)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>源 PNG 文件</label>
+              <input
+                type="file"
+                accept="image/png"
+                onChange={(e) => setSaFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            <div>
+              <label>输出格式</label>
+              <select
+                value={saFormat}
+                onChange={(e) => setSaFormat(e.target.value)}
+              >
+                <option value="png">PNG</option>
+                <option value="jpeg">JPEG(quality 90)</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <label>目标规格</label>
+            <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+              {sizePresets.map((p) => (
+                <label
+                  key={p.name}
+                  className="muted"
+                  style={{ flex: "0 0 auto" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={saSelected.includes(p.name)}
+                    onChange={() => togglePreset(p.name)}
+                  />{" "}
+                  {p.label || p.name}({p.width}×
+                  {p.height > 0 ? p.height : "等比"} ·{" "}
+                  {p.mode === "cover" ? "裁切" : "白底"})
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button
+              className="primary"
+              onClick={generateVariants}
+              disabled={saBusy || !saFile || !saSource || saSelected.length === 0}
+            >
+              {saBusy ? "生成中…" : `生成 ${saSelected.length} 个变体`}
+            </button>
+          </div>
+          {saNotice ? (
+            <div className="banner warn" style={{ marginTop: 8 }}>
+              {saNotice}
+            </div>
+          ) : null}
+          {variants.length > 0 ? (
+            <table style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>缩略名</th>
+                  <th>预设</th>
+                  <th>尺寸</th>
+                  <th>模式</th>
+                  <th>大小</th>
+                  <th>时间</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {variants.map((v) => (
+                  <tr key={v.id}>
+                    <td>{v.file_name || v.id}</td>
+                    <td>
+                      <span className="pill">{v.preset_name}</span>
+                    </td>
+                    <td>
+                      {v.variant_width}×{v.variant_height}
+                    </td>
+                    <td>{v.variant_mode === "cover" ? "裁切" : "白底"}</td>
+                    <td>{v.result_size}</td>
+                    <td className="muted">{v.created_at}</td>
+                    <td>
+                      <a
+                        className="link"
+                        href={`/api/projects/${id}/size-adapt/${v.id}/download`}
+                      >
+                        下载
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">尚无尺寸变体。</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

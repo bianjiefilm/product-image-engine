@@ -314,6 +314,8 @@ func (s *Store) CreateRedemption(ctx context.Context, r Redemption) (Redemption,
 }
 
 // ProjectOutput 用户明确选择的输出版本(登记产出事实)。
+// kind=result 为用户登记成果;kind=size_variant 为尺寸适配变体(HUI-1703,
+// 唯一键 (source_output_id, preset_name, variant_mode) 限定该类行)。
 type ProjectOutput struct {
 	ID              string    `json:"id"`
 	TenantScope     string    `json:"tenant_scope"`
@@ -328,15 +330,24 @@ type ProjectOutput struct {
 	SourceRevision  string    `json:"source_revision"`
 	PlatformTaskID  string    `json:"platform_task_id"`
 	CreatedAt       time.Time `json:"created_at"`
+	// --- 尺寸适配变体字段(kind=result 行为零值,无语义) ---
+	Kind           string `json:"kind"`
+	SourceOutputID string `json:"source_output_id"`
+	PresetName     string `json:"preset_name"`
+	VariantMode    string `json:"variant_mode"`
+	VariantWidth   int    `json:"variant_width"`
+	VariantHeight  int    `json:"variant_height"`
 }
 
-const outputCols = `id, tenant_scope, project_id, platform_asset_id, result_sha256, result_size, media_type, file_name, snapshot_id, brief_version, source_revision, platform_task_id, created_at`
+const outputCols = `id, tenant_scope, project_id, platform_asset_id, result_sha256, result_size, media_type, file_name, snapshot_id, brief_version, source_revision, platform_task_id, created_at,
+	kind, source_output_id, preset_name, variant_mode, variant_width, variant_height`
 
 func scanOutput(row interface{ Scan(...any) error }) (ProjectOutput, error) {
 	var o ProjectOutput
 	var created string
 	if err := row.Scan(&o.ID, &o.TenantScope, &o.ProjectID, &o.PlatformAssetID, &o.ResultSHA256, &o.ResultSize,
-		&o.MediaType, &o.FileName, &o.SnapshotID, &o.BriefVersion, &o.SourceRevision, &o.PlatformTaskID, &created); err != nil {
+		&o.MediaType, &o.FileName, &o.SnapshotID, &o.BriefVersion, &o.SourceRevision, &o.PlatformTaskID, &created,
+		&o.Kind, &o.SourceOutputID, &o.PresetName, &o.VariantMode, &o.VariantWidth, &o.VariantHeight); err != nil {
 		return ProjectOutput{}, err
 	}
 	o.CreatedAt, _ = time.Parse(time.RFC3339, created)
@@ -346,12 +357,17 @@ func scanOutput(row interface{ Scan(...any) error }) (ProjectOutput, error) {
 // CreateOutput 登记输出;(project, result_sha256) 已存在 → ErrConflict(重复提交幂等裁决入口)。
 func (s *Store) CreateOutput(ctx context.Context, o ProjectOutput) (ProjectOutput, error) {
 	o.ID = newID("out")
+	if o.Kind == "" {
+		o.Kind = "result"
+	}
 	o.CreatedAt = Now()
 	_, err := s.db.ExecContext(ctx, `INSERT INTO project_outputs
-		(id, tenant_scope, project_id, platform_asset_id, result_sha256, result_size, media_type, file_name, snapshot_id, brief_version, source_revision, platform_task_id, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(id, tenant_scope, project_id, platform_asset_id, result_sha256, result_size, media_type, file_name, snapshot_id, brief_version, source_revision, platform_task_id, created_at,
+		 kind, source_output_id, preset_name, variant_mode, variant_width, variant_height)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		o.ID, o.TenantScope, o.ProjectID, o.PlatformAssetID, o.ResultSHA256, o.ResultSize, o.MediaType,
-		o.FileName, o.SnapshotID, o.BriefVersion, o.SourceRevision, o.PlatformTaskID, o.CreatedAt.Format(time.RFC3339))
+		o.FileName, o.SnapshotID, o.BriefVersion, o.SourceRevision, o.PlatformTaskID, o.CreatedAt.Format(time.RFC3339),
+		o.Kind, o.SourceOutputID, o.PresetName, o.VariantMode, o.VariantWidth, o.VariantHeight)
 	if isUniqueErr(err) {
 		return ProjectOutput{}, fmt.Errorf("%w: 同内容产出已登记", ErrConflict)
 	}
@@ -388,10 +404,11 @@ func (s *Store) FindOutputByContent(ctx context.Context, tenantScope, projectID,
 	return o, nil
 }
 
-// ListOutputs 工程下全部输出(新→旧)。
+// ListOutputs 工程下用户登记的成果(新→旧;只含 kind=result,
+// 尺寸变体走 ListSizeVariants 专列,不混入成果/回执面板)。
 func (s *Store) ListOutputs(ctx context.Context, tenantScope, projectID string) ([]ProjectOutput, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+outputCols+` FROM project_outputs WHERE tenant_scope = ? AND project_id = ? ORDER BY created_at DESC`,
+		`SELECT `+outputCols+` FROM project_outputs WHERE tenant_scope = ? AND project_id = ? AND kind = 'result' ORDER BY created_at DESC`,
 		tenantScope, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("store: 列出输出失败: %w", err)
