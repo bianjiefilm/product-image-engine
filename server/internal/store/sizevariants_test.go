@@ -90,7 +90,7 @@ func TestSizeVariantUniqueKeyConflict(t *testing.T) {
 		return ProjectOutput{
 			TenantScope: "t1", ProjectID: src.ProjectID,
 			PlatformAssetID: "asset-x", ResultSHA256: "bbbb", ResultSize: 20,
-			MediaType: "image/png",
+			MediaType:      "image/png",
 			SourceOutputID: src.ID, PresetName: "jd_main", VariantMode: "pad",
 			VariantWidth: 800, VariantHeight: 800,
 		}
@@ -117,7 +117,7 @@ func TestSizeVariantTenantIsolation(t *testing.T) {
 	if _, err := st.CreateSizeVariant(ctxBg(), ProjectOutput{
 		TenantScope: "t1", ProjectID: src.ProjectID,
 		PlatformAssetID: "asset-x", ResultSHA256: "bbbb", ResultSize: 20,
-		MediaType: "image/png",
+		MediaType:      "image/png",
 		SourceOutputID: src.ID, PresetName: "jd_main", VariantMode: "pad",
 		VariantWidth: 800, VariantHeight: 800,
 	}, []byte("A")); err != nil {
