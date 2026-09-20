@@ -8,7 +8,7 @@ import (
 func setEnvs(t *testing.T, kv map[string]string) {
 	t.Helper()
 	for _, k := range []string{
-		"PRODUCT_SERVER_ADDR", "PRODUCT_DB_PATH", "PRODUCT_INTERNAL_TOKEN",
+		"PRODUCT_SERVER_ADDR", "PRODUCT_DB_PATH", "PRODUCT_INTERNAL_TOKEN", "PRODUCT_ORDER_INTERNAL_TOKEN",
 		"PLATFORM_IDENTITY_BASE_URL", "PLATFORM_IDENTITY_APP_ID", "PLATFORM_IDENTITY_TOKEN", "PLATFORM_IDENTITY_ISSUER",
 		"PLATFORM_UPLOAD_BASE_URL", "PLATFORM_UPLOAD_TOKEN",
 		"PLATFORM_TASK_BASE_URL", "PLATFORM_TASK_TOKEN",
@@ -128,5 +128,17 @@ func TestFullConfigHasNoFatalProblems(t *testing.T) {
 	setEnvs(t, fullEnv())
 	if p := Load().FatalProblems(); len(p) != 0 {
 		t.Fatalf("全配置不应有致命问题: %v", p)
+	}
+}
+
+// D-A1:对端内部令牌只进回执投递头;缺省必须为空(空=不发 Authorization)。
+func TestOrderInternalTokenEnv(t *testing.T) {
+	setEnvs(t, nil)
+	if tok := Load().OrderInternalToken; tok != "" {
+		t.Fatalf("缺省必须为空(不发认证头), got %q", tok)
+	}
+	setEnvs(t, map[string]string{"PRODUCT_ORDER_INTERNAL_TOKEN": "peer-tok"})
+	if tok := Load().OrderInternalToken; tok != "peer-tok" {
+		t.Fatalf("PRODUCT_ORDER_INTERNAL_TOKEN 应读入, got %q", tok)
 	}
 }

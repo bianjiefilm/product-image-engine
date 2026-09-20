@@ -38,6 +38,10 @@ type Config struct {
 	// 回执 HMAC 专用密钥,格式 app_id:secret;...(对端来源 app 专用)。
 	RegistryManifestPath string
 	ReceiptKeys          string
+	// PRODUCT_ORDER_INTERNAL_TOKEN:对端(guanlan-order,其 INTERNAL_TOKEN)
+	// 内部通道 Bearer 令牌;非空时回执投递加发 Authorization: Bearer 头,
+	// 为空时不发(接收端 401 走既有 failed/resend 兜底)。
+	OrderInternalToken string
 
 	// --- HUI-1703 FEAT-0204:电商尺寸适配(纯确定性,不触生成/计费) ---
 	SizeAdaptEnabled bool // FEATURE_SIZE_ADAPT,默认 off(off 时尺寸适配路由不注册=404 不可见)
@@ -86,6 +90,7 @@ func Load() Config {
 		AppID:                getEnv("PRODUCT_APP_ID", "product-image-engine"),
 		RegistryManifestPath: os.Getenv("PRODUCT_REGISTRY_MANIFEST"),
 		ReceiptKeys:          os.Getenv("PRODUCT_RECEIPT_KEYS"),
+		OrderInternalToken:   os.Getenv("PRODUCT_ORDER_INTERNAL_TOKEN"),
 
 		SizeAdaptEnabled: getBoolEnv("FEATURE_SIZE_ADAPT", false),
 		SizePresetsPath:  os.Getenv("PRODUCT_SIZE_PRESETS"),
