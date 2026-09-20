@@ -7,6 +7,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -28,6 +29,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/receiptdoc"
+	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
 const testSecret = "test-receipt-secret"
@@ -825,5 +827,123 @@ func TestHMACFrameMatchesCounterpart(t *testing.T) {
 	}
 	if err := receiptdoc.FrameVerify(secret, fmt.Sprint(ts-301), sig, "product-image-engine", "orders", "evt-1", raw, time.Unix(ts, 0)); err == nil {
 		t.Fatal("超 300s 偏差应拒绝")
+	}
+}
+
+// ---- D-A1 跨仓共测缺陷:回执投递补内部通道认证头 -------------------------------
+// guanlan-order 的 requireInternalToken 仅认 Authorization: Bearer <token>
+// (其 INTERNAL_TOKEN);缺头直投必 401,回执永远 failed(成果回流断链)。
+// 约定:配置 PRODUCT_ORDER_INTERNAL_TOKEN 后加发 Bearer 头;为空时不发该头
+// (不伪造凭据,接收端 401 走既有 failed/resend 语义兜底)。X-Handoff-* 一律不动。
+
+// captureHeadersStub 假接收端:只采集请求头并恒 200(§8 帧验签语义由既有
+// ecoStub 用例覆盖,此处聚焦头部)。返回服务与取头快照的函数。
+func captureHeadersStub(t *testing.T) (*httptest.Server, func() map[string]string) {
+	t.Helper()
+	var mu sync.Mutex
+	got := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		for _, h := range []string{"Authorization", receiptdoc.HeaderKeyID,
+			receiptdoc.HeaderTimestamp, receiptdoc.HeaderSignature, receiptdoc.HeaderAttempt} {
+			got[h] = r.Header.Get(h)
+		}
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() map[string]string {
+		mu.Lock()
+		defer mu.Unlock()
+		cp := make(map[string]string, len(got))
+		for k, v := range got {
+			cp[k] = v
+		}
+		return cp
+	}
+}
+
+// newPendingReceipt 经真实 store 播种工程/输出并落一条 pending 回执
+// (source_receipts 外键引用 projects/project_outputs,先持久后发送的既有前提)。
+func newPendingReceipt(t *testing.T, f *fixture) store.SourceReceipt {
+	t.Helper()
+	ctx := context.Background()
+	tenant := deriveTenant("jia@x.com")
+	proj, err := f.st.CreateProject(ctx, store.Project{
+		TenantID: tenant, Name: "D-A1 夹具工程", SourceType: "order", CreatedBy: "usr-da1",
+	})
+	if err != nil {
+		t.Fatalf("播种工程失败: %v", err)
+	}
+	out, err := f.st.CreateOutput(ctx, store.ProjectOutput{
+		TenantScope: tenant, ProjectID: proj.ID,
+		PlatformAssetID: "asset_da1_1", ResultSHA256: strings.Repeat("d", 64),
+		ResultSize: 2048, MediaType: "image/png", FileName: "da1.png",
+	})
+	if err != nil {
+		t.Fatalf("播种输出失败: %v", err)
+	}
+	payload := `{"schema_version":"order-receipt/v1","event_id":"evt-da1-1"}`
+	fp := sha256.Sum256([]byte(payload))
+	rec, err := f.st.CreateReceipt(ctx, store.SourceReceipt{
+		TenantScope: tenant, ProjectID: proj.ID, OutputID: out.ID,
+		EventID: "evt-da1-1", HandoffID: "h-da1-1", TargetApp: "orders",
+		Payload: payload, PayloadFP: hex.EncodeToString(fp[:]),
+	})
+	if err != nil {
+		t.Fatalf("构造待投递回执失败: %v", err)
+	}
+	return rec
+}
+
+// deliverAndSettle 投递并等待状态落库,返回最终回执。
+func deliverAndSettle(t *testing.T, f *fixture, rec store.SourceReceipt, url string) store.SourceReceipt {
+	t.Helper()
+	f.srv.deliverReceipt(context.Background(), rec, url, []byte(testSecret))
+	final, err := f.st.GetReceipt(context.Background(), rec.TenantScope, rec.ID)
+	if err != nil {
+		t.Fatalf("读取回执终态失败: %v", err)
+	}
+	return final
+}
+
+// 配置了对端内部令牌:必须加发 Authorization: Bearer,且既有 X-Handoff-* 头一个不少。
+func TestDeliverReceiptSendsBearerWhenTokenConfigured(t *testing.T) {
+	target, headers := captureHeadersStub(t)
+	f := newFixture(t, func(c *config.Config) {
+		c.OrderInternalToken = "peer-internal-token" // 对端(guanlan-order INTERNAL_TOKEN)
+	})
+	rec := newPendingReceipt(t, f)
+
+	final := deliverAndSettle(t, f, rec, target.URL)
+
+	if final.Status != "delivered" {
+		t.Fatalf("200 接收端应 delivered(回执语义不回归): %v", final)
+	}
+	h := headers()
+	if want := "Bearer peer-internal-token"; h["Authorization"] != want {
+		t.Fatalf("D-A1: 应携带 %q 头,实得 %q", want, h["Authorization"])
+	}
+	if h[receiptdoc.HeaderKeyID] != "product-image-receipt-key-1" {
+		t.Fatalf("X-Handoff-Key-Id 不得变动: %q", h[receiptdoc.HeaderKeyID])
+	}
+	if h[receiptdoc.HeaderTimestamp] == "" || h[receiptdoc.HeaderSignature] == "" || h[receiptdoc.HeaderAttempt] != "1" {
+		t.Fatalf("§8 帧头不得缺失: %+v", h)
+	}
+}
+
+// 令牌为空:不得伪造 Authorization 头;其余投递语义不变。
+func TestDeliverReceiptOmitsAuthHeaderWhenTokenEmpty(t *testing.T) {
+	target, headers := captureHeadersStub(t)
+	f := newFixture(t, nil) // PRODUCT_ORDER_INTERNAL_TOKEN 缺省为空
+	rec := newPendingReceipt(t, f)
+
+	final := deliverAndSettle(t, f, rec, target.URL)
+
+	if final.Status != "delivered" {
+		t.Fatalf("200 接收端应 delivered(空令牌只影响头,不改状态机): %v", final)
+	}
+	if h := headers(); h["Authorization"] != "" {
+		t.Fatalf("令牌为空不得发送 Authorization 头,实得 %q", h["Authorization"])
 	}
 }

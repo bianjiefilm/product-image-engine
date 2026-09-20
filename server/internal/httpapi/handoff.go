@@ -774,6 +774,12 @@ func (s *Server) deliverReceipt(ctx context.Context, rec store.SourceReceipt, ur
 	httpReq.Header.Set(receiptdoc.HeaderTimestamp, ts)
 	httpReq.Header.Set(receiptdoc.HeaderSignature, sig)
 	httpReq.Header.Set(receiptdoc.HeaderAttempt, "1")
+	// D-A1(跨仓共测):对端 guanlan-order requireInternalToken 仅认
+	// Authorization: Bearer;配置了内部令牌则加发,为空不发(接收端 401
+	// 走既有 failed/resend 兜底,不伪造凭据)。
+	if s.Cfg.OrderInternalToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+s.Cfg.OrderInternalToken)
+	}
 	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(httpReq)
 	if err != nil {
 		_, _ = s.St.FinishReceipt(ctx, rec.TenantScope, rec.ID, "failed", "回执投递失败:"+err.Error())
