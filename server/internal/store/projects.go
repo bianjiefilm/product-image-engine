@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,6 +19,8 @@ var ErrValidation = errors.New("store: 输入不合法")
 var validSourceTypes = map[string]bool{"": true, "standalone": true, "order": true, "campaign": true}
 
 // Project 制作工程。source_type 可空:standalone 是一等来源,无订单必须可用。
+// applied_tpl_* 是模板套用的参数引用写点(HUI-1705 登记制;只写引用,零触发生成),
+// 唯一写入口是模板套用端点(store.ApplyImageTemplate),普通 PATCH 不开放。
 type Project struct {
 	ID         string    `json:"id"`
 	TenantID   string    `json:"tenant_id"`
@@ -31,6 +34,10 @@ type Project struct {
 	CreatedBy  string    `json:"created_by"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+
+	AppliedTplID      string          `json:"applied_tpl_id,omitempty"`
+	AppliedTplVersion int             `json:"applied_tpl_version,omitempty"`
+	AppliedTplParams  json.RawMessage `json:"applied_tpl_params,omitempty"`
 }
 
 // ProjectUpdate 局部更新;nil 表示不改。
@@ -71,18 +78,22 @@ func (s *Store) CreateProject(ctx context.Context, p Project) (Project, error) {
 
 func scanProject(row interface{ Scan(...any) error }) (Project, error) {
 	var p Project
-	var created, updated string
+	var created, updated, appliedParams string
 	err := row.Scan(&p.ID, &p.TenantID, &p.Name, &p.Status, &p.UsageKind, &p.WidthPx, &p.HeightPx,
-		&p.SourceType, &p.SourceRef, &p.CreatedBy, &created, &updated)
+		&p.SourceType, &p.SourceRef, &p.CreatedBy, &created, &updated,
+		&p.AppliedTplID, &p.AppliedTplVersion, &appliedParams)
 	if err != nil {
 		return Project{}, err
+	}
+	if appliedParams != "" {
+		p.AppliedTplParams = json.RawMessage(appliedParams)
 	}
 	p.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	p.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
 	return p, nil
 }
 
-const projectCols = `id, tenant_id, name, status, usage_kind, width_px, height_px, source_type, source_ref, created_by, created_at, updated_at`
+const projectCols = `id, tenant_id, name, status, usage_kind, width_px, height_px, source_type, source_ref, created_by, created_at, updated_at, applied_tpl_id, applied_tpl_version, applied_tpl_params`
 
 // GetProject 按(租户, id)取工程;跨租户视为不存在。
 func (s *Store) GetProject(ctx context.Context, tenantID, id string) (Project, error) {

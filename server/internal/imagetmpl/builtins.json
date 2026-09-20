@@ -1,0 +1,45 @@
+{
+  "_comment": "内置行业模板种子(HUI-1705 / FEAT-0206):模板=确定性具名预设+参数引用集,绝不含任何生成参数字段(红线由 TestLoadBuiltinsFailClosed 钉死)。params.size_preset 引用仓内 sizeadapt 缺省预设集(server/internal/sizeadapt/presets.json)的 preset name;subject_ratio_pct=构图主体占比(%),margin_pct=留白(%),bg_luma=背景灰阶基调(0=黑..255=白)。version 披露版本,内置只读。",
+  "templates": [
+    {
+      "id": "tplbi_beauty_main_white", "industry": "beauty", "version": 1,
+      "name": "美妆主图·白底留白", "label": "美妆单品主图:白底、高留白、主体约七成",
+      "params": { "size_preset": "taobao_main", "subject_ratio_pct": 70, "margin_pct": 12, "bg_luma": 255 }
+    },
+    {
+      "id": "tplbi_beauty_detail_w790", "industry": "beauty", "version": 1,
+      "name": "美妆详情·宽790等比", "label": "美妆详情页:宽790 等比、轻留白",
+      "params": { "size_preset": "tmall_detail_w790", "subject_ratio_pct": 80, "margin_pct": 8, "bg_luma": 250 }
+    },
+    {
+      "id": "tplbi_3c_main_white", "industry": "electronics_3c", "version": 1,
+      "name": "3C主图·白底高留白", "label": "3C 数码主图:白底、高留白突出机身",
+      "params": { "size_preset": "jd_main", "subject_ratio_pct": 60, "margin_pct": 18, "bg_luma": 255 }
+    },
+    {
+      "id": "tplbi_3c_ad_cover", "industry": "electronics_3c", "version": 1,
+      "name": "3C广告·竖版裁切", "label": "3C 广告位:竖版裁切、主体撑满",
+      "params": { "size_preset": "douyin_ad", "subject_ratio_pct": 85, "margin_pct": 4, "bg_luma": 240 }
+    },
+    {
+      "id": "tplbi_apparel_main_square", "industry": "apparel", "version": 1,
+      "name": "服装主图·方图白底", "label": "服装主图:方图白底、主体约四分之三",
+      "params": { "size_preset": "pdd_main", "subject_ratio_pct": 75, "margin_pct": 10, "bg_luma": 252 }
+    },
+    {
+      "id": "tplbi_apparel_cover_xhs", "industry": "apparel", "version": 1,
+      "name": "服装种草·竖版封面", "label": "服装种草封面:小红书竖版、轻留白",
+      "params": { "size_preset": "xhs_cover", "subject_ratio_pct": 80, "margin_pct": 6, "bg_luma": 248 }
+    },
+    {
+      "id": "tplbi_food_main_white", "industry": "food", "version": 1,
+      "name": "食品主图·白底暖调", "label": "食品主图:白底微暖、留白适中",
+      "params": { "size_preset": "tmall_main", "subject_ratio_pct": 72, "margin_pct": 14, "bg_luma": 255 }
+    },
+    {
+      "id": "tplbi_food_ad_cover", "industry": "food", "version": 1,
+      "name": "食品广告·竖版裁切", "label": "食品广告位:竖版裁切、食欲主体撑满",
+      "params": { "size_preset": "douyin_ad", "subject_ratio_pct": 88, "margin_pct": 2, "bg_luma": 245 }
+    }
+  ]
+}

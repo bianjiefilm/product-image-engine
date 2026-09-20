@@ -97,6 +97,7 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `FEATURE_GENERATION_ENABLED` | 默认 0 | 生成能力开关 |
 | `FEATURE_PHOTO_UPLOAD` | 默认 0 | 产品照片上传开关(HUI-1697;off 时上传路由不注册=404 不可见) |
 | `PRODUCT_PHOTO_MAX_BYTES` | 默认 20971520 | 照片上传服务端单点大小上限(20MiB) |
+| `FEATURE_TEMPLATES` | 默认 0 | 产品图模板库开关(HUI-1705;off 时模板路由不注册=404 不可见;模板=确定性预设+参数引用集,零触发生成) |
 
 Web(`web`,样例 `deploy/web.env.example`):
 
@@ -123,6 +124,11 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 照片超限 | **413** `photo_too_large`(上限 `PRODUCT_PHOTO_MAX_BYTES`,默认 20MiB) |
 | 同内容重复上传(同租户) | **200** 幂等返回同一资产引用,不重复登记不重复计费 |
 | 照片平台登记失败/不可达 | **502** `upstream_rejected` / **503** `upstream_unavailable`,本地零落库 |
+| `FEATURE_TEMPLATES=0` | **404** 模板路由不注册(不可见,沿 size_adapt 语义) |
+| 模板含生成参数字段(prompt/model/…) | **422** `forbidden_field`(模板库只收确定性预设参数) |
+| 改/删内置模板 | **403** `builtin_readonly`(只读;可派生为自定义) |
+| 同工程重复套用同模板同版本 | **200** 幂等返回既有留痕,不重复写(首次 **201**) |
+| 模板跨租户读写 | **404**(不可见,无串数据) |
 | 内部凭据缺失/不正确 | **401** `产品内部凭据缺失或不正确` |
 
 ## 红线对照(public-ai checklist v3.1 / ADR 0001)

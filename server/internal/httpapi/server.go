@@ -14,6 +14,7 @@ import (
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
+	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/sizeadapt"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
@@ -33,6 +34,9 @@ type Server struct {
 	// Presets 尺寸适配预设集(HUI-1703 FEAT-0204;main 装配,内嵌默认或
 	// PRODUCT_SIZE_PRESETS 覆盖)。nil 时尺寸适配端点 fail-closed 503。
 	Presets *sizeadapt.PresetSet
+	// TplBuiltins 内置模板集(HUI-1705 FEAT-0206;main 装配,代码只读种子)。
+	// nil 时模板端点 fail-closed 503。
+	TplBuiltins *imagetmpl.BuiltinSet
 
 	// batchSubmitSem 批量提交进程内信号量(HUI-1704 拍板:并发上限 4,超出排队)。
 	// 惰性初始化;semMu 仅保护初始化。
@@ -110,6 +114,19 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/photos", s.guard(true, s.handlePhotoUpload))
 		mux.Handle("GET /api/v1/photos/{id}/content", s.guard(true, s.handlePhotoContent))
 		mux.Handle("GET /api/v1/projects/{id}/inputs/{inputId}/content", s.guard(true, s.handleInputContent))
+	}
+
+	// 产品图模板库(HUI-1705 / FEAT-0206):登记制开关沿 size_adapt 语义,
+	// FEATURE_TEMPLATES off → 路由不注册 = 404 不可见(fail-closed)。
+	// 模板=确定性预设+参数引用集,零触发生成;套用=只写参数引用+留痕,零扣费。
+	if s.Cfg.TemplatesEnabled {
+		mux.Handle("GET /api/v1/image-templates", s.guard(true, s.handleListTemplates))
+		mux.Handle("POST /api/v1/image-templates", s.guard(true, s.handleCreateTemplate))
+		mux.Handle("GET /api/v1/image-templates/{id}", s.guard(true, s.handleGetTemplate))
+		mux.Handle("PATCH /api/v1/image-templates/{id}", s.guard(true, s.handleUpdateTemplate))
+		mux.Handle("DELETE /api/v1/image-templates/{id}", s.guard(true, s.handleDeleteTemplate))
+		mux.Handle("POST /api/v1/projects/{id}/image-template/apply", s.guard(true, s.handleApplyTemplate))
+		mux.Handle("GET /api/v1/projects/{id}/image-template-applies", s.guard(true, s.handleListTemplateApplies))
 	}
 
 	return logRequests(mux)
@@ -205,6 +222,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	if s.Presets != nil {
 		sizePresets = len(s.Presets.List())
 	}
+	tplBuiltins := 0
+	if s.TplBuiltins != nil {
+		tplBuiltins = len(s.TplBuiltins.List())
+	}
 	body := map[string]any{
 		"ok":    len(fatal) == 0,
 		"fatal": fatal,
@@ -217,6 +238,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 				"enabled": s.Cfg.PhotoUploadEnabled, "usable": photoSt == 0, "reason": photoMsg,
 				"max_bytes": s.Cfg.PhotoMaxBytes,
 			},
+			"templates": map[string]any{"enabled": s.Cfg.TemplatesEnabled, "builtins_loaded": tplBuiltins},
 		},
 	}
 	status := http.StatusOK

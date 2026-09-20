@@ -162,7 +162,7 @@ func (s *Server) adaptRegisterVariant(ctx context.Context, tenant, projID string
 		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "尺寸变换失败:" + err.Error()}
 	}
 	reg, err := s.Uploads.RegisterAsset(ctx, platform.RegisterAssetRequest{
-		FileName: variantFileName(src.FileName, preset.Name, format),
+		FileName:    variantFileName(src.FileName, preset.Name, format),
 		ContentType: mediaTypeFor(format), SizeBytes: int64(len(outBytes)),
 		SHA256: sha256Hex(outBytes), ContentB64: base64.StdEncoding.EncodeToString(outBytes),
 	})
@@ -174,8 +174,8 @@ func (s *Server) adaptRegisterVariant(ctx context.Context, tenant, projID string
 		TenantScope: tenant, ProjectID: projID,
 		PlatformAssetID: reg.AssetID,
 		ResultSHA256:    sha256Hex(outBytes), ResultSize: int64(len(outBytes)),
-		MediaType: mediaTypeFor(format),
-		FileName:  variantFileName(src.FileName, preset.Name, format),
+		MediaType:      mediaTypeFor(format),
+		FileName:       variantFileName(src.FileName, preset.Name, format),
 		SourceOutputID: src.ID, PresetName: preset.Name,
 		VariantMode: string(preset.Mode), VariantWidth: vw, VariantHeight: vh,
 	}, outBytes)

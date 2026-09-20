@@ -53,6 +53,10 @@ type Config struct {
 	PhotoUploadEnabled bool // FEATURE_PHOTO_UPLOAD,默认 off(off 时照片上传路由不注册=404 不可见)
 	// PRODUCT_PHOTO_MAX_BYTES:服务端单点大小上限,默认 20 MiB(配置化)。
 	PhotoMaxBytes int64
+
+	// --- HUI-1705 FEAT-0206:产品图模板库(登记制开关,沿 size_adapt 语义) ---
+	// 模板=确定性预设+参数引用集,零触发生成;off 时模板路由不注册=404 不可见。
+	TemplatesEnabled bool // FEATURE_TEMPLATES,默认 off
 }
 
 // ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
@@ -102,6 +106,8 @@ func Load() Config {
 
 		PhotoUploadEnabled: getBoolEnv("FEATURE_PHOTO_UPLOAD", false),
 		PhotoMaxBytes:      getInt64Env("PRODUCT_PHOTO_MAX_BYTES", 20<<20),
+
+		TemplatesEnabled: getBoolEnv("FEATURE_TEMPLATES", false),
 	}
 }
 
