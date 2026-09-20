@@ -15,6 +15,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"PLATFORM_BILLING_BASE_URL", "PLATFORM_BILLING_TOKEN",
 		"ECO_BILLING_ENABLED", "FEATURE_GENERATION_ENABLED",
 		"FEATURE_PHOTO_UPLOAD", "PRODUCT_PHOTO_MAX_BYTES",
+		"FEATURE_SIZE_ADAPT", "FEATURE_TEMPLATES",
 	} {
 		t.Setenv(k, "")
 	}
@@ -47,8 +48,9 @@ func TestDefaultsAreSafe(t *testing.T) {
 	if c.DBPath != "./data/product-image.db" {
 		t.Fatalf("DBPath 默认错误: %q", c.DBPath)
 	}
-	if c.BillingEnabled || c.GenerationEnabled {
-		t.Fatal("两个开关默认必须全 off")
+	if c.BillingEnabled || c.GenerationEnabled || c.SizeAdaptEnabled ||
+		c.PhotoUploadEnabled || c.TemplatesEnabled {
+		t.Fatal("全部登记制/能力开关默认必须全 off")
 	}
 	if len(c.FatalProblems()) == 0 {
 		t.Fatal("空配置必须有致命问题")
@@ -56,9 +58,10 @@ func TestDefaultsAreSafe(t *testing.T) {
 }
 
 func TestBoolParsing(t *testing.T) {
-	setEnvs(t, map[string]string{"ECO_BILLING_ENABLED": "1", "FEATURE_GENERATION_ENABLED": "true"})
+	setEnvs(t, map[string]string{"ECO_BILLING_ENABLED": "1", "FEATURE_GENERATION_ENABLED": "true",
+		"FEATURE_TEMPLATES": "1"})
 	c := Load()
-	if !c.BillingEnabled || !c.GenerationEnabled {
+	if !c.BillingEnabled || !c.GenerationEnabled || !c.TemplatesEnabled {
 		t.Fatal("1/true 应解析为 on")
 	}
 	setEnvs(t, map[string]string{"ECO_BILLING_ENABLED": "garbage"})
