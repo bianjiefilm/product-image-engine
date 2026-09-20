@@ -181,14 +181,14 @@ type batchCreateFile struct {
 }
 
 type batchCreateRequest struct {
-	Name                 string           `json:"name"`
-	Scenes               []string         `json:"scenes"`
-	Presets              []string         `json:"presets"`
-	UsageNote            string           `json:"usage_note"`
-	FinalizeWithVariants bool             `json:"finalize_with_variants"`
-	SourceType           string           `json:"source_type"`
-	SourceRef            string           `json:"source_ref"`
-	ProjectID            string           `json:"project_id"` // 可选:复用既有工程(缺省新建)
+	Name                 string            `json:"name"`
+	Scenes               []string          `json:"scenes"`
+	Presets              []string          `json:"presets"`
+	UsageNote            string            `json:"usage_note"`
+	FinalizeWithVariants bool              `json:"finalize_with_variants"`
+	SourceType           string            `json:"source_type"`
+	SourceRef            string            `json:"source_ref"`
+	ProjectID            string            `json:"project_id"` // 可选:复用既有工程(缺省新建)
 	Items                []batchCreateFile `json:"items"`
 }
 

@@ -920,6 +920,3 @@ func TestBatchRetryFailedGateOffIs503(t *testing.T) {
 		t.Fatalf("门不过重试应 503 点名开关: %d %v", st, msg)
 	}
 }
-
-
-

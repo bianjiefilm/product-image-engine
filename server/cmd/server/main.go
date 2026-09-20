@@ -16,6 +16,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/httpapi"
+	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/sizeadapt"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
@@ -57,8 +58,15 @@ func main() {
 		log.Fatalf("product-image-server: %v", err)
 	}
 
+	// 内置模板集(HUI-1705 FEAT-0206):只读代码种子,内嵌四行业;加载即校验,
+	// 失败拒绝启动(fail-closed)。模板路由是否注册由 FEATURE_TEMPLATES 决定。
+	tplBuiltins, err := imagetmpl.DefaultBuiltins()
+	if err != nil {
+		log.Fatalf("product-image-server: 内置模板集校验失败: %v", err)
+	}
+
 	s := &httpapi.Server{
-		Cfg: cfg, St: st, Registry: registry, Presets: presets,
+		Cfg: cfg, St: st, Registry: registry, Presets: presets, TplBuiltins: tplBuiltins,
 		Ident:   &platform.IdentityClient{BaseURL: cfg.IdentityBaseURL, AppID: cfg.IdentityAppID, Token: cfg.IdentityToken},
 		Verify:  platform.NewVerifier(cfg.IdentityBaseURL, cfg.IdentityAppID, cfg.IdentityIssuer),
 		Tasks:   &platform.TaskClient{BaseURL: cfg.TaskBaseURL, AppID: cfg.IdentityAppID, Token: cfg.TaskToken},
