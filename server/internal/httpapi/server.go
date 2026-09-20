@@ -104,6 +104,14 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/size-adapt/{variantId}/download", s.guard(true, s.handleDownloadSizeVariant))
 	}
 
+	// 产品照片上传(HUI-1697 / FEAT-0198):登记制开关沿 size_adapt 语义,
+	// FEATURE_PHOTO_UPLOAD off → 路由不注册 = 404 不可见(fail-closed)。
+	if s.Cfg.PhotoUploadEnabled {
+		mux.Handle("POST /api/v1/photos", s.guard(true, s.handlePhotoUpload))
+		mux.Handle("GET /api/v1/photos/{id}/content", s.guard(true, s.handlePhotoContent))
+		mux.Handle("GET /api/v1/projects/{id}/inputs/{inputId}/content", s.guard(true, s.handleInputContent))
+	}
+
 	return logRequests(mux)
 }
 
@@ -192,6 +200,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	fatal := s.Cfg.FatalProblems()
 	genSt, genMsg := s.Cfg.GenerationUsable()
 	billSt, billMsg := s.Cfg.BillingUsable()
+	photoSt, photoMsg := s.Cfg.PhotoUploadUsable()
 	sizePresets := 0
 	if s.Presets != nil {
 		sizePresets = len(s.Presets.List())
@@ -204,6 +213,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"generation": map[string]any{"enabled": s.Cfg.GenerationEnabled, "usable": genSt == 0, "reason": genMsg},
 			"billing":    map[string]any{"enabled": s.Cfg.BillingEnabled, "usable": billSt == 0, "reason": billMsg},
 			"size_adapt": map[string]any{"enabled": s.Cfg.SizeAdaptEnabled, "presets_loaded": sizePresets},
+			"photo_upload": map[string]any{
+				"enabled": s.Cfg.PhotoUploadEnabled, "usable": photoSt == 0, "reason": photoMsg,
+				"max_bytes": s.Cfg.PhotoMaxBytes,
+			},
 		},
 	}
 	status := http.StatusOK

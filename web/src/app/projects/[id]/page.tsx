@@ -271,6 +271,60 @@ export default function ProjectDetailPage() {
     await load();
   }
 
+  // 产品照片上传(HUI-1697 FEAT-0198):文件经本产品 BFF 中继上传,
+  // 服务端单点校验(主体/租户/用途/大小/魔数/真解码/内容幂等);
+  // 成功后把返回的资产引用挂接到本工程(同内容重传走幂等,不重复登记)。
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  async function uploadPhoto(e: React.FormEvent) {
+    e.preventDefault();
+    if (!photoFile) return;
+    setPhotoBusy(true);
+    setNotice("");
+    try {
+      const bytes = await photoFile.arrayBuffer();
+      const qs = new URLSearchParams({
+        purpose: "project_photo",
+        filename: photoFile.name,
+      });
+      const up = await fetch(`/api/photos?${qs.toString()}`, {
+        method: "POST",
+        body: bytes,
+      });
+      const upData = await up.json().catch(() => null);
+      if (!up.ok) {
+        setNotice(upData?.error?.message ?? `上传失败(HTTP ${up.status})`);
+        return;
+      }
+      const photo = upData?.photo ?? {};
+      const attach = await fetch(`/api/projects/${id}/inputs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform_asset_id: photo.platform_asset_id ?? "",
+          snapshot_name: photo.original_name ?? photoFile.name,
+          snapshot_size: photo.size_bytes ?? bytes.byteLength,
+          snapshot_content_type: photo.media_type ?? "application/octet-stream",
+        }),
+      });
+      const attachData = await attach.json().catch(() => null);
+      if (!attach.ok) {
+        setNotice(
+          attachData?.error?.message ?? "上传成功,但挂接工程失败(资产已保存)"
+        );
+        return;
+      }
+      setNotice(
+        upData?.idempotent ? "同内容已存在(幂等),引用已挂接" : "上传成功,已挂接到工程"
+      );
+      setPhotoFile(null);
+      await load();
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   // 提交生成(占位链路):开关 off / 服务不可达时展示明确的失败事实。
   async function submitGeneration() {
     setNotice("");
@@ -571,6 +625,13 @@ export default function ProjectDetailPage() {
                   <td>{i.snapshot_size}</td>
                   <td>{i.snapshot_content_type || "—"}</td>
                   <td>
+                    <a
+                      href={`/api/projects/${id}/inputs/${i.id}/content`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      查看
+                    </a>{" "}
                     <button onClick={() => removeInput(i.id)}>移除</button>
                   </td>
                 </tr>
@@ -578,6 +639,23 @@ export default function ProjectDetailPage() {
             </tbody>
           </table>
         )}
+        <form onSubmit={uploadPhoto} style={{ marginTop: 12 }}>
+          <div className="row">
+            <div>
+              <label>上传产品照片(jpeg/png/webp,服务端核验)</label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            <div style={{ flex: 0 }}>
+              <button type="submit" disabled={!photoFile || photoBusy}>
+                {photoBusy ? "上传中…" : "上传并挂接"}
+              </button>
+            </div>
+          </div>
+        </form>
         <form onSubmit={addInput} style={{ marginTop: 12 }}>
           <div className="row">
             <div>
@@ -615,7 +693,8 @@ export default function ProjectDetailPage() {
           </div>
         </form>
         <p className="muted" style={{ marginBottom: 0 }}>
-          真实上传(直传 OSS → complete)由后续 FEAT 票接入;当前保存的是平台素材引用与快照元数据。
+          上传经本产品 BFF 受限中继:服务端核验格式/大小/用途并做内容幂等(同内容重传不重复登记);
+          也可直接粘贴平台素材引用保存(跨应用图片为经授权的版本引用,经平台设施解析,不读其他应用数据库)。
         </p>
       </div>
 

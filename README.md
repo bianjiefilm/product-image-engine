@@ -95,6 +95,8 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `PLATFORM_BILLING_BASE_URL` / `PLATFORM_BILLING_TOKEN` | 计费开启时必需 | `:18102` |
 | `ECO_BILLING_ENABLED` | 默认 0 | 收费开关 |
 | `FEATURE_GENERATION_ENABLED` | 默认 0 | 生成能力开关 |
+| `FEATURE_PHOTO_UPLOAD` | 默认 0 | 产品照片上传开关(HUI-1697;off 时上传路由不注册=404 不可见) |
+| `PRODUCT_PHOTO_MAX_BYTES` | 默认 20971520 | 照片上传服务端单点大小上限(20MiB) |
 
 Web(`web`,样例 `deploy/web.env.example`):
 
@@ -115,6 +117,12 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 生成 on 但 platform-task 不可达 | **503** `生成任务服务不可达…(不伪造成功)`,且不落版本行 |
 | `ECO_BILLING_ENABLED=0` | **503** `计费开关未开启(ECO_BILLING_ENABLED=0)…` |
 | 计费 on 但 platform-billing 不可达 | **503** `计费服务不可达…(不伪造成功)` |
+| `FEATURE_PHOTO_UPLOAD=0` | **404** 上传路由不注册(不可见,沿 size_adapt 语义) |
+| 照片上传 on 但 upload 配置缺失 | **503** `素材上传服务未配置(点名缺失键)` |
+| 照片格式伪造(扩展名/Content-Type 不作数) | **415** `unsupported_media_type` / 坏字节 **422** `undecodable_image` |
+| 照片超限 | **413** `photo_too_large`(上限 `PRODUCT_PHOTO_MAX_BYTES`,默认 20MiB) |
+| 同内容重复上传(同租户) | **200** 幂等返回同一资产引用,不重复登记不重复计费 |
+| 照片平台登记失败/不可达 | **502** `upstream_rejected` / **503** `upstream_unavailable`,本地零落库 |
 | 内部凭据缺失/不正确 | **401** `产品内部凭据缺失或不正确` |
 
 ## 红线对照(public-ai checklist v3.1 / ADR 0001)
