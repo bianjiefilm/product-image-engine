@@ -14,6 +14,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"PLATFORM_TASK_BASE_URL", "PLATFORM_TASK_TOKEN",
 		"PLATFORM_BILLING_BASE_URL", "PLATFORM_BILLING_TOKEN",
 		"ECO_BILLING_ENABLED", "FEATURE_GENERATION_ENABLED",
+		"FEATURE_PHOTO_UPLOAD", "PRODUCT_PHOTO_MAX_BYTES",
 	} {
 		t.Setenv(k, "")
 	}
@@ -140,5 +141,37 @@ func TestOrderInternalTokenEnv(t *testing.T) {
 	setEnvs(t, map[string]string{"PRODUCT_ORDER_INTERNAL_TOKEN": "peer-tok"})
 	if tok := Load().OrderInternalToken; tok != "peer-tok" {
 		t.Fatalf("PRODUCT_ORDER_INTERNAL_TOKEN 应读入, got %q", tok)
+	}
+}
+
+// HUI-1697 FEAT-0198:照片上传登记制开关与大小上限(配置化)。
+func TestPhotoUploadGateMatrix(t *testing.T) {
+	setEnvs(t, fullEnv())
+	c := Load()
+	if c.PhotoUploadEnabled {
+		t.Fatal("FEATURE_PHOTO_UPLOAD 默认必须 off")
+	}
+	if c.PhotoMaxBytes != 20<<20 {
+		t.Fatalf("上传大小上限默认 20MB, got %d", c.PhotoMaxBytes)
+	}
+	if st, msg := c.PhotoUploadUsable(); st != 503 || !strings.Contains(msg, "FEATURE_PHOTO_UPLOAD") {
+		t.Fatalf("开关 off 必须 503+原因, got %d %q", st, msg)
+	}
+	t.Setenv("FEATURE_PHOTO_UPLOAD", "1")
+	c = Load()
+	if st, msg := c.PhotoUploadUsable(); st != 0 {
+		t.Fatalf("开关 on+上传服务齐备必须放行, got %d %q", st, msg)
+	}
+	t.Setenv("PLATFORM_UPLOAD_BASE_URL", "")
+	t.Setenv("PLATFORM_UPLOAD_TOKEN", "")
+	c = Load()
+	if st, msg := c.PhotoUploadUsable(); st != 503 || !strings.Contains(msg, "PLATFORM_UPLOAD") {
+		t.Fatalf("上传服务未配置必须 503+原因, got %d %q", st, msg)
+	}
+	t.Setenv("PLATFORM_UPLOAD_BASE_URL", "http://127.0.0.1:18104")
+	t.Setenv("PRODUCT_PHOTO_MAX_BYTES", "1024")
+	c = Load()
+	if c.PhotoMaxBytes != 1024 {
+		t.Fatalf("PRODUCT_PHOTO_MAX_BYTES 应可配置, got %d", c.PhotoMaxBytes)
 	}
 }

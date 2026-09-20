@@ -48,6 +48,11 @@ type Config struct {
 	// PRODUCT_SIZE_PRESETS:预设集 JSON 路径(可选;缺省用内嵌公开常见规格整理,
 	// 商家可自定义覆盖;加载即校验,非法拒绝启动)。
 	SizePresetsPath string
+
+	// --- HUI-1697 FEAT-0198:产品照片上传(登记制开关,沿 size_adapt 语义) ---
+	PhotoUploadEnabled bool // FEATURE_PHOTO_UPLOAD,默认 off(off 时照片上传路由不注册=404 不可见)
+	// PRODUCT_PHOTO_MAX_BYTES:服务端单点大小上限,默认 20 MiB(配置化)。
+	PhotoMaxBytes int64
 }
 
 // ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
@@ -94,6 +99,9 @@ func Load() Config {
 
 		SizeAdaptEnabled: getBoolEnv("FEATURE_SIZE_ADAPT", false),
 		SizePresetsPath:  os.Getenv("PRODUCT_SIZE_PRESETS"),
+
+		PhotoUploadEnabled: getBoolEnv("FEATURE_PHOTO_UPLOAD", false),
+		PhotoMaxBytes:      getInt64Env("PRODUCT_PHOTO_MAX_BYTES", 20<<20),
 	}
 }
 
@@ -142,6 +150,27 @@ func (c Config) BillingUsable() (int, string) {
 	return 0, ""
 }
 
+// PhotoUploadUsable 判定照片上传动作是否放行(HUI-1697 FEAT-0198;fail-closed)。
+// 开关 off 时路由根本不注册(404 不可见);on 但上传服务未配置 → 503 明确原因。
+func (c Config) PhotoUploadUsable() (int, string) {
+	if !c.PhotoUploadEnabled {
+		return 503, "照片上传开关未开启(FEATURE_PHOTO_UPLOAD=0),上传能力不可用"
+	}
+	if c.UploadBaseURL == "" || c.UploadToken == "" {
+		return 503, "素材上传服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN)"
+	}
+	return 0, ""
+}
+
+// PhotoUploadMaxBytes 返回生效的照片大小上限;零/负值回退默认 20MiB
+// (防误配成 0 导致全部上传被拒)。
+func (c Config) PhotoUploadMaxBytes() int64 {
+	if c.PhotoMaxBytes > 0 {
+		return c.PhotoMaxBytes
+	}
+	return 20 << 20
+}
+
 func getEnv(key, def string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
@@ -159,4 +188,16 @@ func getBoolEnv(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func getInt64Env(key string, def int64) int64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
