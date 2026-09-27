@@ -40,11 +40,11 @@ func (s *Server) handleLightAcceptance(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateLightScene(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	var req struct {
-		InputID          string `json:"input_id"`
-		Mode             string `json:"mode"`
-		ProtectedRegion  string `json:"protected_region"`
-		LightingIntent   string `json:"lighting_intent"`
-		ExplicitCreative bool   `json:"explicit_creative"`
+		InputID                     string `json:"input_id"`
+		Mode                        string `json:"mode"`
+		ProtectedRegion             string `json:"protected_region"`
+		LightingIntent              string `json:"lighting_intent"`
+		ConfirmCreativeAfterFailure bool   `json:"confirm_creative_after_failure"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_request", "请求体必须是 JSON")
@@ -65,7 +65,7 @@ func (s *Server) handleCreateLightScene(w http.ResponseWriter, r *http.Request) 
 		version = in.ID
 	}
 	mode := strings.TrimSpace(req.Mode)
-	if mode == string(lightscene.ModeCreative) && !req.ExplicitCreative {
+	if mode == string(lightscene.ModeCreative) {
 		latest, lerr := s.St.LatestLightJobForInput(r.Context(), p.Tenant(), projectID, in.ID)
 		reports := s.lightReportsForInput(r.Context(), p.Tenant(), projectID, in.ID, in.PlatformAssetID)
 		fidelityFailed := false
@@ -75,8 +75,9 @@ func (s *Server) handleCreateLightScene(w http.ResponseWriter, r *http.Request) 
 				break
 			}
 		}
-		if fidelityFailed || (lerr == nil && latest.Mode == string(lightscene.ModeFidelity) &&
-			(latest.JobStatus == lightscene.StatusFailed || latest.Quality == lightscene.QualityFail)) {
+		lightFailed := lerr == nil && latest.Mode == string(lightscene.ModeFidelity) &&
+			(latest.JobStatus == lightscene.StatusFailed || latest.Quality == lightscene.QualityFail)
+		if (fidelityFailed || lightFailed) && !req.ConfirmCreativeAfterFailure {
 			writeErr(w, http.StatusConflict, "silent_creative_forbidden", "保真失败后不能静默改成整图生成")
 			return
 		}
@@ -180,6 +181,10 @@ func (s *Server) handleSubmitLightScene(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
 		return
 	}
+	if job.QuoteStatus == lightscene.QuoteInvalid {
+		writeErr(w, http.StatusConflict, "quote_invalid", lightscene.ErrQuoteInvalid.Error())
+		return
+	}
 	if job.QuoteStatus != lightscene.QuoteConfirmed {
 		writeErr(w, http.StatusConflict, "quote_blocked", lightscene.ErrQuoteUnconfirmed.Error())
 		return
@@ -277,7 +282,7 @@ func (s *Server) handleRefreshLightScene(w http.ResponseWriter, r *http.Request)
 		job.JobStatus = lightscene.StatusUnknown
 		job.VerifiedProduct = false
 		job.Deliverable = false
-		job.Pending = append(job.Pending, "供应商结果未知，先核对")
+		job.Pending = lightscene.AppendPending(job.Pending, "供应商结果未知，先核对")
 		if uerr := s.St.UpdateLightJob(r.Context(), job); uerr != nil {
 			writeStoreErr(w, uerr)
 			return
@@ -294,7 +299,7 @@ func (s *Server) handleRefreshLightScene(w http.ResponseWriter, r *http.Request)
 		if receipt, _ := st.Result["vendor_receipt_id"].(string); strings.TrimSpace(receipt) != "" {
 			job.VendorReceiptID = strings.TrimSpace(receipt)
 		}
-		job.Pending = append(job.Pending, "供应商结果待核对")
+		job.Pending = lightscene.AppendPending(job.Pending, "供应商结果待核对")
 	}
 	job.VerifiedProduct = false
 	job.Deliverable = false
@@ -346,9 +351,17 @@ func (s *Server) handleSelectLightScene(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	priorVerified := job.VerifiedProduct
 	job = s.persistLightGate(r, job)
 	next, err := lightscene.Select(executionFromLight(job))
 	if err != nil {
+		if job.VerifiedProduct && !priorVerified {
+			job.VerifiedProduct = false
+			job.Deliverable = false
+			if job.Quality == lightscene.QualityPass {
+				job.Quality = lightscene.QualityUnknown
+			}
+		}
 		_ = s.St.UpdateLightJob(r.Context(), job)
 		writeErr(w, http.StatusConflict, "not_deliverable", err.Error())
 		return

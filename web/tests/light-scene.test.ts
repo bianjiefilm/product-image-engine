@@ -50,5 +50,7 @@ describe("光影场景诚实文案", () => {
     expect(panel).not.toContain("计费已通过");
     expect(panel).not.toContain("生产出图已经通过");
     expect(panel).not.toContain("主体保护已通过");
+    expect(panel).not.toContain("explicit_creative");
+    expect(panel).not.toContain("允许受限导出");
   });
 });

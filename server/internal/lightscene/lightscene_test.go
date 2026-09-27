@@ -161,6 +161,7 @@ func TestVendorReceiptDoesNotOverrideFidelityOrOutputID(t *testing.T) {
 	}
 	failed := withReceipt
 	failed.Status = StatusFailed
+	failed.Quality = QualityPass
 	relabel := SubjectGate(failed, []fidelity.Report{authorized})
 	if relabel.VerifiedProduct || relabel.Quality == QualityPass || relabel.Status != StatusFailed {
 		t.Fatalf("失败记录不能改成已验证产品图: %+v", relabel)

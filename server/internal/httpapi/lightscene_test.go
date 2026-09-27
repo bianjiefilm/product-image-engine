@@ -207,6 +207,62 @@ func TestLightSceneFailedRefreshDoesNotRelabel(t *testing.T) {
 	}
 }
 
+func TestLightSceneCreativeAfterFailureIgnoresModeFlag(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) { c.LightSceneEnabled = true })
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmLight(t, tok, proj, in)
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" {
+		t.Fatalf("没有供应商时应失败, got %d %#v", st, job)
+	}
+	st, blocked := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes", tok, map[string]any{
+		"input_id": in, "mode": "creative", "lighting_intent": "戏剧光", "explicit_creative": true,
+	})
+	if st != http.StatusConflict {
+		t.Fatalf("选中创意不能当成失败后的明确确认, got %d %v", st, blocked)
+	}
+	st, confirmed := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes", tok, map[string]any{
+		"input_id": in, "mode": "creative", "lighting_intent": "戏剧光",
+		"confirm_creative_after_failure": true,
+	})
+	if st != http.StatusUnprocessableEntity {
+		t.Fatalf("单独确认也不能在创意路径未接通时出图, got %d %v", st, confirmed)
+	}
+}
+
+func TestLightSceneSubmitRejectsInvalidQuote(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) { c.LightSceneEnabled = true })
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes", tok, map[string]any{
+		"input_id": in, "lighting_intent": "侧光",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开报价 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	st, _ = f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/confirm", tok, nil)
+	if st != http.StatusOK {
+		t.Fatalf("确认 %d", st)
+	}
+	st, next := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes", tok, map[string]any{
+		"input_id": in, "lighting_intent": "逆光",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("新报价 %d %v", st, next)
+	}
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/submit", tok, nil)
+	msg := ""
+	if errBody, ok := submitted["error"].(map[string]any); ok {
+		msg, _ = errBody["message"].(string)
+	}
+	if st != http.StatusConflict || msg != "报价已失效，请重新确认" {
+		t.Fatalf("失效报价应明确失效, got %d %#v", st, submitted)
+	}
+}
+
 func TestLightSceneConfirmRejectsStaleIntent(t *testing.T) {
 	f := newFixture(t, func(c *config.Config) { c.LightSceneEnabled = true })
 	_, tok := f.loginOK(t)

@@ -247,6 +247,9 @@ func SubjectGate(ex Execution, reports []fidelity.Report) Execution {
 	ex.CreativeFallback = false
 	// 失败记录保持失败。不能借主体保护报告或回执改成已验证产品图。
 	if ex.Quality == QualityFail || ex.Status == StatusFailed {
+		if ex.Status == StatusFailed && ex.Quality != QualityFail {
+			ex.Quality = QualityUnknown
+		}
 		if ex.Quality == QualityFail {
 			ex.Pending = appendPending(ex.Pending, "主体保真未通过")
 		}
@@ -322,6 +325,11 @@ func AcceptanceSamples() []Sample {
 		{Kind: "logo_text", Label: "文字/Logo 商品", Quality: QualityUnknown, ModelUsage: "未调用", CostLabel: BillingPendingLabel},
 		{Kind: "complex_material", Label: "复杂材质商品", Quality: QualityUnknown, ModelUsage: "未调用", CostLabel: BillingPendingLabel},
 	}
+}
+
+// AppendPending 追加一条待确认说明。同一句已存在时保持原样。
+func AppendPending(items []string, item string) []string {
+	return appendPending(items, item)
 }
 
 func appendPending(items []string, item string) []string {
