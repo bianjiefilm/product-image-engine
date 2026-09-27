@@ -81,17 +81,26 @@ func newIdentityStub(t *testing.T) *idStub {
 
 // mint 按 identity 派生公式(sha256)生成 usr_/acct_,签 EdDSA 访问令牌。
 func (st *idStub) mint(email, aud string) string {
+	return st.mintExtra(email, aud, nil)
+}
+
+// mintExtra 在访问令牌上附加声明。org_memberships 只在测试里表达多组织身份。
+func (st *idStub) mintExtra(email, aud string, extra jwt.MapClaims) string {
 	email = strings.ToLower(strings.TrimSpace(email))
 	sha := func(s string) string {
 		sum := sha256.Sum256([]byte(s))
 		return hex.EncodeToString(sum[:])[:16]
 	}
 	userID, account := "usr_"+sha("user:"+email), "acct_"+sha("account:"+email)
-	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"iss": "ident-stub", "sub": userID, "aud": aud,
 		"iat": time.Now().Unix(), "exp": time.Now().Add(10 * time.Minute).Unix(),
 		"typ": "access", "tenant_id": account, "account_id": account,
-	})
+	}
+	for k, v := range extra {
+		claims[k] = v
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tok.Header["kid"] = st.kid
 	s, err := tok.SignedString(st.priv)
 	if err != nil {

@@ -316,11 +316,12 @@ func (s *Server) handleListBindings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListOutputs(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	projID := r.PathValue("id")
-	if _, err := s.St.GetProject(r.Context(), p.Tenant(), projID); err != nil {
+	proj, err := s.projectFor(r.Context(), p, projID)
+	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	list, err := s.St.ListOutputs(r.Context(), p.Tenant(), projID)
+	list, err := s.St.ListOutputs(r.Context(), proj.TenantID, projID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", "读取成果列表失败")
 		return

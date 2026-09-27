@@ -63,12 +63,12 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	id := r.PathValue("id")
-	proj, err := s.St.GetProject(r.Context(), p.Tenant(), id)
+	proj, err := s.projectFor(r.Context(), p, id)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	inputs, err := s.St.ListInputs(r.Context(), p.Tenant(), id)
+	inputs, err := s.St.ListInputs(r.Context(), proj.TenantID, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", "读取输入失败")
 		return
@@ -76,7 +76,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	if inputs == nil {
 		inputs = []store.ProjectInput{}
 	}
-	versions, err := s.St.ListVersions(r.Context(), p.Tenant(), id)
+	versions, err := s.St.ListVersions(r.Context(), proj.TenantID, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", "读取版本失败")
 		return

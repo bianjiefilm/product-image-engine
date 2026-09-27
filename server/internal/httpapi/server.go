@@ -66,6 +66,9 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/auth/logout", s.guard(true, s.handleLogout))
 	mux.Handle("GET /api/v1/auth/session", s.guard(true, s.handleSession))
 
+	mux.Handle("POST /api/v1/entry/start", s.guard(true, s.handleStartEntry))
+	mux.Handle("POST /api/v1/entry/source", s.guard(true, s.handleSourceEntry))
+	mux.Handle("GET /api/v1/entry/personal", s.guard(true, s.handleListPersonalEntries))
 	mux.Handle("GET /api/v1/projects", s.guard(true, s.handleListProjects))
 	mux.Handle("POST /api/v1/projects", s.guard(true, s.handleCreateProject))
 	mux.Handle("GET /api/v1/projects/{id}", s.guard(true, s.handleGetProject))
@@ -74,6 +77,9 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("DELETE /api/v1/projects/{id}/inputs/{inputId}", s.guard(true, s.handleDeleteInput))
 	mux.Handle("GET /api/v1/projects/{id}/versions", s.guard(true, s.handleListVersions))
 	mux.Handle("POST /api/v1/projects/{id}/versions", s.guard(true, s.handleSubmitVersion))
+	mux.Handle("POST /api/v1/projects/{id}/first-image", s.guard(true, s.handleSubmitFirstImage))
+	mux.Handle("GET /api/v1/projects/{id}/first-image", s.guard(true, s.handleGetFirstImage))
+	mux.Handle("POST /api/v1/projects/{id}/first-image/refresh", s.guard(true, s.handleRefreshFirstImage))
 
 	// 跨应用续接与成果回流(HUI-1745 I1)。
 	mux.Handle("POST /api/v1/handoffs/accept", s.guard(true, s.handleAcceptHandoff))
