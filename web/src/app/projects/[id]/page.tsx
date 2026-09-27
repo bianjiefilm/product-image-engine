@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { usePublishWorkbench } from "@/components/eco-nav/workbench";
+import { SubjectFidelityPanel } from "@/components/SubjectFidelityPanel";
 import { sourceLabel } from "@/lib/eco-nav";
 
 interface Project {
@@ -766,6 +767,8 @@ export default function ProjectDetailPage() {
           生成能力与计费开关默认关闭;失败时这里只会展示真实原因,不会伪造成功。
         </p>
       </div>
+
+      {id ? <SubjectFidelityPanel projectId={id} /> : null}
 
       {binding && bindingAgg ? (
         <div className="card">

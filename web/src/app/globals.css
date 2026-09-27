@@ -42,6 +42,7 @@ input, select {
   border-radius: 6px;
   font-size: 14px;
 }
+input[type="checkbox"] { width: auto; padding: 0; }
 button {
   padding: 8px 14px;
   border: 1px solid var(--border);
@@ -70,4 +71,6 @@ th { color: var(--muted); font-weight: 500; }
 .muted { color: var(--muted); }
 .link { color: var(--accent); text-decoration: none; }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+.pill.wait { background: #fdf9ec; color: #7a5c00; }
+.pill.bad { background: #fdf1f1; color: #b91c1c; }
 .error { color: var(--danger); }
