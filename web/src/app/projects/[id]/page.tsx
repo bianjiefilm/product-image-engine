@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { usePublishWorkbench } from "@/components/eco-nav/workbench";
 import { sourceLabel } from "@/lib/eco-nav";
+import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 
 interface Project {
   id: string;
@@ -722,6 +723,11 @@ export default function ProjectDetailPage() {
           也可直接粘贴平台素材引用保存(跨应用图片为经授权的版本引用,经平台设施解析,不读其他应用数据库)。
         </p>
       </div>
+
+      <BackgroundReplacePanel
+        projectId={id ?? ""}
+        inputs={inputs.map((item) => ({ id: item.id, snapshot_name: item.snapshot_name }))}
+      />
 
       <div className="card">
         <h2>任务与费用事实</h2>

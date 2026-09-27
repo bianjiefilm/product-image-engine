@@ -119,6 +119,21 @@ func (s *Server) Router() http.Handler {
 	// 产品图模板库(HUI-1705 / FEAT-0206):登记制开关沿 size_adapt 语义,
 	// FEATURE_TEMPLATES off → 路由不注册 = 404 不可见(fail-closed)。
 	// 模板=确定性预设+参数引用集,零触发生成;套用=只写参数引用+留痕,零扣费。
+	// AI 背景替换(HUI-1699 / FEAT-0200):开关 off → 路由不注册 = 404。
+	// 生成或计费未接通时只返回结构事实,不伪造成功。
+	if s.Cfg.BgReplaceEnabled {
+		mux.Handle("GET /api/v1/background-replacements/capabilities", s.guard(true, s.handleBgCapabilities))
+		mux.Handle("GET /api/v1/background-replacements/acceptance", s.guard(true, s.handleBgAcceptance))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements", s.guard(true, s.handleCreateBgReplace))
+		mux.Handle("GET /api/v1/projects/{id}/background-replacements", s.guard(true, s.handleListBgReplace))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/confirm", s.guard(true, s.handleConfirmBgReplace))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/submit", s.guard(true, s.handleSubmitBgReplace))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/refresh", s.guard(true, s.handleRefreshBgReplace))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/quality", s.guard(true, s.handleBgQuality))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/select", s.guard(true, s.handleSelectBgReplace))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/export", s.guard(true, s.handleExportBgReplace))
+	}
+
 	if s.Cfg.TemplatesEnabled {
 		mux.Handle("GET /api/v1/image-templates", s.guard(true, s.handleListTemplates))
 		mux.Handle("POST /api/v1/image-templates", s.guard(true, s.handleCreateTemplate))
@@ -239,6 +254,9 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 				"max_bytes": s.Cfg.PhotoMaxBytes,
 			},
 			"templates": map[string]any{"enabled": s.Cfg.TemplatesEnabled, "builtins_loaded": tplBuiltins},
+			"bg_replace": map[string]any{
+				"enabled": s.Cfg.BgReplaceEnabled, "creative_available": s.Cfg.CreativePathAvailable(),
+			},
 		},
 	}
 	status := http.StatusOK

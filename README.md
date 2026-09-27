@@ -103,6 +103,8 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `FEATURE_PHOTO_UPLOAD` | 默认 0 | 产品照片上传开关(HUI-1697;off 时上传路由不注册=404 不可见) |
 | `PRODUCT_PHOTO_MAX_BYTES` | 默认 20971520 | 照片上传服务端单点大小上限(20MiB) |
 | `FEATURE_TEMPLATES` | 默认 0 | 产品图模板库开关(HUI-1705;off 时模板路由不注册=404 不可见;模板=确定性预设+参数引用集,零触发生成) |
+| `FEATURE_BG_REPLACE` | 默认 0 | AI 背景替换(HUI-1699;off 时路由不注册=404) |
+| `FEATURE_BG_CREATIVE` | 默认 0 | 创意背景路径;还需生成任务服务可用,否则界面保持关闭 |
 
 Web(`web`,样例 `deploy/web.env.example`):
 
@@ -130,6 +132,12 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 同内容重复上传(同租户) | **200** 幂等返回同一资产引用,不重复登记不重复计费 |
 | 照片平台登记失败/不可达 | **502** `upstream_rejected` / **503** `upstream_unavailable`,本地零落库 |
 | `FEATURE_TEMPLATES=0` | **404** 模板路由不注册(不可见,沿 size_adapt 语义) |
+| `FEATURE_BG_REPLACE=0` | **404** 背景替换路由不注册(不可见) |
+| 背景替换开启但生成开关关闭 | 任务状态 `generation_unavailable`,质量 `unknown`,不落假图 |
+| 背景替换任务服务不可达 | 状态 `unknown`,再次提交不重新调用任务 |
+| 计费未返回报价金额 | 文案 **计费待确认**,不编造人民币 |
+| 创意路径未接通(`FEATURE_BG_CREATIVE=0` 或生成不可用) | **422** `creative_unavailable` |
+| 无保真证据把质量标为通过 | **409** `quality_pass_unauthorized` |
 | 模板含生成参数字段(prompt/model/…) | **422** `forbidden_field`(模板库只收确定性预设参数) |
 | 改/删内置模板 | **403** `builtin_readonly`(只读;可派生为自定义) |
 | 同工程重复套用同模板同版本 | **200** 幂等返回既有留痕,不重复写(首次 **201**) |
