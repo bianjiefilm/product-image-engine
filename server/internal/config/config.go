@@ -57,6 +57,10 @@ type Config struct {
 	// --- HUI-1705 FEAT-0206:产品图模板库(登记制开关,沿 size_adapt 语义) ---
 	// 模板=确定性预设+参数引用集,零触发生成;off 时模板路由不注册=404 不可见。
 	TemplatesEnabled bool // FEATURE_TEMPLATES,默认 off
+
+	// --- HUI-1698 FEAT-0199:主体保真记录(不调用生成、不扣费) ---
+	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
+	SubjectFidelityEnabled bool // FEATURE_SUBJECT_FIDELITY,默认 off
 }
 
 // ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
@@ -108,6 +112,8 @@ func Load() Config {
 		PhotoMaxBytes:      getInt64Env("PRODUCT_PHOTO_MAX_BYTES", 20<<20),
 
 		TemplatesEnabled: getBoolEnv("FEATURE_TEMPLATES", false),
+
+		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 	}
 }
 

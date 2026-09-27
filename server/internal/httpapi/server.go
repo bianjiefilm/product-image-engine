@@ -129,6 +129,14 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/image-template-applies", s.guard(true, s.handleListTemplateApplies))
 	}
 
+	// 主体保真记录(HUI-1698 / FEAT-0199):不调用生成、不扣费。
+	// FEATURE_SUBJECT_FIDELITY off → 路由不注册 = 404 不可见。
+	if s.Cfg.SubjectFidelityEnabled {
+		mux.Handle("POST /api/v1/projects/{id}/fidelity-reports", s.guard(true, s.handleCreateFidelityReport))
+		mux.Handle("GET /api/v1/projects/{id}/fidelity-reports", s.guard(true, s.handleListFidelityReports))
+		mux.Handle("GET /api/v1/projects/{id}/fidelity-reports/{reportId}", s.guard(true, s.handleGetFidelityReport))
+	}
+
 	return logRequests(mux)
 }
 
@@ -239,6 +247,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 				"max_bytes": s.Cfg.PhotoMaxBytes,
 			},
 			"templates": map[string]any{"enabled": s.Cfg.TemplatesEnabled, "builtins_loaded": tplBuiltins},
+			"subject_fidelity": map[string]any{
+				"enabled":         s.Cfg.SubjectFidelityEnabled,
+				"real_generation": "unknown",
+			},
 		},
 	}
 	status := http.StatusOK

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
+	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
 	"github.com/bianjiefilm/product-image-engine/server/internal/handoff"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/receiptdoc"
@@ -616,6 +617,13 @@ func (s *Server) handleSendReceipt(w http.ResponseWriter, r *http.Request) {
 	// 重复提交:同输出已有回执 → 原样返回(不产生新事件)。
 	if existing, err := s.St.FindReceiptByOutput(ctx, p.Tenant(), outputID); err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"receipt": existing, "duplicate": true})
+		return
+	}
+	if reports, rerr := s.St.ListFidelityReportsByOutput(ctx, p.Tenant(), outputID); rerr != nil {
+		writeStoreErr(w, rerr)
+		return
+	} else if block, code, msg := fidelity.BlocksVerifiedReceipt(fidelityReports(reports)); block {
+		writeErr(w, http.StatusConflict, code, msg)
 		return
 	}
 	binding, err := s.St.GetBindingByProject(ctx, p.Tenant(), projID)

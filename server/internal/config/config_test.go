@@ -15,7 +15,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"PLATFORM_BILLING_BASE_URL", "PLATFORM_BILLING_TOKEN",
 		"ECO_BILLING_ENABLED", "FEATURE_GENERATION_ENABLED",
 		"FEATURE_PHOTO_UPLOAD", "PRODUCT_PHOTO_MAX_BYTES",
-		"FEATURE_SIZE_ADAPT", "FEATURE_TEMPLATES",
+		"FEATURE_SIZE_ADAPT", "FEATURE_TEMPLATES", "FEATURE_SUBJECT_FIDELITY",
 	} {
 		t.Setenv(k, "")
 	}
@@ -49,7 +49,7 @@ func TestDefaultsAreSafe(t *testing.T) {
 		t.Fatalf("DBPath 默认错误: %q", c.DBPath)
 	}
 	if c.BillingEnabled || c.GenerationEnabled || c.SizeAdaptEnabled ||
-		c.PhotoUploadEnabled || c.TemplatesEnabled {
+		c.PhotoUploadEnabled || c.TemplatesEnabled || c.SubjectFidelityEnabled {
 		t.Fatal("全部登记制/能力开关默认必须全 off")
 	}
 	if len(c.FatalProblems()) == 0 {
