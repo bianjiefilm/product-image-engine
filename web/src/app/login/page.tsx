@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { loggedInHome } from "@/lib/first-image";
 
 // 登录页:邮箱+口令(platform-identity 派生身份,本应用不自管账号)。
 export default function LoginPage() {
@@ -26,7 +27,7 @@ export default function LoginPage() {
         setError(data?.error?.message ?? `登录失败(HTTP ${res.status})`);
         return;
       }
-      router.replace("/projects");
+      router.replace(loggedInHome());
     } catch {
       setError("网络异常,请稍后重试");
     } finally {

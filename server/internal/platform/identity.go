@@ -43,10 +43,11 @@ type TokenPair struct {
 
 // Principal 由已验证 JWT 提取的平台身份事实。
 type Principal struct {
-	UserID    string   `json:"user_id"`    // sub(usr_…)
-	AccountID string   `json:"account_id"` // acct_…
-	TenantID  string   `json:"tenant_id"`  // 可空
-	Roles     []string `json:"roles,omitempty"`
+	UserID         string   `json:"user_id"`    // sub(usr_…)
+	AccountID      string   `json:"account_id"` // acct_…
+	TenantID       string   `json:"tenant_id"`  // 可空
+	Roles          []string `json:"roles,omitempty"`
+	OrgMemberships []string `json:"org_memberships,omitempty"`
 }
 
 // Tenant 返回本产品的租户作用域:tenant_id 优先,空则回退 account_id。
@@ -289,9 +290,29 @@ func (v *Verifier) verifyWithKeys(token string, keys map[string][]byte) (Princip
 			roles = append(roles, s)
 		}
 	}
-	p := Principal{UserID: str("sub"), AccountID: str("account_id"), TenantID: str("tenant_id"), Roles: roles}
+	p := Principal{
+		UserID: str("sub"), AccountID: str("account_id"), TenantID: str("tenant_id"),
+		Roles: roles, OrgMemberships: stringListClaim(mc["org_memberships"]),
+	}
 	if p.UserID == "" || p.AccountID == "" {
 		return Principal{}, fmt.Errorf("%w: 令牌缺少 sub/account_id", ErrUnauthenticated)
 	}
 	return p, nil
+}
+
+func stringListClaim(raw any) []string {
+	switch values := raw.(type) {
+	case []string:
+		return append([]string(nil), values...)
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, item := range values {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
