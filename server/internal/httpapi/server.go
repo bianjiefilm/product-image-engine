@@ -131,6 +131,21 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/export", s.guard(true, s.handleExportBgReplace))
 	}
 
+	// 光影场景(HUI-1700 / FEAT-0201):开关 off → 路由不注册 = 404。
+	// 不能绕过主体保护。没有供应商回执时结果是失败或待核对。
+	if s.Cfg.LightSceneEnabled {
+		mux.Handle("GET /api/v1/light-scenes/capabilities", s.guard(true, s.handleLightCapabilities))
+		mux.Handle("GET /api/v1/light-scenes/acceptance", s.guard(true, s.handleLightAcceptance))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes", s.guard(true, s.handleCreateLightScene))
+		mux.Handle("GET /api/v1/projects/{id}/light-scenes", s.guard(true, s.handleListLightScene))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes/{jobId}/confirm", s.guard(true, s.handleConfirmLightScene))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes/{jobId}/submit", s.guard(true, s.handleSubmitLightScene))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes/{jobId}/refresh", s.guard(true, s.handleRefreshLightScene))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes/{jobId}/quality", s.guard(true, s.handleLightQuality))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes/{jobId}/select", s.guard(true, s.handleSelectLightScene))
+		mux.Handle("POST /api/v1/projects/{id}/light-scenes/{jobId}/export", s.guard(true, s.handleExportLightScene))
+	}
+
 	// 产品图模板库(HUI-1705 / FEAT-0206):登记制开关沿 size_adapt 语义,
 	// FEATURE_TEMPLATES off → 路由不注册 = 404 不可见(fail-closed)。
 	// 模板=确定性预设+参数引用集,零触发生成;套用=只写参数引用+留痕,零扣费。
@@ -264,6 +279,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"templates": map[string]any{"enabled": s.Cfg.TemplatesEnabled, "builtins_loaded": tplBuiltins},
 			"bg_replace": map[string]any{
 				"enabled": s.Cfg.BgReplaceEnabled, "creative_available": s.Cfg.CreativePathAvailable(),
+			},
+			"light_scene": map[string]any{
+				"enabled": s.Cfg.LightSceneEnabled, "creative_available": s.Cfg.LightCreativePathAvailable(),
+				"production_generation_passed": false, "billing_passed": false,
 			},
 			"subject_fidelity": map[string]any{
 				"enabled":         s.Cfg.SubjectFidelityEnabled,

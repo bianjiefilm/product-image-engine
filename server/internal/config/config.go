@@ -63,6 +63,12 @@ type Config struct {
 	BgReplaceEnabled  bool // FEATURE_BG_REPLACE,默认 off
 	BgCreativeEnabled bool // FEATURE_BG_CREATIVE,默认 off
 
+	// --- HUI-1700 FEAT-0201:光影场景生成 ---
+	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
+	// 结果不能绕过主体保护，没有供应商回执时不能写成已验证产品图。
+	LightSceneEnabled    bool // FEATURE_LIGHT_SCENE,默认 off
+	LightCreativeEnabled bool // FEATURE_LIGHT_CREATIVE,默认 off
+
 	// --- HUI-1698 FEAT-0199:主体保真记录(不调用生成、不扣费) ---
 	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
 	SubjectFidelityEnabled bool // FEATURE_SUBJECT_FIDELITY,默认 off
@@ -120,6 +126,9 @@ func Load() Config {
 
 		BgReplaceEnabled:  getBoolEnv("FEATURE_BG_REPLACE", false),
 		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
+
+		LightSceneEnabled:    getBoolEnv("FEATURE_LIGHT_SCENE", false),
+		LightCreativeEnabled: getBoolEnv("FEATURE_LIGHT_CREATIVE", false),
 
 		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 	}
@@ -185,6 +194,15 @@ func (c Config) PhotoUploadUsable() (int, string) {
 // CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。
 func (c Config) CreativePathAvailable() bool {
 	if !c.BgCreativeEnabled {
+		return false
+	}
+	st, _ := c.GenerationUsable()
+	return st == 0
+}
+
+// LightCreativePathAvailable 只有光影创意开关与真实生成任务配置同时可用时才为真。
+func (c Config) LightCreativePathAvailable() bool {
+	if !c.LightCreativeEnabled {
 		return false
 	}
 	st, _ := c.GenerationUsable()
