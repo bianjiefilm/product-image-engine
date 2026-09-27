@@ -58,6 +58,11 @@ type Config struct {
 	// 模板=确定性预设+参数引用集,零触发生成;off 时模板路由不注册=404 不可见。
 	TemplatesEnabled bool // FEATURE_TEMPLATES,默认 off
 
+	// --- HUI-1699 FEAT-0200:AI 背景替换 ---
+	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
+	BgReplaceEnabled  bool // FEATURE_BG_REPLACE,默认 off
+	BgCreativeEnabled bool // FEATURE_BG_CREATIVE,默认 off
+
 	// --- HUI-1698 FEAT-0199:主体保真记录(不调用生成、不扣费) ---
 	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
 	SubjectFidelityEnabled bool // FEATURE_SUBJECT_FIDELITY,默认 off
@@ -112,6 +117,9 @@ func Load() Config {
 		PhotoMaxBytes:      getInt64Env("PRODUCT_PHOTO_MAX_BYTES", 20<<20),
 
 		TemplatesEnabled: getBoolEnv("FEATURE_TEMPLATES", false),
+
+		BgReplaceEnabled:  getBoolEnv("FEATURE_BG_REPLACE", false),
+		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
 
 		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 	}
@@ -172,6 +180,15 @@ func (c Config) PhotoUploadUsable() (int, string) {
 		return 503, "素材上传服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN)"
 	}
 	return 0, ""
+}
+
+// CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。
+func (c Config) CreativePathAvailable() bool {
+	if !c.BgCreativeEnabled {
+		return false
+	}
+	st, _ := c.GenerationUsable()
+	return st == 0
 }
 
 // PhotoUploadMaxBytes 返回生效的照片大小上限;零/负值回退默认 20MiB
