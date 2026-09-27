@@ -105,6 +105,7 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `FEATURE_TEMPLATES` | 默认 0 | 产品图模板库开关(HUI-1705;off 时模板路由不注册=404 不可见;模板=确定性预设+参数引用集,零触发生成) |
 | `FEATURE_BG_REPLACE` | 默认 0 | AI 背景替换(HUI-1699;off 时路由不注册=404) |
 | `FEATURE_BG_CREATIVE` | 默认 0 | 创意背景路径;还需生成任务服务可用,否则界面保持关闭 |
+| `FEATURE_SUBJECT_FIDELITY` | 默认 0 | 主体保真记录开关(HUI-1698;off 时路由不注册=404;on 也只记录保护范围与检查,不调用生成、不扣费,真实生成保真保持待确认) |
 
 Web(`web`,样例 `deploy/web.env.example`):
 
@@ -142,6 +143,11 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 改/删内置模板 | **403** `builtin_readonly`(只读;可派生为自定义) |
 | 同工程重复套用同模板同版本 | **200** 幂等返回既有留痕,不重复写(首次 **201**) |
 | 模板跨租户读写 | **404**(不可见,无串数据) |
+| `FEATURE_SUBJECT_FIDELITY=0` | **404** 主体保真路由不注册(不可见) |
+| 主体保真请求自报通过/授权 | **400** `invalid_request`(结论只由服务端计算) |
+| 未授权的真实生成 | 结论 **unknown**(待确认),`exact_product=false`,不扣费 |
+| 文字或结构检查失败 | 结论 **fail**,保持候选,不回执为已验证商品图 |
+| 同一评估改写结论 | **409** `assessment_conflict` |
 | 内部凭据缺失/不正确 | **401** `产品内部凭据缺失或不正确` |
 
 ## 红线对照(public-ai checklist v3.1 / ADR 0001)

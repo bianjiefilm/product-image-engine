@@ -116,9 +116,6 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/inputs/{inputId}/content", s.guard(true, s.handleInputContent))
 	}
 
-	// 产品图模板库(HUI-1705 / FEAT-0206):登记制开关沿 size_adapt 语义,
-	// FEATURE_TEMPLATES off → 路由不注册 = 404 不可见(fail-closed)。
-	// 模板=确定性预设+参数引用集,零触发生成;套用=只写参数引用+留痕,零扣费。
 	// AI 背景替换(HUI-1699 / FEAT-0200):开关 off → 路由不注册 = 404。
 	// 生成或计费未接通时只返回结构事实,不伪造成功。
 	if s.Cfg.BgReplaceEnabled {
@@ -134,6 +131,9 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/export", s.guard(true, s.handleExportBgReplace))
 	}
 
+	// 产品图模板库(HUI-1705 / FEAT-0206):登记制开关沿 size_adapt 语义,
+	// FEATURE_TEMPLATES off → 路由不注册 = 404 不可见(fail-closed)。
+	// 模板=确定性预设+参数引用集,零触发生成;套用=只写参数引用+留痕,零扣费。
 	if s.Cfg.TemplatesEnabled {
 		mux.Handle("GET /api/v1/image-templates", s.guard(true, s.handleListTemplates))
 		mux.Handle("POST /api/v1/image-templates", s.guard(true, s.handleCreateTemplate))
@@ -142,6 +142,14 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("DELETE /api/v1/image-templates/{id}", s.guard(true, s.handleDeleteTemplate))
 		mux.Handle("POST /api/v1/projects/{id}/image-template/apply", s.guard(true, s.handleApplyTemplate))
 		mux.Handle("GET /api/v1/projects/{id}/image-template-applies", s.guard(true, s.handleListTemplateApplies))
+	}
+
+	// 主体保真记录(HUI-1698 / FEAT-0199):不调用生成、不扣费。
+	// FEATURE_SUBJECT_FIDELITY off → 路由不注册 = 404 不可见。
+	if s.Cfg.SubjectFidelityEnabled {
+		mux.Handle("POST /api/v1/projects/{id}/fidelity-reports", s.guard(true, s.handleCreateFidelityReport))
+		mux.Handle("GET /api/v1/projects/{id}/fidelity-reports", s.guard(true, s.handleListFidelityReports))
+		mux.Handle("GET /api/v1/projects/{id}/fidelity-reports/{reportId}", s.guard(true, s.handleGetFidelityReport))
 	}
 
 	return logRequests(mux)
@@ -256,6 +264,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"templates": map[string]any{"enabled": s.Cfg.TemplatesEnabled, "builtins_loaded": tplBuiltins},
 			"bg_replace": map[string]any{
 				"enabled": s.Cfg.BgReplaceEnabled, "creative_available": s.Cfg.CreativePathAvailable(),
+			},
+			"subject_fidelity": map[string]any{
+				"enabled":         s.Cfg.SubjectFidelityEnabled,
+				"real_generation": "unknown",
 			},
 		},
 	}

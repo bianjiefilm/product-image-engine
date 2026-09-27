@@ -62,6 +62,10 @@ type Config struct {
 	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
 	BgReplaceEnabled  bool // FEATURE_BG_REPLACE,默认 off
 	BgCreativeEnabled bool // FEATURE_BG_CREATIVE,默认 off
+
+	// --- HUI-1698 FEAT-0199:主体保真记录(不调用生成、不扣费) ---
+	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
+	SubjectFidelityEnabled bool // FEATURE_SUBJECT_FIDELITY,默认 off
 }
 
 // ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
@@ -116,6 +120,8 @@ func Load() Config {
 
 		BgReplaceEnabled:  getBoolEnv("FEATURE_BG_REPLACE", false),
 		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
+
+		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 	}
 }
 
