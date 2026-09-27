@@ -1,0 +1,96 @@
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 16px;
+  background: #101828;
+  color: #fff;
+  box-sizing: border-box;
+}
+
+@media (max-width: 899px) {
+  .bar {
+    height: 40px;
+    padding: 0 10px;
+  }
+  .quiet {
+    display: none;
+  }
+}
+
+.appName {
+  font-weight: 650;
+  font-size: 14px;
+  border-bottom: 2px solid #60a5fa;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+
+.slot,
+.chip,
+.badge,
+.menuBtn,
+.switchBtn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chip {
+  background: #1d2939;
+  max-width: 12rem;
+}
+
+.badge {
+  color: #e4e7ec;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  background: #fff;
+  color: #1c2430;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+}
+
+.wrap {
+  position: relative;
+}
+
+.note {
+  margin: 8px 0 0;
+  color: #66707d;
+  font-size: 12px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}

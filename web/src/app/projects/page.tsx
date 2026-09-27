@@ -89,18 +89,6 @@ export default function ProjectsPage() {
           <button className="primary" onClick={() => setShowCreate((v) => !v)}>
             {showCreate ? "收起" : "新建工程"}
           </button>
-          <button
-            onClick={async () => {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: "{}",
-              });
-              router.replace("/login");
-            }}
-          >
-            退出登录
-          </button>
         </div>
         {showCreate ? (
           <form onSubmit={create} style={{ marginTop: 12 }}>
