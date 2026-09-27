@@ -7,6 +7,7 @@ import { usePublishWorkbench } from "@/components/eco-nav/workbench";
 import { SubjectFidelityPanel } from "@/components/SubjectFidelityPanel";
 import { sourceLabel } from "@/lib/eco-nav";
 import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
+import { LightScenePanel } from "@/components/light-scene/Panel";
 
 interface Project {
   id: string;
@@ -726,6 +727,11 @@ export default function ProjectDetailPage() {
       </div>
 
       <BackgroundReplacePanel
+        projectId={id ?? ""}
+        inputs={inputs.map((item) => ({ id: item.id, snapshot_name: item.snapshot_name }))}
+      />
+
+      <LightScenePanel
         projectId={id ?? ""}
         inputs={inputs.map((item) => ({ id: item.id, snapshot_name: item.snapshot_name }))}
       />

@@ -6,7 +6,7 @@
 产品图是 public-ai 平台的**平等消费方**(standalone 无订单语境是一等来源):登录身份来自
 platform-identity,钱包与资金事实在 platform-billing,素材与任务事实在平台侧留痕;
 本应用只私有自己的领域数据(制作工程/输入引用/输出版本)。本仓库是 **I0 底座**:
-可运行应用 + 平台接入;生成能力(上传/保真/背景替换)由后续 FEAT 票实施,
+可运行应用 + 平台接入;生成能力(上传/保真/背景替换/光影场景)由后续 FEAT 票实施,
 所有受限路径 fail-closed,绝不伪造成功。
 
 ## 架构
@@ -105,6 +105,8 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `FEATURE_TEMPLATES` | 默认 0 | 产品图模板库开关(HUI-1705;off 时模板路由不注册=404 不可见;模板=确定性预设+参数引用集,零触发生成) |
 | `FEATURE_BG_REPLACE` | 默认 0 | AI 背景替换(HUI-1699;off 时路由不注册=404) |
 | `FEATURE_BG_CREATIVE` | 默认 0 | 创意背景路径;还需生成任务服务可用,否则界面保持关闭 |
+| `FEATURE_LIGHT_SCENE` | 默认 0 | 光影场景(HUI-1700;off 时路由不注册=404;不能绕过主体保护) |
+| `FEATURE_LIGHT_CREATIVE` | 默认 0 | 创意光影路径;还需生成任务服务可用,否则界面保持关闭 |
 | `FEATURE_SUBJECT_FIDELITY` | 默认 0 | 主体保真记录开关(HUI-1698;off 时路由不注册=404;on 也只记录保护范围与检查,不调用生成、不扣费,真实生成保真保持待确认) |
 
 Web(`web`,样例 `deploy/web.env.example`):
@@ -137,6 +139,10 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 背景替换开启但生成开关关闭 | 任务状态 `generation_unavailable`,质量 `unknown`,不落假图 |
 | 背景替换任务服务不可达 | 状态 `unknown`,再次提交不重新调用任务 |
 | 计费未返回报价金额 | 文案 **计费待确认**,不编造人民币 |
+| `FEATURE_LIGHT_SCENE=0` | **404** 光影场景路由不注册(不可见) |
+| 光影场景开启但没有真实供应商 | 任务状态 `failed` 或 `unknown`(待核对),不把输出编号写成已验证产品图 |
+| 光影场景主体保护失败或缺失 | **409** 不能选定或导出为已验证产品图 |
+| 客户端把光影质量标为通过 | **409** `quality_pass_unauthorized` |
 | 创意路径未接通(`FEATURE_BG_CREATIVE=0` 或生成不可用) | **422** `creative_unavailable` |
 | 无保真证据把质量标为通过 | **409** `quality_pass_unauthorized` |
 | 模板含生成参数字段(prompt/model/…) | **422** `forbidden_field`(模板库只收确定性预设参数) |
