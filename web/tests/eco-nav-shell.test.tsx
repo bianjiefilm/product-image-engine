@@ -37,6 +37,7 @@ describe("EcoTopNav 标记", () => {
     expect(html).toContain("个人");
     expect(html).toContain("¥12.50");
     expect(html).toContain("返回 活动 A");
+    expect(html).toContain('rel="noreferrer"');
     expect(html).not.toContain("project_id");
     expect(html).not.toMatch(/点数|修点/);
   });

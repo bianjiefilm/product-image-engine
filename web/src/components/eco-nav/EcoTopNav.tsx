@@ -76,7 +76,12 @@ export default function EcoTopNav({
               {apps.map((app) => (
                 <li key={app.appId}>
                   {app.href && !app.current ? (
-                    <a href={app.href} data-intent="manual_switch">
+                    <a
+                      href={app.href}
+                      data-intent="manual_switch"
+                      rel="noreferrer"
+                      referrerPolicy="no-referrer"
+                    >
                       {app.display}
                     </a>
                   ) : (
@@ -96,7 +101,13 @@ export default function EcoTopNav({
       </div>
 
       {returnTo ? (
-        <a className={styles.chip} href={returnTo.href} title={returnTo.title}>
+        <a
+          className={styles.chip}
+          href={returnTo.href}
+          title={returnTo.title}
+          rel="noreferrer"
+          referrerPolicy="no-referrer"
+        >
           返回 {returnTo.label}
         </a>
       ) : null}

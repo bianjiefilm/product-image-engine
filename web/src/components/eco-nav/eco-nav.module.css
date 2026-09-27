@@ -10,6 +10,7 @@
   background: #101828;
   color: #fff;
   box-sizing: border-box;
+  overflow-x: auto;
 }
 
 @media (max-width: 899px) {
@@ -19,6 +20,9 @@
   }
   .quiet {
     display: none;
+  }
+  .chip {
+    max-width: 6rem;
   }
 }
 
