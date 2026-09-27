@@ -140,7 +140,6 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
       input_id: inputId,
       mode,
       lighting_intent: intent,
-      explicit_creative: mode === "creative",
     });
     if (data?.job) setActive(data.job as Job);
   }
