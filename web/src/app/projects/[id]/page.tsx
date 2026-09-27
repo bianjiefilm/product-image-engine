@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { usePublishWorkbench } from "@/components/eco-nav/workbench";
+import { sourceLabel } from "@/lib/eco-nav";
 
 interface Project {
   id: string;
@@ -157,6 +159,11 @@ export default function ProjectDetailPage() {
     const aggRes = await fetch(`/api/bindings/${b.id}`);
     const agg = (await aggRes.json().catch(() => null)) as BindingAgg | null;
     setBindingAgg(agg);
+    const rt = await fetch(`/api/bindings/${b.id}/return-target`);
+    if (rt.ok) {
+      const rtData = await rt.json().catch(() => null);
+      if (typeof rtData?.url === "string" && rtData.url) setReturnURL(rtData.url);
+    }
     // 待采用新版:绑定下最新快照 ≠ 当前已采用快照。
     const snaps = agg?.snapshots ?? [];
     setPendingSnap(
@@ -501,6 +508,24 @@ export default function ProjectDetailPage() {
       setSaBusy(false);
     }
   }
+
+  const navLabel = sourceLabel({
+    sourceType: project?.source_type || "",
+    sourceRef: project?.source_ref || "",
+    campaignRef: bindingAgg?.source_context?.campaign_ref,
+    orderRef: bindingAgg?.source_context?.order_ref,
+  });
+  usePublishWorkbench(
+    project
+      ? {
+          sourceType: project.source_type || "standalone",
+          sourceLabel: navLabel,
+          sourceTenantId: null,
+          returnHref: returnURL || null,
+          enterpriseAssets: false,
+        }
+      : null
+  );
 
   if (loadError) {
     return (
