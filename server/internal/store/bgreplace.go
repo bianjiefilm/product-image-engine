@@ -173,7 +173,18 @@ func (s *Store) LatestBgJobForInput(ctx context.Context, tenantID, projectID, in
 	return job, err
 }
 
-// InvalidateOpenBgQuotes 使尚未提交的其他报价失效。
+// ClaimBgSubmit 把已确认且仍为 quoted 的任务抢成 submitting。
+// 只有抢到的请求可以调用平台任务。
+func (s *Store) ClaimBgSubmit(ctx context.Context, tenantID, id string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE bg_replace_jobs SET job_status=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND job_status=? AND quote_status=?`,
+		"submitting", Now().Format(time.RFC3339), id, tenantID, "quoted", "confirmed")
+	if err != nil {
+		return false, fmt.Errorf("store: 抢占背景替换提交失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
 func (s *Store) InvalidateOpenBgQuotes(ctx context.Context, tenantID, projectID, inputID, keepFingerprint string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE bg_replace_jobs SET quote_status='invalid', updated_at=?
 		WHERE tenant_id=? AND project_id=? AND input_id=? AND fingerprint!=? AND job_status='quoted'`,

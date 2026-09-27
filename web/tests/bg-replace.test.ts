@@ -25,11 +25,17 @@ describe("背景替换诚实文案", () => {
     expect(creativeChoice(true).enabled).toBe(true);
   });
 
-  it("改模式或改输入使报价失效", () => {
-    const prev = { mode: "fidelity", inputId: "pin_1" };
-    expect(quoteStale(prev, { mode: "creative", inputId: "pin_1" })).toBe(true);
-    expect(quoteStale(prev, { mode: "fidelity", inputId: "pin_2" })).toBe(true);
+  it("改模式、改输入或改背景方向使报价失效", () => {
+    const prev = { mode: "fidelity", inputId: "pin_1", intent: "室内" };
+    expect(quoteStale(prev, { mode: "creative", inputId: "pin_1", intent: "室内" })).toBe(true);
+    expect(quoteStale(prev, { mode: "fidelity", inputId: "pin_2", intent: "室内" })).toBe(true);
+    expect(quoteStale(prev, { mode: "fidelity", inputId: "pin_1", intent: "户外" })).toBe(true);
     expect(quoteStale(prev, prev)).toBe(false);
+  });
+
+  it("没有人民币符号的费用文案不当成已报价", () => {
+    expect(billingLine("已扣费")).toBe(BILLING_PENDING);
+    expect(billingLine("本次预计 ¥1.20")).toBe("本次预计 ¥1.20");
   });
 
   it("面板使用诚实文案,不宣称生产出图或计费已通过", () => {

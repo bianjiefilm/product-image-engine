@@ -152,6 +152,15 @@ func TestBackgroundReplaceFailureStaysFidelityAndExportReusesVersion(t *testing.
 	if st != http.StatusOK || job["quality"] != "fail" || job["mode"] != "fidelity" {
 		t.Fatalf("失败应留在保真模式: %d %#v", st, job)
 	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	againJob, _ := again["job"].(map[string]any)
+	if st != http.StatusOK || againJob["quality"] != "fail" || againJob["idempotent"] != true {
+		t.Fatalf("再次提交不得清掉失败结论: %d %#v", st, againJob)
+	}
+	st, unknown := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/quality", tok, map[string]any{"verdict": "unknown"})
+	if st != http.StatusConflict {
+		t.Fatalf("失败不能改回未知, got %d %v", st, unknown)
+	}
 	st, sel := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/select", tok, nil)
 	if st != http.StatusConflict {
 		t.Fatalf("失败不能选定交付, got %d %v", st, sel)
@@ -161,6 +170,56 @@ func TestBackgroundReplaceFailureStaysFidelityAndExportReusesVersion(t *testing.
 	list, _ := samples["samples"].([]any)
 	if st != http.StatusOK || len(list) != 2 {
 		t.Fatalf("验收样本 %d %#v", st, samples)
+	}
+}
+
+func TestBackgroundReplaceRejectedSubmitDoesNotRetry(t *testing.T) {
+	var calls atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "bad", http.StatusBadRequest)
+	}))
+	t.Cleanup(taskSrv.Close)
+	f := newFixture(t, func(c *config.Config) {
+		c.BgReplaceEnabled = true
+		c.GenerationEnabled = true
+		c.TaskBaseURL = taskSrv.URL
+		c.UploadBaseURL = "http://127.0.0.1:1"
+		c.UploadToken = "up"
+	})
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskSrv.URL, AppID: "product-image", Token: "task-tok"}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirm(t, tok, proj, in)
+	st, first := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	job, _ := first["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "unknown" {
+		t.Fatalf("拒绝应答应停在未知且不留下可重提状态, got %d %#v", st, job)
+	}
+	_, _ = f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	if calls.Load() != 1 {
+		t.Fatalf("4xx 后不得再次提交任务, calls=%d", calls.Load())
+	}
+}
+
+func TestBackgroundReplaceConfirmRejectsStaleForm(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements", tok, map[string]any{
+		"input_id": in, "background_intent": "室内",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开报价 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	st, conf := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, map[string]any{
+		"mode": "fidelity", "input_id": in, "background_intent": "户外",
+	})
+	if st != http.StatusConflict {
+		t.Fatalf("意图变化应拒绝确认, got %d %v", st, conf)
 	}
 }
 

@@ -23,6 +23,7 @@ const (
 	QuoteInvalid     = "invalid"
 
 	StatusQuoted                = "quoted"
+	StatusSubmitting            = "submitting"
 	StatusQueued                = "queued"
 	StatusRunning               = "running"
 	StatusUnknown               = "unknown"

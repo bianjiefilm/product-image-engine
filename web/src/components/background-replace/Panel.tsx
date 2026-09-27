@@ -25,6 +25,7 @@ interface Job {
   input_version: string;
   mode: string;
   protected_region: string;
+  background_intent: string;
   job_status: string;
   quality: string;
   quote_status: string;
@@ -96,9 +97,10 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
   const creative = creativeChoice(Boolean(caps?.creative_available));
   const bill = billingLine(caps?.billing_label ?? active?.billing_label);
   const quoted = active
-    ? { mode: active.mode, inputId: active.input_id }
+    ? { mode: active.mode, inputId: active.input_id, intent: active.background_intent }
     : null;
-  const stale = quoted ? quoteStale(quoted, { mode, inputId }) && active?.quote_status === "unconfirmed" : false;
+  const stale = quoted ? quoteStale(quoted, { mode, inputId, intent }) : false;
+  const formBody = { mode, input_id: inputId, background_intent: intent };
 
   async function send(path: string, method: string, body?: unknown) {
     setBusy(true);
@@ -183,16 +185,26 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
           创意{creative.enabled ? "" : "（未接通）"}
         </label>
       </div>
-      {stale ? <p className="banner warn">模式或输入已变,原报价失效,需要重新确认。</p> : null}
+      {stale ? <p className="banner warn">模式、输入或背景方向已变,原报价失效,请重新生成报价。</p> : null}
       {notice ? <p className="banner">{notice}</p> : null}
       <div className="row" style={{ marginTop: 12 }}>
         <Button type="button" disabled={busy || !inputId} onClick={openQuote}>
           生成报价
         </Button>
-        <Button type="button" variant="outline" disabled={busy || !active} onClick={() => act("confirm")}>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || !active || stale || active.quote_status !== "unconfirmed"}
+          onClick={() => act("confirm", formBody)}
+        >
           确认报价
         </Button>
-        <Button type="button" variant="secondary" disabled={busy || !active} onClick={() => act("submit")}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy || !active || stale || active.job_status !== "quoted" || active.quote_status !== "confirmed"}
+          onClick={() => act("submit", formBody)}
+        >
           提交背景替换
         </Button>
       </div>

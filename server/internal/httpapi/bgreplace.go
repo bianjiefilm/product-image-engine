@@ -129,8 +129,18 @@ func (s *Server) handleConfirmBgReplace(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	var req bgForm
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+	if bgFormMismatch(job, req) {
+		writeErr(w, http.StatusConflict, "quote_stale", "报价与当前模式或输入不一致,请重新生成报价")
+		return
+	}
 	if job.QuoteStatus == bgreplace.QuoteInvalid {
 		writeErr(w, http.StatusConflict, "quote_invalid", bgreplace.ErrQuoteInvalid.Error())
+		return
+	}
+	if job.JobStatus != bgreplace.StatusQuoted {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
 		return
 	}
 	job.QuoteStatus = bgreplace.QuoteConfirmed
@@ -147,33 +157,48 @@ func (s *Server) handleSubmitBgReplace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	existing := ""
-	if job.JobStatus != bgreplace.StatusQuoted {
-		existing = job.JobStatus
-	}
-	genSt, _ := s.Cfg.GenerationUsable()
-	decision, err := bgreplace.DecideSubmit(bgreplace.SubmitInput{
-		Quote:            quoteFromJob(job),
-		GenerationUsable: genSt == 0,
-		ExistingStatus:   existing,
-		SameFingerprint:  existing != "",
-	})
-	if err != nil {
-		writeErr(w, http.StatusConflict, "quote_blocked", err.Error())
+	var req bgForm
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+	if bgFormMismatch(job, req) {
+		writeErr(w, http.StatusConflict, "quote_stale", "报价与当前模式或输入不一致,请重新生成报价")
 		return
 	}
-	if decision.Idempotent || !decision.CallPlatformTask {
-		job.JobStatus = decision.Status
-		job.Evidence = decision.Evidence
-		job.Quality = decision.Quality
-		job.Pending = decision.Pending
-		job.AllowedUses = decision.AllowedUses
+	if job.JobStatus != bgreplace.StatusQuoted {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
+		return
+	}
+	if job.QuoteStatus != bgreplace.QuoteConfirmed {
+		writeErr(w, http.StatusConflict, "quote_blocked", bgreplace.ErrQuoteUnconfirmed.Error())
+		return
+	}
+	claimed, err := s.St.ClaimBgSubmit(r.Context(), p.Tenant(), job.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if !claimed {
+		latest, lerr := s.St.GetBgJob(r.Context(), p.Tenant(), job.ProjectID, job.ID)
+		if lerr != nil {
+			writeStoreErr(w, lerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(latest, true)})
+		return
+	}
+	genSt, _ := s.Cfg.GenerationUsable()
+	if genSt != 0 {
+		job.JobStatus = bgreplace.StatusGenerationUnavailable
+		job.Evidence = bgreplace.EvidenceNone
+		if job.Quality == "" {
+			job.Quality = bgreplace.QualityUnknown
+		}
 		job.Deliverable = false
+		job.Pending = append(job.Pending, "生成质量未验证")
 		if err := s.St.UpdateBgJob(r.Context(), job); err != nil {
 			writeStoreErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, decision.Idempotent)})
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, false)})
 		return
 	}
 	res, err := s.Tasks.Submit(r.Context(), platform.SubmitRequest{
@@ -185,12 +210,14 @@ func (s *Server) handleSubmitBgReplace(w http.ResponseWriter, r *http.Request) {
 			"tenant_id": p.Tenant(),
 		},
 	})
-	if errors.Is(err, platform.ErrUnavailable) {
+	if err != nil || strings.TrimSpace(res.TaskID) == "" {
 		job.JobStatus = bgreplace.StatusUnknown
 		job.Evidence = bgreplace.EvidenceNone
-		job.Quality = bgreplace.QualityUnknown
-		job.Pending = []string{"主体质量待确认", "供应商结果未知，先核对"}
+		if job.Quality == "" {
+			job.Quality = bgreplace.QualityUnknown
+		}
 		job.Deliverable = false
+		job.Pending = append(job.Pending, "供应商结果未知，先核对")
 		if uerr := s.St.UpdateBgJob(r.Context(), job); uerr != nil {
 			writeStoreErr(w, uerr)
 			return
@@ -198,15 +225,12 @@ func (s *Server) handleSubmitBgReplace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, false)})
 		return
 	}
-	if err != nil {
-		s.mapPlatformErr(w, "生成任务", err)
-		return
-	}
 	job.JobStatus = bgreplace.StatusQueued
 	job.PlatformTaskID = res.TaskID
 	job.Evidence = bgreplace.EvidencePlatformTask
-	job.Quality = bgreplace.QualityUnknown
-	job.Pending = decision.Pending
+	if job.Quality == "" {
+		job.Quality = bgreplace.QualityUnknown
+	}
 	job.Deliverable = false
 	if err := s.St.UpdateBgJob(r.Context(), job); err != nil {
 		writeStoreErr(w, err)
@@ -220,21 +244,24 @@ func (s *Server) handleRefreshBgReplace(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if job.PlatformTaskID == "" || job.JobStatus == bgreplace.StatusUnknown {
+	if job.PlatformTaskID == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
 		return
 	}
 	st, err := s.Tasks.Status(r.Context(), job.PlatformTaskID)
-	if errors.Is(err, platform.ErrUnavailable) {
-		job.JobStatus = bgreplace.StatusUnknown
-		if job.Quality == "" {
-			job.Quality = bgreplace.QualityUnknown
-		}
-		_ = s.St.UpdateBgJob(r.Context(), job)
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
-		return
-	}
 	if err != nil {
+		if errors.Is(err, platform.ErrUnavailable) {
+			job.JobStatus = bgreplace.StatusUnknown
+			if job.Quality == "" {
+				job.Quality = bgreplace.QualityUnknown
+			}
+			if uerr := s.St.UpdateBgJob(r.Context(), job); uerr != nil {
+				writeStoreErr(w, uerr)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
+			return
+		}
 		s.mapPlatformErr(w, "生成任务", err)
 		return
 	}
@@ -248,7 +275,9 @@ func (s *Server) handleRefreshBgReplace(w http.ResponseWriter, r *http.Request) 
 	case "failed":
 		job.JobStatus = bgreplace.StatusFailed
 	default:
-		job.JobStatus = bgreplace.StatusRunning
+		if job.JobStatus != bgreplace.StatusUnknown {
+			job.JobStatus = bgreplace.StatusRunning
+		}
 	}
 	if job.Quality == "" {
 		job.Quality = bgreplace.QualityUnknown
@@ -273,13 +302,15 @@ func (s *Server) handleBgQuality(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_request", "请求体必须是 JSON")
 		return
 	}
-	if req.Verdict == bgreplace.QualityPass {
-		writeErr(w, http.StatusConflict, "quality_pass_unauthorized", "没有保真证据,不能把主体质量标为通过")
+	if req.Verdict != bgreplace.QualityFail {
+		writeErr(w, http.StatusConflict, "quality_pass_unauthorized", "没有保真证据,只能记录失败,不能标为通过或未知")
 		return
 	}
-	ex := bgreplace.ApplyQuality(executionFromJob(job), req.Verdict)
-	job.Quality = ex.Quality
-	job.Mode = string(ex.Mode)
+	if job.Quality == bgreplace.QualityFail {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
+		return
+	}
+	job.Quality = bgreplace.QualityFail
 	job.Deliverable = false
 	if err := s.St.UpdateBgJob(r.Context(), job); err != nil {
 		writeStoreErr(w, err)
@@ -358,6 +389,25 @@ func (s *Server) bgView(job store.BgJob, idempotent bool) map[string]any {
 		"delivery_readiness": bgreplace.ReadinessInternal, "honesty": bgreplace.HonestyNotice,
 		"idempotent": idempotent,
 	}
+}
+
+type bgForm struct {
+	Mode             string `json:"mode"`
+	InputID          string `json:"input_id"`
+	BackgroundIntent string `json:"background_intent"`
+}
+
+func bgFormMismatch(job store.BgJob, req bgForm) bool {
+	if req.Mode != "" && req.Mode != job.Mode {
+		return true
+	}
+	if req.InputID != "" && req.InputID != job.InputID {
+		return true
+	}
+	if req.BackgroundIntent != "" && req.BackgroundIntent != job.BackgroundIntent {
+		return true
+	}
+	return false
 }
 
 func quoteFromJob(job store.BgJob) bgreplace.Quote {
