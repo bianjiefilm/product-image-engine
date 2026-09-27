@@ -160,6 +160,53 @@ func TestLightSceneRefreshIgnoresFilledOutputID(t *testing.T) {
 	}
 }
 
+func TestLightSceneFailedRefreshDoesNotRelabel(t *testing.T) {
+	var gets atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			_, _ = w.Write([]byte(`{"task_id":"task_light_fail","status":"pending"}`))
+			return
+		}
+		if gets.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"task_id":"task_light_fail","status":"failed"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"task_id":"task_light_fail","status":"succeeded","result":{"asset_id":"filled-output","vendor_receipt_id":"vr_filled"}}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	f := newFixture(t, func(c *config.Config) {
+		c.LightSceneEnabled = true
+		c.GenerationEnabled = true
+		c.TaskBaseURL = taskSrv.URL
+		c.UploadBaseURL = "http://127.0.0.1:1"
+		c.UploadToken = "up"
+	})
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskSrv.URL, AppID: "product-image", Token: "task-tok"}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmLight(t, tok, proj, in)
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "queued" {
+		t.Fatalf("应先排队, got %d %#v", st, job)
+	}
+	st, failed := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/refresh", tok, nil)
+	job, _ = failed["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["verified_product"] != false {
+		t.Fatalf("供应商失败应保持失败: %d %#v", st, job)
+	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/refresh", tok, nil)
+	job, _ = again["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["output_asset_id"] != "" || job["verified_product"] != false || job["quality"] == "pass" {
+		t.Fatalf("失败后不能借输出编号或回执改标: %d %#v", st, job)
+	}
+	if gets.Load() != 1 {
+		t.Fatalf("失败记录不应再次向供应商核对, gets=%d", gets.Load())
+	}
+}
+
 func TestLightSceneConfirmRejectsStaleIntent(t *testing.T) {
 	f := newFixture(t, func(c *config.Config) { c.LightSceneEnabled = true })
 	_, tok := f.loginOK(t)

@@ -254,6 +254,20 @@ func (s *Server) handleRefreshLightScene(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	if job.JobStatus == lightscene.StatusFailed || job.Quality == lightscene.QualityFail {
+		changed := job.JobStatus != lightscene.StatusFailed || job.VerifiedProduct || job.Deliverable
+		job.JobStatus = lightscene.StatusFailed
+		job.VerifiedProduct = false
+		job.Deliverable = false
+		if changed {
+			if err := s.St.UpdateLightJob(r.Context(), job); err != nil {
+				writeStoreErr(w, err)
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
+		return
+	}
 	if job.PlatformTaskID == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
 		return

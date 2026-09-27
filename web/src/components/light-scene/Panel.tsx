@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BILLING_PENDING, HONESTY, billingLine, creativeChoice, quoteStale } from "@/lib/light-scene";
+import {
+  BILLING_PENDING,
+  HONESTY,
+  billingLine,
+  creativeChoice,
+  quoteStale,
+  subjectProtectionLabel,
+} from "@/lib/light-scene";
 
 interface InputOpt {
   id: string;
@@ -159,7 +166,7 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
       <p>
         <Badge variant="warn">{bill || BILLING_PENDING}</Badge>{" "}
         <Badge>质量 {active?.quality ?? "unknown"}</Badge>{" "}
-        <Badge>主体保护待确认</Badge>
+        <Badge>{subjectProtectionLabel(active?.quality)}</Badge>
       </p>
       <div className="row">
         <div>
@@ -226,7 +233,7 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
             {active.output_version || ""}
           </p>
           <p>
-            主体保护:{active.verified_product ? "允许受限导出" : "未通过或待确认"}。允许用途:
+            主体保护:{subjectProtectionLabel(active.quality)}。允许用途:
             {(active.allowed_uses ?? []).join("、") || "预览"}。
           </p>
           <p>待确认:{(active.pending ?? []).join("；") || "无"}</p>
