@@ -16,6 +16,12 @@ export function creativeChoice(available: boolean): { enabled: boolean; reason: 
   return { enabled: true, reason: "" };
 }
 
+// subjectProtectionLabel 只转述失败或待确认。客户端不能自报主体保护通过。
+export function subjectProtectionLabel(quality?: string | null): string {
+  if ((quality ?? "").trim() === "fail") return "主体保护未通过";
+  return "主体保护待确认";
+}
+
 export function quoteStale(
   prev: { mode: string; inputId: string; intent?: string },
   next: { mode: string; inputId: string; intent?: string }

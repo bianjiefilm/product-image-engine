@@ -245,8 +245,11 @@ func SubjectGate(ex Execution, reports []fidelity.Report) Execution {
 	ex.VerifiedProduct = false
 	ex.Deliverable = false
 	ex.CreativeFallback = false
-	if ex.Quality == QualityFail {
-		ex.Pending = appendPending(ex.Pending, "主体保真未通过")
+	// 失败记录保持失败。不能借主体保护报告或回执改成已验证产品图。
+	if ex.Quality == QualityFail || ex.Status == StatusFailed {
+		if ex.Quality == QualityFail {
+			ex.Pending = appendPending(ex.Pending, "主体保真未通过")
+		}
 		return ex
 	}
 	for _, report := range reports {
@@ -258,7 +261,8 @@ func SubjectGate(ex Execution, reports []fidelity.Report) Execution {
 	}
 	exact := false
 	for _, report := range reports {
-		if report.ExactProduct && report.Verdict == fidelity.VerdictPass {
+		if report.ExactProduct && report.Verdict == fidelity.VerdictPass &&
+			report.RealGeneration == fidelity.RealGenerationAuthorized {
 			exact = true
 			break
 		}

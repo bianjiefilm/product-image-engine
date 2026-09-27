@@ -142,16 +142,28 @@ func TestVendorReceiptDoesNotOverrideFidelityOrOutputID(t *testing.T) {
 		Status: StatusUnknown, Quality: QualityUnknown, Mode: ModeFidelity,
 		OutputAssetID: "filled-output", VendorReceiptID: "",
 	}
-	exact := fidelity.Report{Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true}
-	gated := SubjectGate(ex, []fidelity.Report{exact})
-	if gated.VerifiedProduct || gated.Deliverable {
-		t.Fatalf("填好的输出编号不能当供应商回执: %+v", gated)
+	unauthorized := fidelity.Report{Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true}
+	gated := SubjectGate(ex, []fidelity.Report{unauthorized})
+	if gated.VerifiedProduct || gated.Deliverable || gated.Quality == QualityPass {
+		t.Fatalf("未授权的通过结论不能核实成片: %+v", gated)
 	}
 	withReceipt := ex
 	withReceipt.VendorReceiptID = "vr_1"
-	ok := SubjectGate(withReceipt, []fidelity.Report{exact})
+	stillFilled := SubjectGate(withReceipt, []fidelity.Report{unauthorized})
+	if stillFilled.VerifiedProduct || stillFilled.Quality == QualityPass {
+		t.Fatalf("填好的输出编号加上回执,没有真实授权仍不能核实: %+v", stillFilled)
+	}
+	authorized := unauthorized
+	authorized.RealGeneration = fidelity.RealGenerationAuthorized
+	ok := SubjectGate(withReceipt, []fidelity.Report{authorized})
 	if !ok.VerifiedProduct || ok.ProductionGenerationPassed || ok.BillingPassed {
-		t.Fatalf("有回执且主体通过时仍不能宣称生产出图或计费已通过: %+v", ok)
+		t.Fatalf("有回执且真实授权通过时仍不能宣称生产出图或计费已通过: %+v", ok)
+	}
+	failed := withReceipt
+	failed.Status = StatusFailed
+	relabel := SubjectGate(failed, []fidelity.Report{authorized})
+	if relabel.VerifiedProduct || relabel.Quality == QualityPass || relabel.Status != StatusFailed {
+		t.Fatalf("失败记录不能改成已验证产品图: %+v", relabel)
 	}
 }
 
@@ -168,7 +180,10 @@ func TestSelectAndExportDoNotStartGenerationOrVerifyFailure(t *testing.T) {
 	ready := SubjectGate(Execution{
 		Status: StatusUnknown, Quality: QualityUnknown, Mode: ModeFidelity,
 		VendorReceiptID: "vr_1", OutputAssetID: "asset", OutputVersion: "v-out",
-	}, []fidelity.Report{{Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true}})
+	}, []fidelity.Report{{
+		Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true,
+		RealGeneration: fidelity.RealGenerationAuthorized,
+	}})
 	picked, err := Select(ready)
 	if err != nil || picked.Selection != "selected" || picked.ProductionGenerationPassed {
 		t.Fatalf("选定不应宣称生产出图已通过: %+v %v", picked, err)

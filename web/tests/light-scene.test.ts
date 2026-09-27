@@ -7,6 +7,7 @@ import {
   billingLine,
   creativeChoice,
   quoteStale,
+  subjectProtectionLabel,
 } from "@/lib/light-scene";
 
 describe("光影场景诚实文案", () => {
@@ -29,6 +30,12 @@ describe("光影场景诚实文案", () => {
     expect(quoteStale(prev, { mode: "fidelity", inputId: "pin_2", intent: "侧光" })).toBe(true);
     expect(quoteStale(prev, { mode: "fidelity", inputId: "pin_1", intent: "逆光" })).toBe(true);
     expect(quoteStale(prev, prev)).toBe(false);
+  });
+
+  it("客户端不能把主体保护说成通过", () => {
+    expect(subjectProtectionLabel("fail")).toBe("主体保护未通过");
+    expect(subjectProtectionLabel("pass")).toBe("主体保护待确认");
+    expect(subjectProtectionLabel(undefined)).toBe("主体保护待确认");
   });
 
   it("面板不宣称主体保护或生产出图已通过", () => {
