@@ -8,6 +8,7 @@ import { SubjectFidelityPanel } from "@/components/SubjectFidelityPanel";
 import { sourceLabel } from "@/lib/eco-nav";
 import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 import { LightScenePanel } from "@/components/light-scene/Panel";
+import { TextImagePanel } from "@/components/text-image/Panel";
 
 interface Project {
   id: string;
@@ -730,6 +731,8 @@ export default function ProjectDetailPage() {
         projectId={id ?? ""}
         inputs={inputs.map((item) => ({ id: item.id, snapshot_name: item.snapshot_name }))}
       />
+
+      <TextImagePanel projectId={id ?? ""} />
 
       <LightScenePanel
         projectId={id ?? ""}
