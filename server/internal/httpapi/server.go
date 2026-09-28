@@ -171,6 +171,18 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/image-template-applies", s.guard(true, s.handleListTemplateApplies))
 	}
 
+	// 文字描述生成(HUI-1701 / FEAT-0202):开关 off → 路由不注册 = 404。
+	// 没有真实供应商时结果是失败或待确认,不出假图,不把计费或生产授权标成通过。
+	if s.Cfg.TextToImageEnabled {
+		mux.Handle("GET /api/v1/text-images/capabilities", s.guard(true, s.handleTextImageCapabilities))
+		mux.Handle("POST /api/v1/projects/{id}/text-images", s.guard(true, s.handleCreateTextImage))
+		mux.Handle("GET /api/v1/projects/{id}/text-images", s.guard(true, s.handleListTextImage))
+		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/confirm", s.guard(true, s.handleConfirmTextImage))
+		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/submit", s.guard(true, s.handleSubmitTextImage))
+		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/refresh", s.guard(true, s.handleRefreshTextImage))
+		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/claim", s.guard(true, s.handleClaimTextImage))
+	}
+
 	// 主体保真记录(HUI-1698 / FEAT-0199):不调用生成、不扣费。
 	// FEATURE_SUBJECT_FIDELITY off → 路由不注册 = 404 不可见。
 	if s.Cfg.SubjectFidelityEnabled {
@@ -299,6 +311,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"subject_fidelity": map[string]any{
 				"enabled":         s.Cfg.SubjectFidelityEnabled,
 				"real_generation": "unknown",
+			},
+			"text_to_image": map[string]any{
+				"enabled": s.Cfg.TextToImageEnabled, "photo_required": false,
+				"billing_passed": false, "production_authorized": false, "show_image": false,
 			},
 		},
 	}

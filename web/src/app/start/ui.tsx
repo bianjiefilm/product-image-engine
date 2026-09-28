@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ConsumePanel } from "@/components/billing/ConsumePanel";
 import { StartScreen } from "@/components/first-image/StartScreen";
+import { TextImagePanel } from "@/components/text-image/Panel";
 import { Button } from "@/components/ui/button";
 import { canGenerate, completionLevels, payerLabel, presentQuote, quoteFingerprint } from "@/lib/consume";
 import { firstScreen, PERSONAL_SCOPE, presentResult, resumeTask, statusLabel } from "@/lib/first-image";
@@ -387,6 +388,7 @@ export default function StartClient() {
       ) : null}
       {!same ? <p>刷新后的任务编号变了，请不要把它当成同一次生成。</p> : null}
       {notice ? <p>{notice}</p> : null}
+      <TextImagePanel projectId={projectId || undefined} />
       <p>
         <Link href="/projects">已有制作工程</Link>
       </p>
