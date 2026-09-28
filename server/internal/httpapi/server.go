@@ -183,6 +183,18 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/claim", s.guard(true, s.handleClaimTextImage))
 	}
 
+	// 展示视频(HUI-1702 / FEAT-0203):开关 off → 路由不注册 = 404。
+	// 没有真实视频供应商时结果是失败或待确认,不播放静图或假视频,不把计费或生产授权标成通过。
+	if s.Cfg.ShowcaseVideoEnabled {
+		mux.Handle("GET /api/v1/showcase-videos/capabilities", s.guard(true, s.handleShowcaseVideoCapabilities))
+		mux.Handle("POST /api/v1/projects/{id}/showcase-videos", s.guard(true, s.handleCreateShowcaseVideo))
+		mux.Handle("GET /api/v1/projects/{id}/showcase-videos", s.guard(true, s.handleListShowcaseVideo))
+		mux.Handle("POST /api/v1/projects/{id}/showcase-videos/{jobId}/confirm", s.guard(true, s.handleConfirmShowcaseVideo))
+		mux.Handle("POST /api/v1/projects/{id}/showcase-videos/{jobId}/submit", s.guard(true, s.handleSubmitShowcaseVideo))
+		mux.Handle("POST /api/v1/projects/{id}/showcase-videos/{jobId}/refresh", s.guard(true, s.handleRefreshShowcaseVideo))
+		mux.Handle("POST /api/v1/projects/{id}/showcase-videos/{jobId}/claim", s.guard(true, s.handleClaimShowcaseVideo))
+	}
+
 	// 主体保真记录(HUI-1698 / FEAT-0199):不调用生成、不扣费。
 	// FEATURE_SUBJECT_FIDELITY off → 路由不注册 = 404 不可见。
 	if s.Cfg.SubjectFidelityEnabled {
@@ -315,6 +327,12 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"text_to_image": map[string]any{
 				"enabled": s.Cfg.TextToImageEnabled, "photo_required": false,
 				"billing_passed": false, "production_authorized": false, "show_image": false,
+			},
+			"showcase_video": map[string]any{
+				"enabled": s.Cfg.ShowcaseVideoEnabled, "image_required": true,
+				"camera_moves":   []string{"360", "scene"},
+				"billing_passed": false, "production_authorized": false,
+				"show_video": false, "play_still": false,
 			},
 		},
 	}

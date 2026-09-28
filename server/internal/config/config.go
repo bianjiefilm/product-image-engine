@@ -76,6 +76,10 @@ type Config struct {
 	// --- HUI-1701 FEAT-0202:文字描述生成入口 ---
 	// 默认开放入口,方便只写文字开始。没有真实供应商时只记失败或待确认,不出图、不扣费。
 	TextToImageEnabled bool // FEATURE_TEXT_TO_IMAGE,默认 on
+
+	// --- HUI-1702 FEAT-0203:已有产品图发起展示视频 ---
+	// 默认开放入口。没有真实视频供应商时只记失败或待确认,不播放静图或假视频,不扣费。
+	ShowcaseVideoEnabled bool // FEATURE_SHOWCASE_VIDEO,默认 on
 }
 
 // ReceiptKeyFor 返回对端来源 app 的回执 HMAC 密钥(fail-closed:未登记 → 空)。
@@ -137,6 +141,8 @@ func Load() Config {
 		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 
 		TextToImageEnabled: getBoolEnv("FEATURE_TEXT_TO_IMAGE", true),
+
+		ShowcaseVideoEnabled: getBoolEnv("FEATURE_SHOWCASE_VIDEO", true),
 	}
 }
 
