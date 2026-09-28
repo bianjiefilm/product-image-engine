@@ -66,7 +66,7 @@ func TestBindingUniqueKeyIsFiveTuple(t *testing.T) {
 	}
 	// source_ref 相同但 source_app 不同 → 不同绑定。
 	b3, err := s.CreateBinding(ctx, SourceBinding{
-		TenantScope: "tenant-77", SourceApp: "campaign-tool", SourceRef: "order-project-a",
+		TenantScope: "tenant-77", SourceApp: "touch-engine", SourceRef: "order-project-a",
 		TargetApp: "product-image", Purpose: "主图", ProjectID: p2.ID,
 	})
 	if err != nil {
