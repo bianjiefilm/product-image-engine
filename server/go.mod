@@ -2,7 +2,10 @@ module github.com/bianjiefilm/product-image-engine/server
 
 go 1.26.0
 
+// 正式依赖是 sdk/go 的版本，不写 sibling replace。
+// 在打出可获取的 sdk/go/vX.Y.Z 之前，这里是 v0.0.0，由生态根 go.work 指到本地目录。
 require (
+	github.com/bianjiefilm/public-ai/sdk/go v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	golang.org/x/image v0.46.0
 	modernc.org/sqlite v1.38.0

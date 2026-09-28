@@ -61,7 +61,7 @@ func deriveTenant(email string) string {
 	return "acct_" + hex.EncodeToString(sum[:])[:16]
 }
 
-// handoffDoc 构造交接文档(target_app=本应用默认 ID product-image-engine)。
+// handoffDoc 构造交接文档(target_app=本应用默认 ID product-image)。
 // sourceRef 是来源工程定位:同一来源工程的多次交接(新版需求)必须相同,
 // 五元组(tenant+source_app+source_ref+target_app+purpose)才指向同一绑定。
 func handoffDoc(id, sourceApp, kind, tenant, sourceRef, bindingRef, rev, brief string) map[string]any {
@@ -69,7 +69,7 @@ func handoffDoc(id, sourceApp, kind, tenant, sourceRef, bindingRef, rev, brief s
 		"schema_version":     "order-handoff/v1",
 		"handoff_id":         id,
 		"source_app":         sourceApp,
-		"target_app":         "product-image-engine",
+		"target_app":         "product-image",
 		"principal_id":       "principal-pay-1",
 		"brief_version":      brief,
 		"source_project_ref": sourceRef,
@@ -128,10 +128,10 @@ func mustRegistry(t *testing.T, ordersReceiptURL string) *appregistry.Manifest {
 			 "capabilities": [{"name": "order.handoff", "menu_visible": true, "requires_billing": false}],
 			 "launch_targets": [{"target_id": "ti-orders-web", "kind": "launch", "url": "https://guanlan-order.example.invalid/launch"}],
 			 "receipt_targets": [{"target_id": "rc-orders-main", "kind": "receipt", "url": %q}]},
-			{"app_id": "campaign-tool", "display_name": "活动", "enabled": false,
+			{"app_id": "touch-engine", "display_name": "活动", "enabled": false,
 			 "supported_source_kinds": ["campaign", "standalone"],
 			 "capabilities": [{"name": "image.generate", "menu_visible": false, "requires_billing": true}],
-			 "launch_targets": [{"target_id": "ti-campaign-web", "kind": "launch", "url": "https://campaign-tool.example.invalid/launch"}],
+			 "launch_targets": [{"target_id": "ti-campaign-web", "kind": "launch", "url": "https://touch-engine.example.invalid/launch"}],
 			 "receipt_targets": []}
 		]
 	}`, ordersReceiptURL)
@@ -270,7 +270,7 @@ func TestAcceptHandoffThreeSources(t *testing.T) {
 	tenant := deriveTenant("jia@x.com")
 
 	cases := []struct{ kind, sourceApp string }{
-		{"order", "orders"}, {"campaign", "campaign-tool"}, {"standalone", "campaign-tool"},
+		{"order", "orders"}, {"campaign", "touch-engine"}, {"standalone", "touch-engine"},
 	}
 	for i, c := range cases {
 		doc := handoffDoc(fmt.Sprintf("h-3src-%d", i), c.sourceApp, c.kind, tenant,
@@ -328,7 +328,7 @@ func TestAcceptHandoffNegatives(t *testing.T) {
 	tenant := deriveTenant("jia@x.com")
 
 	t.Run("campaign 错租户 403", func(t *testing.T) {
-		doc := handoffDoc("h-neg-tenant", "campaign-tool", "campaign", "tenant-other-99", "src-neg", "bind-neg-1", "rev-1", "brief-1")
+		doc := handoffDoc("h-neg-tenant", "touch-engine", "campaign", "tenant-other-99", "src-neg", "bind-neg-1", "rev-1", "brief-1")
 		st, resp := f.do(t, "POST", "/api/v1/handoffs/accept", tok, acceptBody(doc, "主图"))
 		if st != 403 {
 			t.Fatalf("错租户应 403: %d %v", st, resp)
@@ -349,7 +349,7 @@ func TestAcceptHandoffNegatives(t *testing.T) {
 		}
 	})
 	t.Run("不支持 profile 明确拒绝", func(t *testing.T) {
-		doc := handoffDoc("h-neg-v2", "campaign-tool", "standalone", tenant, "src-neg", "bind-neg-3", "rev-1", "brief-1")
+		doc := handoffDoc("h-neg-v2", "touch-engine", "standalone", tenant, "src-neg", "bind-neg-3", "rev-1", "brief-1")
 		prof := doc["source_profile"].(map[string]any)
 		prof["profile_version"] = "source-profile/v2"
 		st, resp := f.do(t, "POST", "/api/v1/handoffs/accept", tok, acceptBody(doc, "主图"))
@@ -361,7 +361,7 @@ func TestAcceptHandoffNegatives(t *testing.T) {
 		}
 	})
 	t.Run("standalone 伪造订单(含 order_ref)拒绝", func(t *testing.T) {
-		doc := handoffDoc("h-neg-fake", "campaign-tool", "standalone", tenant, "src-neg", "bind-neg-4", "rev-1", "brief-1")
+		doc := handoffDoc("h-neg-fake", "touch-engine", "standalone", tenant, "src-neg", "bind-neg-4", "rev-1", "brief-1")
 		doc["order_ref"] = "100234"
 		st, _ := f.do(t, "POST", "/api/v1/handoffs/accept", tok, acceptBody(doc, "主图"))
 		if st != 400 {
@@ -607,7 +607,7 @@ func TestReceiptDeliveryIdempotentResendRevokedNoGeneration(t *testing.T) {
 	eco.mu.Lock()
 	ev := eco.events[0]
 	eco.mu.Unlock()
-	if ev["source_app"] != "product-image-engine" || ev["target_app"] != "orders" {
+	if ev["source_app"] != "product-image" || ev["target_app"] != "orders" {
 		t.Fatalf("回执方向错误: %v", ev)
 	}
 	if ev["handoff_id"] != "h-rcpt-1" || ev["principal_id"] != "principal-pay-1" {
@@ -814,18 +814,18 @@ func TestHMACFrameMatchesCounterpart(t *testing.T) {
 	secret := []byte("k")
 	ts := time.Unix(1700000000, 0).Unix()
 	raw := []byte(`{"a":1}`)
-	sig := receiptdoc.FrameSign(secret, ts, "product-image-engine", "orders", "evt-1", raw)
+	sig := receiptdoc.FrameSign(secret, ts, "product-image", "orders", "evt-1", raw)
 	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte(fmt.Sprintf("%d\n%s\n%s\n%s\n", ts, "product-image-engine", "orders", "evt-1")))
+	_, _ = mac.Write([]byte(fmt.Sprintf("%d\n%s\n%s\n%s\n", ts, "product-image", "orders", "evt-1")))
 	_, _ = mac.Write(raw)
 	want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 	if sig != want {
 		t.Fatalf("§8 帧签名与对端语义不一致: %s vs %s", sig, want)
 	}
-	if err := receiptdoc.FrameVerify(secret, fmt.Sprint(ts), sig, "product-image-engine", "orders", "evt-1", raw, time.Unix(ts, 0).Add(100*time.Second)); err != nil {
+	if err := receiptdoc.FrameVerify(secret, fmt.Sprint(ts), sig, "product-image", "orders", "evt-1", raw, time.Unix(ts, 0).Add(100*time.Second)); err != nil {
 		t.Fatal("自验签应通过: " + err.Error())
 	}
-	if err := receiptdoc.FrameVerify(secret, fmt.Sprint(ts-301), sig, "product-image-engine", "orders", "evt-1", raw, time.Unix(ts, 0)); err == nil {
+	if err := receiptdoc.FrameVerify(secret, fmt.Sprint(ts-301), sig, "product-image", "orders", "evt-1", raw, time.Unix(ts, 0)); err == nil {
 		t.Fatal("超 300s 偏差应拒绝")
 	}
 }

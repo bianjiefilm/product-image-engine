@@ -15,7 +15,7 @@ const goodManifest = `{
 		 "capabilities": [{"name": "order.handoff", "menu_visible": true, "requires_billing": false}],
 		 "launch_targets": [{"target_id": "ti-orders-web", "kind": "launch", "url": "https://orders.example.invalid/launch"}],
 		 "receipt_targets": [{"target_id": "rc-orders", "kind": "receipt", "url": "https://orders.example.invalid/receipt"}]},
-		{"app_id": "campaign-tool", "display_name": "活动", "enabled": false,
+		{"app_id": "touch-engine", "display_name": "活动", "enabled": false,
 		 "supported_source_kinds": ["campaign", "standalone"],
 		 "capabilities": [{"name": "image.generate", "menu_visible": false, "requires_billing": true}],
 		 "launch_targets": [{"target_id": "ti-camp", "kind": "launch", "url": "http://127.0.0.1:19999/launch"}],
@@ -44,7 +44,7 @@ func TestLoadManifestAndResolve(t *testing.T) {
 	if rc, err := m.FirstReceiptTarget("orders"); err != nil || rc.TargetID != "rc-orders" {
 		t.Fatalf("FirstReceiptTarget: %v %v", rc, err)
 	}
-	if _, err := m.FirstReceiptTarget("campaign-tool"); err == nil {
+	if _, err := m.FirstReceiptTarget("touch-engine"); err == nil {
 		t.Fatal("无 receipt target 应报错(fail-closed)")
 	}
 }

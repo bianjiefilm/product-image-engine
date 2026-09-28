@@ -17,21 +17,21 @@
       ]
     },
     {
-      "app_id": "campaign-tool",
-      "display_name": "碰一碰活动工具(样例,未立项)",
+      "app_id": "touch-engine",
+      "display_name": "碰一碰(样例,未启用)",
       "enabled": false,
       "supported_source_kinds": ["campaign", "standalone"],
       "capabilities": [
         {"name": "image.generate", "menu_visible": false, "requires_billing": true}
       ],
       "launch_targets": [
-        {"target_id": "ti-campaign-web", "kind": "launch", "url": "https://campaign-tool.example.invalid/launch"}
+        {"target_id": "ti-touch-engine-web", "kind": "launch", "url": "https://touch-engine.example.invalid/launch"}
       ],
       "receipt_targets": []
     },
     {
-      "app_id": "product-image-engine",
-      "display_name": "产品图引擎(本应用)",
+      "app_id": "product-image",
+      "display_name": "产品图(本应用)",
       "enabled": true,
       "supported_source_kinds": ["order", "standalone", "campaign"],
       "capabilities": [
