@@ -8,6 +8,7 @@ import { SubjectFidelityPanel } from "@/components/SubjectFidelityPanel";
 import { sourceLabel } from "@/lib/eco-nav";
 import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 import { LightScenePanel } from "@/components/light-scene/Panel";
+import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
 import { TextImagePanel } from "@/components/text-image/Panel";
 
 interface Project {
@@ -733,6 +734,20 @@ export default function ProjectDetailPage() {
       />
 
       <TextImagePanel projectId={id ?? ""} />
+
+      <ShowcaseVideoPanel
+        projectId={id ?? ""}
+        images={[
+          ...inputs.map((item) => ({
+            id: item.id,
+            label: item.snapshot_name || item.platform_asset_id || item.id,
+          })),
+          ...outputs.map((item) => ({
+            id: item.id,
+            label: item.file_name || item.platform_asset_id || item.id,
+          })),
+        ]}
+      />
 
       <LightScenePanel
         projectId={id ?? ""}
