@@ -43,11 +43,19 @@ type TokenPair struct {
 
 // Principal 由已验证 JWT 提取的平台身份事实。
 type Principal struct {
-	UserID         string   `json:"user_id"`    // sub(usr_…)
-	AccountID      string   `json:"account_id"` // acct_…
-	TenantID       string   `json:"tenant_id"`  // 可空
-	Roles          []string `json:"roles,omitempty"`
-	OrgMemberships []string `json:"org_memberships,omitempty"`
+	UserID         string     `json:"user_id"`    // sub(usr_…)
+	AccountID      string     `json:"account_id"` // acct_…
+	TenantID       string     `json:"tenant_id"`  // 可空
+	Roles          []string   `json:"roles,omitempty"`
+	OrgMemberships []string   `json:"org_memberships,omitempty"`
+	OrgPayers      []OrgPayer `json:"org_payers,omitempty"`
+}
+
+// OrgPayer 是令牌里已经验证过的组织付款主体引用，不含余额。
+type OrgPayer struct {
+	TenantID   string `json:"tenant_id"`
+	AccountRef string `json:"account_ref"`
+	Display    string `json:"display"`
 }
 
 // Tenant 返回本产品的租户作用域:tenant_id 优先,空则回退 account_id。
@@ -293,11 +301,34 @@ func (v *Verifier) verifyWithKeys(token string, keys map[string][]byte) (Princip
 	p := Principal{
 		UserID: str("sub"), AccountID: str("account_id"), TenantID: str("tenant_id"),
 		Roles: roles, OrgMemberships: stringListClaim(mc["org_memberships"]),
+		OrgPayers: orgPayersClaim(mc["org_payers"]),
 	}
 	if p.UserID == "" || p.AccountID == "" {
 		return Principal{}, fmt.Errorf("%w: 令牌缺少 sub/account_id", ErrUnauthenticated)
 	}
 	return p, nil
+}
+
+func orgPayersClaim(raw any) []OrgPayer {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]OrgPayer, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		tenant, _ := m["tenant_id"].(string)
+		account, _ := m["account_ref"].(string)
+		display, _ := m["display"].(string)
+		if strings.TrimSpace(tenant) == "" || strings.TrimSpace(account) == "" {
+			continue
+		}
+		out = append(out, OrgPayer{TenantID: tenant, AccountRef: account, Display: display})
+	}
+	return out
 }
 
 func stringListClaim(raw any) []string {

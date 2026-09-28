@@ -29,6 +29,8 @@ type Server struct {
 	Tasks   *platform.TaskClient
 	Uploads *platform.UploadClient
 	Billing *platform.BillingClient
+	// Consume 是本地报价顾问。nil 表示没有真实报价，也不能据此扣款。
+	Consume *ConsumeAdvisor
 	// Registry 应用登记表(HUI-1745 I1;nil 时回执/返回来源 fail-closed)。
 	Registry *appregistry.Manifest
 	// Presets 尺寸适配预设集(HUI-1703 FEAT-0204;main 装配,内嵌默认或
@@ -94,6 +96,10 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/receipts/{id}/resend", s.guard(true, s.handleResendReceipt))
 
 	mux.Handle("GET /api/v1/billing/balance", s.guard(true, s.handleBillingBalance))
+	mux.Handle("POST /api/v1/billing/consume/quote", s.guard(true, s.handleConsumeQuote))
+	mux.Handle("POST /api/v1/billing/consume/confirm", s.guard(true, s.handleConsumeConfirm))
+	mux.Handle("POST /api/v1/billing/consume/return", s.guard(true, s.handleConsumeReturn))
+	mux.Handle("POST /api/v1/billing/consume/recover", s.guard(true, s.handleConsumeRecover))
 
 	// 批量生成批次编排(HUI-1704 / FEAT-0205):创建/提交/收集/重试/取消。
 	// 生成门在提交步把关(FEATURE_GENERATION_ENABLED off → 创建成功、提交全 blocked)。

@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ConsumePanel } from "@/components/billing/ConsumePanel";
 import { StartScreen } from "@/components/first-image/StartScreen";
 import { Button } from "@/components/ui/button";
+import { canGenerate, completionLevels, payerLabel, presentQuote, quoteFingerprint } from "@/lib/consume";
 import { firstScreen, PERSONAL_SCOPE, presentResult, resumeTask, statusLabel } from "@/lib/first-image";
 
 type SessionBody = {
@@ -47,6 +49,11 @@ export default function StartClient() {
   const [href, setHref] = useState(returnHref);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [quotedPayer, setQuotedPayer] = useState("");
+  const [quotedPresentation, setQuotedPresentation] = useState("");
+  const [quotedGenerate, setQuotedGenerate] = useState(false);
+  const [quotedMust, setQuotedMust] = useState(false);
+  const [quotedTopup, setQuotedTopup] = useState<{ entry: string; returnTarget: string; quoteRef: string } | null>(null);
   const [form, setForm] = useState({
     name: "我的产品图",
     usage_kind: "电商主图",
@@ -189,6 +196,49 @@ export default function StartClient() {
     }
   }
 
+  useEffect(() => {
+    setQuotedGenerate(false);
+    if (!projectId) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch("/api/billing/consume/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          source_type: sourced ? source : "",
+          source_ref: sourceRef,
+          source_tenant_id: sourceTenant,
+          image_count: 1,
+          resolution: `${form.width_px}x${form.height_px}`,
+          capability: "image.generate.standard",
+          pricing_version: "pricing-2026-09",
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        payer_display?: string;
+        presentation?: string;
+        generate_allowed?: boolean;
+        must_requote?: boolean;
+        topup?: { entry?: string; return_target?: string; quote_ref?: string };
+      } | null;
+      if (cancelled || !data?.payer_display) return;
+      setQuotedPayer(data.payer_display);
+      setQuotedPresentation(data.presentation || "");
+      setQuotedGenerate(data.generate_allowed === true);
+      setQuotedMust(data.must_requote === true);
+      const topup = data.topup;
+      setQuotedTopup(
+        topup?.entry && topup.return_target && topup.quote_ref
+          ? { entry: topup.entry, returnTarget: topup.return_target, quoteRef: topup.quote_ref }
+          : null
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, form.width_px, form.height_px, source, sourceRef, sourceTenant, sourced]);
+
   async function refreshTask() {
     if (!projectId) return;
     setBusy(true);
@@ -206,6 +256,27 @@ export default function StartClient() {
   }
 
   const sourceLabel = sourced ? `${source === "order" ? "订单" : "活动"} ${sourceRef}` : "";
+  const topupPage = search.get("topup") || "";
+  const quoteRef = search.get("quote_ref") || "";
+  const payerDisplay = payerLabel({
+    sourceType: source,
+    personalDisplay: "个人付款",
+    verifiedOrgDisplay: sourced ? "组织付款" : undefined,
+  });
+  const fingerprint = quoteFingerprint({
+    payerAccountRef: sourced ? sourceTenant || "organization" : "personal",
+    imageCount: 1,
+    resolution: `${form.width_px}x${form.height_px}`,
+    capability: form.usage_kind || "image.generate.standard",
+    pricingVersion: "pricing-2026-09",
+  });
+  const quoteDecision = canGenerate({
+    confirmedFingerprint: "",
+    currentFingerprint: fingerprint,
+    entitled: false,
+    fundsShort: false,
+    priced: false,
+  });
 
   return (
     <StartScreen
@@ -227,6 +298,46 @@ export default function StartClient() {
       returnHref={href || undefined}
       authorizedAssets={assets}
     >
+      <ConsumePanel
+        payerDisplay={quotedPayer || payerDisplay}
+        presentation={quotedPresentation || presentQuote({})}
+        generateAllowed={topupPage === "success" ? false : quotedGenerate}
+        onReconfirm={() => {
+          if (!projectId || topupPage === "success") return;
+          void fetch("/api/billing/consume/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_id: projectId,
+              source_type: sourced ? source : "",
+              source_ref: sourceRef,
+              source_tenant_id: sourceTenant,
+              image_count: 1,
+              resolution: `${form.width_px}x${form.height_px}`,
+              capability: "image.generate.standard",
+              pricing_version: "pricing-2026-09",
+            }),
+          })
+            .then((res) => res.json())
+            .then((data: { generate_allowed?: boolean; must_requote?: boolean; presentation?: string }) => {
+              setQuotedGenerate(data.generate_allowed === true && topupPage !== "success");
+              setQuotedMust(data.must_requote === true);
+              if (data.presentation) setQuotedPresentation(data.presentation);
+            })
+            .catch(() => setQuotedGenerate(false));
+        }}
+        mustRequote={quotedMust || quoteDecision.mustRequote || topupPage === "success"}
+        topup={
+          topupPage === "success"
+            ? {
+                entry: "billing_center",
+                returnTarget: "ti-product-image-engine-web",
+                quoteRef: quoteRef || quotedTopup?.quoteRef || "待重新报价",
+              }
+            : quotedTopup
+        }
+        levels={completionLevels()}
+      />
       {sourced ? null : (
         <form onSubmit={begin}>
           <label>
