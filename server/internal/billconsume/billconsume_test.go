@@ -139,6 +139,21 @@ func TestQuoteMustBeReconfirmedAfterChange(t *testing.T) {
 	if switched.GenerateAllowed || !switched.MustRequote {
 		t.Fatalf("切换付款主体后仍可生成: %+v", switched)
 	}
+	sameModel := fact
+	sameModel.Model = fact.Capability
+	if Fingerprint(payer, fact) != Fingerprint(payer, sameModel) {
+		t.Fatal("缺省模型应等于能力，不能无故使报价失效")
+	}
+	otherModel := fact
+	otherModel.Model = "painter.premium"
+	if got := Confirm(fp, Fingerprint(payer, otherModel)); got.GenerateAllowed || !got.MustRequote {
+		t.Fatalf("换模型后仍可生成: %+v", got)
+	}
+	otherSize := fact
+	otherSize.Size = "640x640"
+	if got := Confirm(fp, Fingerprint(payer, otherSize)); got.GenerateAllowed || !got.MustRequote {
+		t.Fatalf("换尺寸后仍可生成: %+v", got)
+	}
 }
 
 func TestInsufficientBalanceOnlyHandsOffTopup(t *testing.T) {
@@ -182,6 +197,12 @@ func TestUnknownLooksUpOriginalTaskAndCharge(t *testing.T) {
 		Status: "unknown", TaskID: "task_1", ChargeRef: "chg_1", IdempotencyKey: "idem-1", ReplacementKey: "idem-2",
 	}); err != ErrIdempotencyChanged {
 		t.Fatalf("换键应拒绝, got %v", err)
+	}
+	for _, status := range []string{"lost", "lost_response", "retry"} {
+		got, err := Recover(Attempt{Status: status, TaskID: "task_1", IdempotencyKey: "idem-1"})
+		if err != nil || got.Resubmit || got.Recharge || got.TaskID != "task_1" || got.ChargeRef != "" {
+			t.Fatalf("%s 应挂回原任务且不新扣费: %+v %v", status, got, err)
+		}
 	}
 }
 

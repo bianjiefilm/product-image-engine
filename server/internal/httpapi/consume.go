@@ -29,6 +29,8 @@ type consumeReq struct {
 	SourceTenantID  string `json:"source_tenant_id"`
 	ImageCount      int    `json:"image_count"`
 	Resolution      string `json:"resolution"`
+	Size            string `json:"size"`
+	Model           string `json:"model"`
 	Capability      string `json:"capability"`
 	PricingVersion  string `json:"pricing_version"`
 	Phone           string `json:"phone"`
@@ -118,7 +120,7 @@ func (s *Server) handleConsumeConfirm(w http.ResponseWriter, r *http.Request) {
 		s.writeQuoteErr(w, payer, fact, err)
 		return
 	}
-	s.refreshBalance(r.Context(), payer, &q)
+	s.refreshBalance(r.Context(), proj.TenantID, payer, &q)
 	if err := s.allowCapability(fact.Capability, q); err != nil {
 		writeErr(w, http.StatusConflict, "entitlement_missing", "有现金也不表示已开通该能力")
 		return
@@ -190,11 +192,13 @@ func (s *Server) handleConsumeReturn(w http.ResponseWriter, r *http.Request) {
 		"charged":               nil,
 		"balance_known":         false,
 		"settlement":            billassemble.SettlementUnknown,
+		"funds_state":           s.returnFundsState(),
+		"billing_passed":        false,
 		"billing_pass":          levels.Billing,
 		"production_authorized": levels.ProductionAuthorized,
 	}
 	if s.Bills != nil {
-		bal, balErr := s.Bills.ReadBalance(r.Context(), payer.AccountRef)
+		bal, balErr := s.readPayerBalance(r.Context(), proj.TenantID, payer.AccountRef)
 		if balErr == nil {
 			body["balance_known"] = bal.Known
 		}
@@ -229,6 +233,13 @@ func (s *Server) handleConsumeRecover(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "lookup_required", "先查原任务和原扣费，不能重新生成或重新扣费")
 		return
 	}
+	if _, err := billconsume.Recover(billconsume.Attempt{
+		Status: req.Status, TaskID: saved.TaskID, ChargeRef: saved.ChargeRef,
+		IdempotencyKey: saved.IdempotencyKey, ReplacementKey: req.ReplacementKey,
+	}); err != nil {
+		writeErr(w, http.StatusConflict, "lookup_required", "先查原任务和原扣费，不能重新生成或重新扣费")
+		return
+	}
 	if strings.TrimSpace(saved.TaskID) == "" || s.Bills == nil {
 		writeErr(w, http.StatusConflict, "lookup_required", "先查原任务和原扣费，不能重新生成或重新扣费")
 		return
@@ -256,7 +267,7 @@ func (s *Server) handleConsumeRecover(w http.ResponseWriter, r *http.Request) {
 		"resubmit": false, "recharge": false, "regenerate": result.Regenerate,
 		"task_id": saved.TaskID, "charge_ref": chargeRef,
 		"idempotency_key": saved.IdempotencyKey,
-		"charged":         nil, "settlement": result.Settlement,
+		"charged":         nil, "settlement": result.Settlement, "funds_state": billassemble.FundsNotSent,
 		"billing_passed":        result.BillingPassed,
 		"billing_pass":          levels.Billing,
 		"production_authorized": levels.ProductionAuthorized,
@@ -299,6 +310,11 @@ func (s *Server) openConsume(w http.ResponseWriter, r *http.Request) (consumeReq
 		return consumeReq{}, store.Project{}, billconsume.Payer{}, billconsume.UsageFact{}, false
 	}
 	fact, err := billconsume.NewUsageFact(req.ImageCount, req.Resolution, req.Capability, billassemble.PricingVersion)
+	if err != nil {
+		writeConsumeErr(w, err)
+		return consumeReq{}, store.Project{}, billconsume.Payer{}, billconsume.UsageFact{}, false
+	}
+	fact, err = fact.WithChoice(req.Model, req.Size)
 	if err != nil {
 		writeConsumeErr(w, err)
 		return consumeReq{}, store.Project{}, billconsume.Payer{}, billconsume.UsageFact{}, false
@@ -348,17 +364,32 @@ func (s *Server) quotePort(ctx context.Context, payer billconsume.Payer, fact bi
 		return billassemble.QuoteFact{Connection: billassemble.ConnUnimplemented}, billassemble.ErrUnimplemented
 	}
 	return s.Bills.Quote(ctx, billassemble.QuoteCall{
-		PayerAccountID: payer.AccountRef, Capability: fact.Capability,
+		TenantID: proj.TenantID, PayerAccountID: payer.AccountRef, Capability: fact.Capability,
+		Model: fact.ReportedModel(), Size: fact.ReportedSize(),
 		Quantity: int64(fact.ImageCount), PricingVersion: billassemble.PricingVersion,
 		BusinessRef: proj.ID, IdempotencyKey: billconsume.Fingerprint(payer, fact),
 	})
 }
 
-func (s *Server) refreshBalance(ctx context.Context, payer billconsume.Payer, q *billassemble.QuoteFact) {
+type tenantBalanceReader interface {
+	ReadBalanceFor(ctx context.Context, tenantID, accountID string) (billassemble.Balance, error)
+}
+
+func (s *Server) readPayerBalance(ctx context.Context, tenantID, accountID string) (billassemble.Balance, error) {
+	if s.Bills == nil {
+		return billassemble.Balance{Connection: billassemble.ConnMissing}, billassemble.ErrConfigMissing
+	}
+	if reader, ok := s.Bills.(tenantBalanceReader); ok {
+		return reader.ReadBalanceFor(ctx, tenantID, accountID)
+	}
+	return s.Bills.ReadBalance(ctx, accountID)
+}
+
+func (s *Server) refreshBalance(ctx context.Context, tenantID string, payer billconsume.Payer, q *billassemble.QuoteFact) {
 	if s.Bills == nil || q.IncludedAllowance {
 		return
 	}
-	bal, err := s.Bills.ReadBalance(ctx, payer.AccountRef)
+	bal, err := s.readPayerBalance(ctx, tenantID, payer.AccountRef)
 	if err != nil {
 		q.BalanceKnown = false
 		q.FundsShort = false
@@ -442,7 +473,8 @@ func (s *Server) consumeBody(payer billconsume.Payer, fact billconsume.UsageFact
 		"payer_display": payer.Display, "payer_kind": payer.Kind, "payer_account_ref": payer.AccountRef,
 		"presentation": saved.Presentation, "must_requote": mustRequote, "generate_allowed": generate,
 		"charged": nil, "quoted": realQuote(saved.Presentation), "quote_ref": saved.QuoteRef,
-		"connection": q.Connection, "settlement": billassemble.SettlementUnknown,
+		"quote_origin": q.Origin, "connection": q.Connection, "settlement": billassemble.SettlementUnknown,
+		"funds_state": fundsStateOf(q.Connection, q), "billing_passed": false,
 		"balance_known":         q.BalanceKnown,
 		"usage_fact":            fact.Report(payer.AccountRef, saved.IdempotencyKey),
 		"visible_books":         visible,
@@ -459,8 +491,10 @@ func (s *Server) honestConsume(payer billconsume.Payer, fact billconsume.UsageFa
 	return map[string]any{
 		"payer_display": payer.Display, "payer_kind": payer.Kind, "payer_account_ref": payer.AccountRef,
 		"presentation": connection, "must_requote": false, "generate_allowed": false,
-		"charged": nil, "quoted": false, "quote_ref": "",
+		"charged": nil, "quoted": false, "quote_ref": "", "quote_origin": "",
 		"connection": connection, "settlement": billassemble.SettlementUnknown,
+		"funds_state":           fundsStateOf(connection, billassemble.QuoteFact{Connection: connection}),
+		"billing_passed":        false,
 		"usage_fact":            fact.Report(payer.AccountRef, ""),
 		"visible_books":         []any{},
 		"implementation_ready":  levels.ImplementationReady,
@@ -522,6 +556,23 @@ func quoteRef(fingerprint string) string {
 		fingerprint = fingerprint[:16]
 	}
 	return "qte_" + fingerprint
+}
+
+func fundsStateOf(connection string, q billassemble.QuoteFact) string {
+	if connection == billassemble.ConnMissing || q.Connection == billassemble.ConnMissing {
+		return billassemble.FundsUnconfigured
+	}
+	if q.FundsState != "" {
+		return q.FundsState
+	}
+	return billassemble.FundsNotSent
+}
+
+func (s *Server) returnFundsState() string {
+	if s.Bills == nil && billassemble.Connection(s.billLink()) == billassemble.ConnMissing {
+		return billassemble.FundsUnconfigured
+	}
+	return billassemble.FundsNotSent
 }
 
 func quoteStatus(label string, fundsShort bool) string {

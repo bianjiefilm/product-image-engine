@@ -68,6 +68,8 @@ type UsageFact struct {
 	Resolution     string
 	Capability     string
 	PricingVersion string
+	Model          string
+	Size           string
 }
 
 // QuoteView 是统一 Billing 给出的报价展示，不是本地账本。
@@ -192,11 +194,39 @@ func NewUsageFact(count int, resolution, capability, version string) (UsageFact,
 	return fact, nil
 }
 
+// ReportedModel 缺省用能力名。换模型必须改指纹，即使用量能力没变。
+func (f UsageFact) ReportedModel() string {
+	if strings.TrimSpace(f.Model) != "" {
+		return strings.TrimSpace(f.Model)
+	}
+	return f.Capability
+}
+
+// ReportedSize 缺省用分辨率。换尺寸必须改指纹。
+func (f UsageFact) ReportedSize() string {
+	if strings.TrimSpace(f.Size) != "" {
+		return strings.TrimSpace(f.Size)
+	}
+	return f.Resolution
+}
+
+// WithChoice 写入调用方选择的模型和尺寸。点数词仍拒绝。
+func (f UsageFact) WithChoice(model, size string) (UsageFact, error) {
+	f.Model = strings.TrimSpace(model)
+	f.Size = strings.TrimSpace(size)
+	if privatePoints(f.Model) || privatePoints(f.Size) {
+		return UsageFact{}, ErrPrivatePoints
+	}
+	return f, nil
+}
+
 func (f UsageFact) Report(payerAccountRef, idempotencyKey string) map[string]any {
 	return map[string]any{
 		"image_count":      f.ImageCount,
 		"quantity":         int64(f.ImageCount),
 		"resolution":       f.Resolution,
+		"model":            f.ReportedModel(),
+		"size":             f.ReportedSize(),
 		"capability":       f.Capability,
 		"pricing_version":  f.PricingVersion,
 		"payer_account_id": payerAccountRef,
@@ -241,6 +271,7 @@ func Fingerprint(payer Payer, fact UsageFact) string {
 	raw := strings.Join([]string{
 		payer.Kind, payer.AccountRef, payer.TenantID,
 		fmt.Sprintf("%d", fact.ImageCount), fact.Resolution, fact.Capability, fact.PricingVersion,
+		fact.ReportedModel(), fact.ReportedSize(),
 	}, "\n")
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
@@ -281,12 +312,12 @@ func AfterTopupPage(page string, quoteFresh bool) PageDecision {
 
 func Recover(a Attempt) (Attempt, error) {
 	status := strings.ToLower(strings.TrimSpace(a.Status))
-	if status != "timeout" && status != "unknown" {
+	if !recoveryStatus(status) {
 		a.Resubmit = false
 		a.Recharge = false
 		return a, nil
 	}
-	if strings.TrimSpace(a.TaskID) == "" || strings.TrimSpace(a.ChargeRef) == "" {
+	if strings.TrimSpace(a.TaskID) == "" {
 		return Attempt{}, ErrLookupRequired
 	}
 	if strings.TrimSpace(a.ReplacementKey) != "" && a.ReplacementKey != a.IdempotencyKey {
@@ -295,6 +326,15 @@ func Recover(a Attempt) (Attempt, error) {
 	a.Resubmit = false
 	a.Recharge = false
 	return a, nil
+}
+
+func recoveryStatus(status string) bool {
+	switch status {
+	case "timeout", "unknown", "lost", "lost_response", "retry":
+		return true
+	default:
+		return false
+	}
 }
 
 func RejectPaymentSource(source string) error {

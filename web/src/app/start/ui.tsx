@@ -27,6 +27,19 @@ type StartResponse = {
   authorized_assets?: string[];
 };
 
+type QuoteBody = {
+  payer_display?: string;
+  presentation?: string;
+  generate_allowed?: boolean;
+  must_requote?: boolean;
+  connection?: string;
+  settlement?: string;
+  funds_state?: string;
+  quote_origin?: string;
+  quoted?: boolean;
+  topup?: { entry?: string; return_target?: string; quote_ref?: string };
+};
+
 export default function StartClient() {
   const router = useRouter();
   const search = useSearchParams();
@@ -36,7 +49,10 @@ export default function StartClient() {
   const sourceTenant = search.get("tenant") || "";
   const returnHref = search.get("return") || "";
   const asset = search.get("asset") || "";
+  const topupPage = search.get("topup") || "";
+  const quoteRef = search.get("quote_ref") || "";
   const sourced = source === "order" || source === "campaign";
+  const rechargeReturned = topupPage === "success";
 
   const [ready, setReady] = useState(false);
   const [scope, setScope] = useState(PERSONAL_SCOPE);
@@ -55,11 +71,18 @@ export default function StartClient() {
   const [quotedGenerate, setQuotedGenerate] = useState(false);
   const [quotedMust, setQuotedMust] = useState(false);
   const [quotedTopup, setQuotedTopup] = useState<{ entry: string; returnTarget: string; quoteRef: string } | null>(null);
+  const [connection, setConnection] = useState("");
+  const [settlement, setSettlement] = useState("");
+  const [fundsState, setFundsState] = useState("");
+  const [quoteOrigin, setQuoteOrigin] = useState("");
+  const [quotedFlag, setQuotedFlag] = useState(false);
   const [form, setForm] = useState({
     name: "我的产品图",
     usage_kind: "电商主图",
     width_px: 800,
     height_px: 800,
+    image_count: 1,
+    model: "standard",
     background_direction: "浅灰棚拍",
     photo_asset_id: "",
   });
@@ -73,12 +96,72 @@ export default function StartClient() {
 
   const same = useMemo(() => (previousTaskId ? resumeTask(taskId, previousTaskId) : true), [previousTaskId, taskId]);
 
+  function quotePayload(id: string) {
+    return {
+      project_id: id,
+      source_type: sourced ? source : "",
+      source_ref: sourceRef,
+      source_tenant_id: sourceTenant,
+      image_count: form.image_count,
+      resolution: `${form.width_px}x${form.height_px}`,
+      size: `${form.width_px}x${form.height_px}`,
+      model: form.model,
+      capability: "image.generate.standard",
+      pricing_version: "pricing-2026-09",
+    };
+  }
+
+  function applyQuote(statusCode: number, body: QuoteBody | null) {
+    const missing = statusCode === 503 || body?.connection === "配置缺失";
+    if (missing) {
+      setConnection("配置缺失");
+      setFundsState(body?.funds_state || "unconfigured");
+      setNotice("配置缺失");
+    }
+    if (!body?.payer_display && !missing) return;
+    if (body?.payer_display) setQuotedPayer(body.payer_display);
+    if (body?.presentation) setQuotedPresentation(body.presentation);
+    else if (missing) setQuotedPresentation("配置缺失");
+    setQuotedGenerate(body?.generate_allowed === true && !rechargeReturned);
+    setQuotedMust(body?.must_requote === true || rechargeReturned);
+    if (body?.connection) setConnection(body.connection);
+    if (body?.settlement) setSettlement(body.settlement);
+    if (body?.funds_state) setFundsState(body.funds_state);
+    setQuoteOrigin(body?.quote_origin || "");
+    setQuotedFlag(body?.quoted === true);
+    const topup = body?.topup;
+    setQuotedTopup(
+      topup?.entry && topup.return_target && topup.quote_ref
+        ? { entry: topup.entry, returnTarget: topup.return_target, quoteRef: topup.quote_ref }
+        : null
+    );
+  }
+
+  async function requestQuote(id: string) {
+    const res = await fetch("/api/billing/consume/quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(quotePayload(id)),
+    });
+    const body = (await res.json().catch(() => null)) as QuoteBody | null;
+    return { status: res.status, body };
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const session = await fetch("/api/auth/session");
       if (session.status === 401) {
         router.replace("/login");
+        return;
+      }
+      if (session.status === 503) {
+        if (!cancelled) {
+          setConnection("配置缺失");
+          setFundsState("unconfigured");
+          setNotice("配置缺失");
+          setReady(true);
+        }
         return;
       }
       if (sourced && sourceRef && sourceTenant && returnHref) {
@@ -148,30 +231,7 @@ export default function StartClient() {
     applySession(data.session);
   }
 
-  async function begin(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setNotice("");
-    try {
-      const res = await fetch("/api/entry/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = (await res.json().catch(() => null)) as StartResponse & { error?: { message?: string } };
-      if (!res.ok || !data?.project?.id) {
-        setNotice(data?.error?.message ?? "还不能开始");
-        return;
-      }
-      applyStart(data);
-      await generate(data.project.id);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function generate(id = projectId) {
-    if (!id) return;
+  async function postFirstImage(id: string) {
     setBusy(true);
     setNotice("");
     try {
@@ -197,48 +257,52 @@ export default function StartClient() {
     }
   }
 
+  async function begin(e: React.FormEvent) {
+    e.preventDefault();
+    if (rechargeReturned) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const res = await fetch("/api/entry/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = (await res.json().catch(() => null)) as StartResponse & { error?: { message?: string } };
+      if (!res.ok || !data?.project?.id) {
+        setNotice(data?.error?.message ?? "还不能开始");
+        return;
+      }
+      applyStart(data);
+      const quote = await requestQuote(data.project.id);
+      applyQuote(quote.status, quote.body);
+      if (quote.status === 402 || quote.body?.topup) return;
+      await postFirstImage(data.project.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generate(id = projectId) {
+    if (!id || rechargeReturned || quotedTopup) return;
+    await postFirstImage(id);
+  }
+
   useEffect(() => {
     setQuotedGenerate(false);
     if (!projectId) return;
     let cancelled = false;
     (async () => {
-      const res = await fetch("/api/billing/consume/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project_id: projectId,
-          source_type: sourced ? source : "",
-          source_ref: sourceRef,
-          source_tenant_id: sourceTenant,
-          image_count: 1,
-          resolution: `${form.width_px}x${form.height_px}`,
-          capability: "image.generate.standard",
-          pricing_version: "pricing-2026-09",
-        }),
-      });
-      const data = (await res.json().catch(() => null)) as {
-        payer_display?: string;
-        presentation?: string;
-        generate_allowed?: boolean;
-        must_requote?: boolean;
-        topup?: { entry?: string; return_target?: string; quote_ref?: string };
-      } | null;
-      if (cancelled || !data?.payer_display) return;
-      setQuotedPayer(data.payer_display);
-      setQuotedPresentation(data.presentation || "");
-      setQuotedGenerate(data.generate_allowed === true);
-      setQuotedMust(data.must_requote === true);
-      const topup = data.topup;
-      setQuotedTopup(
-        topup?.entry && topup.return_target && topup.quote_ref
-          ? { entry: topup.entry, returnTarget: topup.return_target, quoteRef: topup.quote_ref }
-          : null
-      );
+      const quote = await requestQuote(projectId);
+      if (cancelled) return;
+      applyQuote(quote.status, quote.body);
     })();
     return () => {
       cancelled = true;
     };
-  }, [projectId, form.width_px, form.height_px, source, sourceRef, sourceTenant, sourced]);
+    // 模型、张数或尺寸变化后必须重新报价。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, form.width_px, form.height_px, form.image_count, form.model, source, sourceRef, sourceTenant, sourced]);
 
   async function refreshTask() {
     if (!projectId) return;
@@ -257,11 +321,9 @@ export default function StartClient() {
   }
 
   const sourceLabel = sourced ? `${source === "order" ? "订单" : "活动"} ${sourceRef}` : "";
-  const topupPage = search.get("topup") || "";
-  const quoteRef = search.get("quote_ref") || "";
   const payerDisplay = sourced ? "待确认" : "个人付款";
   useEffect(() => {
-    if (topupPage !== "success" || !projectId) return;
+    if (!rechargeReturned || !projectId) return;
     let cancelled = false;
     (async () => {
       await fetch("/api/billing/consume/return", {
@@ -274,13 +336,15 @@ export default function StartClient() {
     return () => {
       cancelled = true;
     };
-  }, [topupPage, projectId]);
+  }, [rechargeReturned, projectId]);
   const fingerprint = quoteFingerprint({
     payerAccountRef: sourced ? sourceTenant || "organization" : "personal",
-    imageCount: 1,
+    imageCount: form.image_count,
     resolution: `${form.width_px}x${form.height_px}`,
-    capability: form.usage_kind || "image.generate.standard",
+    capability: "image.generate.standard",
     pricingVersion: "pricing-2026-09",
+    model: form.model,
+    size: `${form.width_px}x${form.height_px}`,
   });
   const quoteDecision = canGenerate({
     confirmedFingerprint: "",
@@ -289,6 +353,7 @@ export default function StartClient() {
     fundsShort: false,
     priced: false,
   });
+  const heldForFunds = rechargeReturned || quotedTopup != null;
 
   return (
     <StartScreen
@@ -313,34 +378,24 @@ export default function StartClient() {
       <ConsumePanel
         payerDisplay={quotedPayer || payerDisplay}
         presentation={quotedPresentation || presentQuote({})}
-        generateAllowed={topupPage === "success" ? false : quotedGenerate}
+        generateAllowed={rechargeReturned ? false : quotedGenerate}
         onReconfirm={() => {
-          if (!projectId || topupPage === "success") return;
+          if (!projectId || rechargeReturned) return;
           void fetch("/api/billing/consume/confirm", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              project_id: projectId,
-              source_type: sourced ? source : "",
-              source_ref: sourceRef,
-              source_tenant_id: sourceTenant,
-              image_count: 1,
-              resolution: `${form.width_px}x${form.height_px}`,
-              capability: "image.generate.standard",
-              pricing_version: "pricing-2026-09",
-            }),
+            body: JSON.stringify(quotePayload(projectId)),
           })
-            .then((res) => res.json())
-            .then((data: { generate_allowed?: boolean; must_requote?: boolean; presentation?: string }) => {
-              setQuotedGenerate(data.generate_allowed === true && topupPage !== "success");
-              setQuotedMust(data.must_requote === true);
-              if (data.presentation) setQuotedPresentation(data.presentation);
+            .then(async (res) => ({ status: res.status, body: (await res.json()) as QuoteBody }))
+            .then((quote) => {
+              applyQuote(quote.status, quote.body);
+              if (quote.status === 402 || quote.body?.topup) setQuotedGenerate(false);
             })
             .catch(() => setQuotedGenerate(false));
         }}
-        mustRequote={quotedMust || quoteDecision.mustRequote || topupPage === "success"}
+        mustRequote={quotedMust || quoteDecision.mustRequote || rechargeReturned}
         topup={
-          topupPage === "success"
+          rechargeReturned
             ? {
                 entry: "billing_center",
                 returnTarget: "ti-product-image-engine-web",
@@ -349,6 +404,11 @@ export default function StartClient() {
             : quotedTopup
         }
         levels={completionLevels()}
+        connection={connection}
+        settlement={settlement}
+        fundsState={fundsState}
+        quoteOrigin={quoteOrigin}
+        quoted={quotedFlag}
       />
       {sourced ? null : (
         <form onSubmit={begin}>
@@ -359,6 +419,22 @@ export default function StartClient() {
           <label>
             使用场景
             <input value={form.usage_kind} onChange={(e) => setForm({ ...form, usage_kind: e.target.value })} />
+          </label>
+          <label>
+            模型
+            <select value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
+              <option value="standard">标准</option>
+              <option value="premium">高级</option>
+            </select>
+          </label>
+          <label>
+            张数
+            <input
+              type="number"
+              min={1}
+              value={form.image_count}
+              onChange={(e) => setForm({ ...form, image_count: Number(e.target.value) || 1 })}
+            />
           </label>
           <label>
             宽
@@ -382,13 +458,13 @@ export default function StartClient() {
               onChange={(e) => setForm({ ...form, photo_asset_id: e.target.value })}
             />
           </label>
-          <Button type="submit" disabled={busy || !ready}>
+          <Button type="submit" disabled={busy || !ready || heldForFunds}>
             {busy ? "处理中…" : "开始做产品图"}
           </Button>
         </form>
       )}
       {projectId && sourced ? (
-        <Button type="button" onClick={() => generate()} disabled={busy}>
+        <Button type="button" onClick={() => generate()} disabled={busy || heldForFunds}>
           用已授权素材生成
         </Button>
       ) : null}

@@ -26,8 +26,8 @@ func TestRecordingHoldReleasesToZero(t *testing.T) {
 		PayerAccountID: "acct_person", Capability: "image.generate.standard",
 		Quantity: 2, PricingVersion: PricingVersion, BusinessRef: "proj_1", IdempotencyKey: "fp-1",
 	})
-	if err != nil || quoted.AmountMinor != 300 || quoted.UsageID == "" || quoted.FundsShort {
-		t.Fatalf("报价: %+v %v", quoted, err)
+	if err != nil || quoted.AmountMinor != 300 || quoted.UsageID == "" || quoted.FundsShort || quoted.Origin != QuoteOriginFixture || quoted.FundsState != FundsNotSent || quoted.Sent {
+		t.Fatalf("测试双报价是夹具且未发送扣费: %+v %v", quoted, err)
 	}
 	again, err := rec.Quote(ctx, QuoteCall{
 		PayerAccountID: "acct_person", Capability: "image.generate.standard",

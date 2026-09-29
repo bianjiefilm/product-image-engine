@@ -18,6 +18,12 @@ const (
 	SettlementUnknown = "unknown"
 	PendingCheck      = "作品完成待核对"
 	FundsNotExecuted  = "未执行"
+	// FundsNotSent 表示本轮没有发送预占、结算或释放。它不是“已核对未扣”。
+	FundsNotSent = "not_sent"
+	// FundsUnconfigured 表示身份或计费配置缺失，调用没有发出。
+	FundsUnconfigured = "unconfigured"
+	// QuoteOriginFixture 标记夹具或测试双报价。它不是 Billing PASS。
+	QuoteOriginFixture = "fixture"
 )
 
 var (
@@ -45,8 +51,11 @@ func Connection(cfg LinkConfig) string {
 
 // QuoteCall 是服务端已经决定的用量。付款人不能从浏览器正文抄进来。
 type QuoteCall struct {
+	TenantID       string
 	PayerAccountID string
 	Capability     string
+	Model          string
+	Size           string
 	Quantity       int64
 	PricingVersion string
 	BusinessRef    string
@@ -64,6 +73,8 @@ type QuoteFact struct {
 	FundsShort        bool
 	Sent              bool
 	Connection        string
+	Origin            string
+	FundsState        string
 	EntitlementsKnown bool
 	Entitlements      []string
 }

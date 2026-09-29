@@ -53,7 +53,7 @@ func TestLiveQuoteDoesNotHoldOrCharge(t *testing.T) {
 		PayerAccountID: "acct_person", Capability: "image.generate.standard",
 		Quantity: 1, PricingVersion: PricingVersion, BusinessRef: "proj_1", IdempotencyKey: "fp-1",
 	})
-	if err != nil || quoted.UsageID != "usg_live" || quoted.AmountMinor != 150 || !quoted.BalanceKnown || quoted.FundsShort {
+	if err != nil || quoted.UsageID != "usg_live" || quoted.AmountMinor != 150 || !quoted.BalanceKnown || quoted.FundsShort || quoted.FundsState != FundsNotSent {
 		t.Fatalf("报价: %+v %v", quoted, err)
 	}
 	if payer != "acct_person" {
@@ -62,14 +62,17 @@ func TestLiveQuoteDoesNotHoldOrCharge(t *testing.T) {
 	if !quoted.EntitlementsKnown || len(quoted.Entitlements) != 1 {
 		t.Fatalf("权益: %+v", quoted.Entitlements)
 	}
-	if _, err := live.Hold(context.Background(), HoldCall{UsageID: "usg_live", AmountMinor: 150, IdempotencyKey: "hold-1"}); err != ErrFundsNotExecuted {
-		t.Fatalf("真实预占应拒绝发送, %v", err)
+	held, err := live.Hold(context.Background(), HoldCall{UsageID: "usg_live", AmountMinor: 150, IdempotencyKey: "hold-1"})
+	if err != ErrFundsNotExecuted || held.FundsAction != FundsNotSent || held.Sent {
+		t.Fatalf("真实预占应拒绝发送: %+v %v", held, err)
 	}
-	if _, err := live.Settle(context.Background(), SettleCall{UsageID: "usg_live", IdempotencyKey: "chg-1"}); err != ErrFundsNotExecuted {
-		t.Fatalf("真实结算应拒绝发送, %v", err)
+	settled, err := live.Settle(context.Background(), SettleCall{UsageID: "usg_live", IdempotencyKey: "chg-1"})
+	if err != ErrFundsNotExecuted || settled.FundsAction != FundsNotSent || settled.Sent {
+		t.Fatalf("真实结算应拒绝发送: %+v %v", settled, err)
 	}
-	if _, err := live.Release(context.Background(), ReleaseCall{HoldID: "uhold_1", IdempotencyKey: "rel-1"}); err != ErrFundsNotExecuted {
-		t.Fatalf("真实释放应拒绝发送, %v", err)
+	released, err := live.Release(context.Background(), ReleaseCall{HoldID: "uhold_1", IdempotencyKey: "rel-1"})
+	if err != ErrFundsNotExecuted || released.FundsAction != FundsNotSent || released.Sent {
+		t.Fatalf("真实释放应拒绝发送: %+v %v", released, err)
 	}
 	for _, path := range paths {
 		if strings.Contains(path, "hold") || strings.Contains(path, "charge") || strings.Contains(path, "refund") {
@@ -88,6 +91,10 @@ func TestLiveMissingConfigDoesNotDial(t *testing.T) {
 	_, err := live.Quote(context.Background(), QuoteCall{PayerAccountID: "acct_person", Quantity: 1, Capability: "image.generate.standard", PricingVersion: PricingVersion, IdempotencyKey: "fp"})
 	if err != ErrConfigMissing || called {
 		t.Fatalf("缺配置不应发请求: err=%v called=%v", err, called)
+	}
+	held, holdErr := live.Hold(context.Background(), HoldCall{AmountMinor: 150, IdempotencyKey: "hold"})
+	if holdErr != ErrConfigMissing || held.FundsAction != FundsUnconfigured || called {
+		t.Fatalf("缺配置的预占不能发出: %+v %v called=%v", held, holdErr, called)
 	}
 }
 

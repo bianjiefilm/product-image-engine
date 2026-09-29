@@ -61,8 +61,11 @@ func TestConsumeQuoteUsesServerPayerAndPort(t *testing.T) {
 	if body["charged"] != nil || body["generate_allowed"] != false {
 		t.Fatalf("charged 必须是 JSON null，报价本身不允许生成: %v", body)
 	}
-	if body["production_authorized"] != "NOT_AUTHORIZED" || body["billing_pass"] != "UNKNOWN" {
+	if body["production_authorized"] != "NOT_AUTHORIZED" || body["billing_pass"] != "UNKNOWN" || body["billing_passed"] != false {
 		t.Fatalf("不能把计费标成生产通过: %v", body)
+	}
+	if _, ok := body["charged"]; !ok || body["quote_origin"] != billassemble.QuoteOriginFixture || body["funds_state"] != billassemble.FundsNotSent {
+		t.Fatalf("夹具报价要标明 fixture，资金未发送，charged 为 JSON null，这不是 Billing PASS: %v", body)
 	}
 	usage, _ := body["usage_fact"].(map[string]any)
 	if usage["pricing_version"] != billassemble.PricingVersion || usage["payer_account_id"] != account {
@@ -281,6 +284,17 @@ func TestConsumeUnknownLooksUpStoredTask(t *testing.T) {
 	if rec.NetReserved() != 0 || rec.Settles != 0 {
 		t.Fatalf("查回不能扣费: reserved=%d settles=%d", rec.NetReserved(), rec.Settles)
 	}
+	for _, status := range []string{"lost", "lost_response", "retry"} {
+		st, again := f.do(t, "POST", "/api/v1/billing/consume/recover", tok, map[string]any{
+			"project_id": project.ID, "status": status, "work_complete": true,
+		})
+		if st != http.StatusOK || again["task_id"] != "task_1" || again["resubmit"] != false || again["recharge"] != false || again["regenerate"] != false || again["charged"] != nil || again["billing_passed"] != false || again["funds_state"] != billassemble.FundsNotSent {
+			t.Fatalf("%s 必须挂回原任务，不能第二次生成或扣费: %d %v", status, st, again)
+		}
+	}
+	if rec.NetReserved() != 0 || rec.Settles != 0 {
+		t.Fatalf("丢失和重试不能扣费: reserved=%d settles=%d", rec.NetReserved(), rec.Settles)
+	}
 }
 
 func TestConsumeMissingConfigDoesNotInventPrice(t *testing.T) {
@@ -298,8 +312,11 @@ func TestConsumeMissingConfigDoesNotInventPrice(t *testing.T) {
 		"capability": "image.generate.standard",
 	}
 	st, got := f.do(t, "POST", "/api/v1/billing/consume/quote", tok, body)
-	if st != http.StatusOK || got["connection"] != "配置缺失" || got["presentation"] != "配置缺失" || got["quoted"] != false || got["charged"] != nil || got["generate_allowed"] != false || got["settlement"] != "unknown" {
+	if st != http.StatusOK || got["connection"] != "配置缺失" || got["presentation"] != "配置缺失" || got["quoted"] != false || got["charged"] != nil || got["generate_allowed"] != false || got["settlement"] != "unknown" || got["funds_state"] != "unconfigured" || got["billing_passed"] != false {
 		t.Fatalf("没配计费要说明配置缺失，不能编报价: %d %v", st, got)
+	}
+	if strings.Contains(mapString(got), "代码未实现") || strings.Contains(mapString(got), "本次预计") {
+		t.Fatalf("配置缺失不能写成未实现或人民币价: %v", got)
 	}
 	if containsAny(mapString(got), "bill-tok", "127.0.0.1") {
 		t.Fatalf("应答不能带出令牌或地址: %v", got)
@@ -320,8 +337,11 @@ func TestConsumeConfiguredWithoutPortIsUnimplemented(t *testing.T) {
 		"project_id": project.ID, "image_count": 1, "resolution": "800x800",
 		"capability": "image.generate.standard",
 	})
-	if st != http.StatusOK || got["connection"] != "未实现" || got["presentation"] != "未实现" || got["quoted"] != false || got["charged"] != nil || got["generate_allowed"] != false {
+	if st != http.StatusOK || got["connection"] != "未实现" || got["presentation"] != "未实现" || got["quoted"] != false || got["charged"] != nil || got["generate_allowed"] != false || got["funds_state"] != billassemble.FundsNotSent || got["billing_passed"] != false {
 		t.Fatalf("配了但没装端口应报未实现: %d %v", st, got)
+	}
+	if strings.Contains(mapString(got), "代码未实现") || strings.Contains(mapString(got), "本次预计") {
+		t.Fatalf("未装端口不能编价: %v", got)
 	}
 }
 
@@ -368,6 +388,157 @@ func (unavailableBills) Lookup(context.Context, billassemble.LookupCall) (billas
 }
 func (unavailableBills) ReadBalance(context.Context, string) (billassemble.Balance, error) {
 	return billassemble.Balance{}, billassemble.ErrUnavailable
+}
+
+func TestConsumeModelOrSizeChangeRequiresConfirmAgain(t *testing.T) {
+	f := newFixture(t, nil)
+	rec := &billassemble.Record{
+		UnitMinor: 150, BalanceKnown: true, BalanceMinor: 10_000,
+		Entitled: []string{"image.generate.standard"},
+	}
+	f.srv.Bills = rec
+	f.rearm(t)
+	tok := f.stub.mintExtra("jia@x.com", "product-image", nil)
+	_, session := f.do(t, "GET", "/api/v1/auth/session", tok, nil)
+	principal, _ := session["principal"].(map[string]any)
+	account, _ := principal["account_id"].(string)
+	project, err := f.st.CreateProject(t.Context(), projectInput(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{
+		"project_id": project.ID, "image_count": 1, "resolution": "800x800",
+		"size": "800x800", "model": "standard", "capability": "image.generate.standard",
+	}
+	if st, got := f.do(t, "POST", "/api/v1/billing/consume/quote", tok, body); st != http.StatusOK || got["presentation"] != "本次预计 ¥1.50" || got["quote_origin"] != billassemble.QuoteOriginFixture {
+		t.Fatalf("报价: %d %v", st, got)
+	}
+	if st, got := f.do(t, "POST", "/api/v1/billing/consume/confirm", tok, body); st != http.StatusOK || got["generate_allowed"] != true || got["charged"] != nil || got["billing_passed"] != false {
+		t.Fatalf("确认: %d %v", st, got)
+	}
+	body["model"] = "premium"
+	st, changed := f.do(t, "POST", "/api/v1/billing/consume/quote", tok, body)
+	usage, _ := changed["usage_fact"].(map[string]any)
+	if st != http.StatusOK || changed["must_requote"] != true || changed["generate_allowed"] != false || changed["charged"] != nil || usage["model"] != "premium" {
+		t.Fatalf("换模型必须重新确认: %d %v", st, changed)
+	}
+	if st, got := f.do(t, "POST", "/api/v1/billing/consume/confirm", tok, body); st != http.StatusOK || got["generate_allowed"] != true {
+		t.Fatalf("新模型确认: %d %v", st, got)
+	}
+	body["size"] = "640x640"
+	st, sized := f.do(t, "POST", "/api/v1/billing/consume/quote", tok, body)
+	usage, _ = sized["usage_fact"].(map[string]any)
+	if st != http.StatusOK || sized["must_requote"] != true || sized["generate_allowed"] != false || usage["size"] != "640x640" || usage["resolution"] != "800x800" {
+		t.Fatalf("换尺寸必须重新确认: %d %v", st, sized)
+	}
+	if rec.NetReserved() != 0 || rec.Settles != 0 {
+		t.Fatalf("换模型或尺寸不能扣费: reserved=%d settles=%d", rec.NetReserved(), rec.Settles)
+	}
+}
+
+func TestConsumeBalanceUsesServerTenantNotBody(t *testing.T) {
+	f := newFixture(t, nil)
+	spy := &tenantSpy{}
+	f.srv.Bills = spy
+	f.rearm(t)
+	tok := f.stub.mintExtra("jia@x.com", "product-image", nil)
+	_, session := f.do(t, "GET", "/api/v1/auth/session", tok, nil)
+	principal, _ := session["principal"].(map[string]any)
+	account, _ := principal["account_id"].(string)
+	project, err := f.st.CreateProject(t.Context(), projectInput(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{
+		"project_id": project.ID, "image_count": 1, "resolution": "800x800",
+		"capability": "image.generate.standard", "source_type": "campaign",
+		"source_tenant_id": "org_b", "payer_account_ref": account,
+		"books": []any{map[string]any{"account_ref": "acct_b", "label": "B商家付款"}},
+	}
+	st, got := f.do(t, "POST", "/api/v1/billing/consume/quote", tok, body)
+	if st != http.StatusOK || spy.foreign || spy.tenant != account || spy.account != account {
+		t.Fatalf("请求体租户不能决定余额: status=%d spy=%+v body=%v", st, spy, got)
+	}
+	raw := mapString(got)
+	if strings.Contains(raw, "9000") || strings.Contains(raw, "B商家付款") || got["payer_account_ref"] != account || got["billing_pass"] == "PASS" {
+		t.Fatalf("应答泄漏了另一租户或把夹具写成 Billing PASS: %s", raw)
+	}
+	if got["quote_origin"] != billassemble.QuoteOriginFixture || got["charged"] != nil || got["billing_passed"] != false || got["production_authorized"] != "NOT_AUTHORIZED" {
+		t.Fatalf("夹具报价不是账本通过: %v", got)
+	}
+}
+
+func TestAdapterPresentWithoutBillingConfigSaysMissing(t *testing.T) {
+	f := newFixture(t, nil)
+	f.srv.Bills = &billassemble.Live{AppID: "product-image", BillingBase: f.cfg.BillingBaseURL, BillingToken: f.cfg.BillingToken, Enabled: false}
+	f.rearm(t)
+	tok := f.stub.mintExtra("jia@x.com", "product-image", nil)
+	_, session := f.do(t, "GET", "/api/v1/auth/session", tok, nil)
+	principal, _ := session["principal"].(map[string]any)
+	account, _ := principal["account_id"].(string)
+	project, err := f.st.CreateProject(t.Context(), projectInput(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, got := f.do(t, "POST", "/api/v1/billing/consume/quote", tok, map[string]any{
+		"project_id": project.ID, "image_count": 1, "resolution": "800x800",
+		"capability": "image.generate.standard", "source_type": "campaign", "source_tenant_id": "org_b",
+	})
+	raw := mapString(got)
+	if st != http.StatusOK || got["connection"] != "配置缺失" || got["presentation"] != "配置缺失" || got["funds_state"] != "unconfigured" || got["generate_allowed"] != false || got["charged"] != nil || got["billing_passed"] != false {
+		t.Fatalf("适配器在但没配计费应是配置缺失: %d %v", st, got)
+	}
+	if strings.Contains(raw, "未实现") || strings.Contains(raw, "代码未实现") || strings.Contains(raw, "本次预计") || strings.Contains(raw, "org_b") || got["payer_display"] != "个人付款" {
+		t.Fatalf("不能假装组织钱包或写成未实现: %s", raw)
+	}
+}
+
+type tenantSpy struct {
+	tenant  string
+	account string
+	foreign bool
+	settles int
+}
+
+func (s *tenantSpy) Quote(_ context.Context, in billassemble.QuoteCall) (billassemble.QuoteFact, error) {
+	if in.TenantID == "org_b" || in.PayerAccountID == "acct_b" {
+		s.foreign = true
+		return billassemble.QuoteFact{BalanceMinor: 9000}, billassemble.ErrUnavailable
+	}
+	s.tenant = in.TenantID
+	s.account = in.PayerAccountID
+	return billassemble.QuoteFact{
+		UsageID: "usg_scoped", AmountMinor: 150, Currency: "CNY",
+		BalanceKnown: true, BalanceMinor: 5000, Connection: billassemble.ConnReady,
+		Origin: billassemble.QuoteOriginFixture, FundsState: billassemble.FundsNotSent,
+		EntitlementsKnown: true, Entitlements: []string{"image.generate.standard"},
+	}, nil
+}
+
+func (s *tenantSpy) Hold(context.Context, billassemble.HoldCall) (billassemble.HoldFact, error) {
+	return billassemble.HoldFact{FundsAction: billassemble.FundsNotSent}, billassemble.ErrFundsNotExecuted
+}
+func (s *tenantSpy) Release(context.Context, billassemble.ReleaseCall) (billassemble.ReleaseFact, error) {
+	return billassemble.ReleaseFact{FundsAction: billassemble.FundsNotSent}, billassemble.ErrFundsNotExecuted
+}
+func (s *tenantSpy) Settle(context.Context, billassemble.SettleCall) (billassemble.SettleFact, error) {
+	s.settles++
+	return billassemble.SettleFact{FundsAction: billassemble.FundsNotSent}, billassemble.ErrFundsNotExecuted
+}
+func (s *tenantSpy) Lookup(context.Context, billassemble.LookupCall) (billassemble.LookupFact, error) {
+	return billassemble.LookupFact{Settlement: billassemble.SettlementUnknown}, nil
+}
+func (s *tenantSpy) ReadBalance(context.Context, string) (billassemble.Balance, error) {
+	return billassemble.Balance{Known: true, Minor: 5000, Connection: billassemble.ConnReady}, nil
+}
+func (s *tenantSpy) ReadBalanceFor(_ context.Context, tenantID, accountID string) (billassemble.Balance, error) {
+	if tenantID == "org_b" || accountID == "acct_b" {
+		s.foreign = true
+		return billassemble.Balance{Known: true, Minor: 9000}, nil
+	}
+	s.tenant = tenantID
+	s.account = accountID
+	return billassemble.Balance{Known: true, Minor: 5000, Connection: billassemble.ConnReady}, nil
 }
 
 func projectInput(tenant string) store.Project {
