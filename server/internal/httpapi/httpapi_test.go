@@ -132,7 +132,7 @@ func newFixture(t *testing.T, mutate func(*config.Config)) *fixture {
 	cfg := config.Config{
 		Addr: "127.0.0.1:0", InternalToken: "it-test",
 		DBPath: filepath.Join(t.TempDir(), "x.db"),
-		AppID:  "product-image-engine", // 与 handoffDoc 的 target_app 对齐
+		AppID:  "product-image", // 与 handoffDoc 的 target_app 对齐
 
 		IdentityBaseURL: stub.srv.URL,
 		IdentityAppID:   "product-image",

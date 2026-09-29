@@ -12,7 +12,7 @@ import (
 func validReceipt() Receipt {
 	return Receipt{
 		SchemaVersion: SchemaVersionV1, EventID: "wr-1", RunID: "run-1", HandoffID: "h-1",
-		SourceApp: "product-image-engine", TargetApp: "orders", PrincipalID: "principal-1",
+		SourceApp: "product-image", TargetApp: "orders", PrincipalID: "principal-1",
 		ProjectRef: "src-1", ProjectRevision: "rev-1", BriefVersion: "brief-1",
 		Sequence: 1, Status: "succeeded",
 		Assets:          []Asset{{AssetRef: "asset_1", SHA256: strings.Repeat("a", 64), SizeBytes: 10, MediaType: "image/png"}},
@@ -58,7 +58,7 @@ func TestFrameSignVerify(t *testing.T) {
 	secret := []byte("s3cret")
 	ts := time.Now().Unix()
 	raw := []byte(`{"k":"v"}`)
-	sig := FrameSign(secret, ts, "product-image-engine", "orders", "wr-9", raw)
+	sig := FrameSign(secret, ts, "product-image", "orders", "wr-9", raw)
 	if !strings.HasPrefix(sig, SignaturePrefix) {
 		t.Fatalf("签名前缀: %s", sig)
 	}
@@ -67,28 +67,28 @@ func TestFrameSignVerify(t *testing.T) {
 		t.Fatal("source 不匹配应拒绝")
 	}
 	// 正确通过路径
-	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), sig, "product-image-engine", "orders", "wr-9", raw, time.Unix(ts, 0)); err != nil {
+	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), sig, "product-image", "orders", "wr-9", raw, time.Unix(ts, 0)); err != nil {
 		t.Fatalf("自验签应通过: %v", err)
 	}
 	// 篡改 body
-	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), sig, "product-image-engine", "orders", "wr-9", []byte(`{"k":"V"}`), time.Unix(ts, 0)); err == nil {
+	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), sig, "product-image", "orders", "wr-9", []byte(`{"k":"V"}`), time.Unix(ts, 0)); err == nil {
 		t.Fatal("篡改 body 应拒绝")
 	}
 	// 重放(超 300s 偏差)
-	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), sig, "product-image-engine", "orders", "wr-9", raw, time.Unix(ts+301, 0)); err == nil {
+	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), sig, "product-image", "orders", "wr-9", raw, time.Unix(ts+301, 0)); err == nil {
 		t.Fatal("超时偏差应拒绝")
 	}
 	// 垃圾时间戳
-	if err := FrameVerify(secret, "12x0", sig, "product-image-engine", "orders", "wr-9", raw, time.Unix(ts, 0)); err == nil {
+	if err := FrameVerify(secret, "12x0", sig, "product-image", "orders", "wr-9", raw, time.Unix(ts, 0)); err == nil {
 		t.Fatal("垃圾时间戳应拒绝")
 	}
 	// 错误签名格式
-	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), "sha256=zzzz", "product-image-engine", "orders", "wr-9", raw, time.Unix(ts, 0)); err == nil {
+	if err := FrameVerify(secret, strconv.FormatInt(ts, 10), "sha256=zzzz", "product-image", "orders", "wr-9", raw, time.Unix(ts, 0)); err == nil {
 		t.Fatal("非 hex 签名应拒绝")
 	}
 	// 重发:时间戳刷新,raw_body 不变 → 新签名有效(回执重传语义)
-	sig2 := FrameSign(secret, ts+10, "product-image-engine", "orders", "wr-9", raw)
-	if err := FrameVerify(secret, strconv.FormatInt(ts+10, 10), sig2, "product-image-engine", "orders", "wr-9", raw, time.Unix(ts+10, 0)); err != nil {
+	sig2 := FrameSign(secret, ts+10, "product-image", "orders", "wr-9", raw)
+	if err := FrameVerify(secret, strconv.FormatInt(ts+10, 10), sig2, "product-image", "orders", "wr-9", raw, time.Unix(ts+10, 0)); err != nil {
 		t.Fatalf("重发刷新签名应通过: %v", err)
 	}
 }
