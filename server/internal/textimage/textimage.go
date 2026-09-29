@@ -23,9 +23,16 @@ const (
 	StatusQueued     = "queued"
 	StatusUnknown    = "unknown"
 	StatusFailed     = "failed"
+	StatusCompleted  = "completed"
 
 	QualityUnknown = "unknown"
 	QualityFail    = "fail"
+
+	OriginFixture            = "fixture"
+	RealGenerationIncomplete = "真实出图未完成"
+	ConceptualNotice         = "文字描述是概念输出，没有实物参考时不宣称主体保真"
+	FixtureNotice            = "这是服务端登记的夹具图，不是模型出图"
+	ProductionNotAuthorized  = "NOT_AUTHORIZED"
 )
 
 var (
@@ -161,6 +168,63 @@ func ApplyClientClaim(rec Record, claim string) (Record, error) {
 		return rec, ErrRelabelForbidden
 	}
 }
+
+// AdmitInput 是展示前的服务端事实。客户端声明不在这里面。
+type AdmitInput struct {
+	Status            string
+	JobTenant         string
+	JobProject        string
+	ActorTenant       string
+	ActorProject      string
+	InputVersion      string
+	AssetInputVersion string
+	AssetID           string
+	Registered        bool
+	RegisteredSHA     string
+	FileSHA           string
+	Origin            string
+	ClientSupplied    bool
+	SelectedVersion   string
+	ResultVersion     string
+}
+
+// AdmitDecision 决定能不能打开这张图。Reason 为空才表示通过。
+type AdmitDecision struct {
+	Show   bool
+	Reason string
+}
+
+// Admit 只在完成、租户工程、输入版本、登记哈希和夹具来源同时成立时展示。
+// 选定版本已存在时，晚到的另一版本不能顶上。
+func Admit(in AdmitInput) AdmitDecision {
+	if in.ClientSupplied {
+		return AdmitDecision{Reason: "client_claim"}
+	}
+	if in.ActorTenant == "" || in.ActorProject == "" || in.ActorTenant != in.JobTenant || in.ActorProject != in.JobProject {
+		return AdmitDecision{Reason: "tenant_or_project"}
+	}
+	if in.Status != StatusCompleted {
+		return AdmitDecision{Reason: "not_completed"}
+	}
+	if strings.TrimSpace(in.InputVersion) == "" || in.InputVersion != in.AssetInputVersion {
+		return AdmitDecision{Reason: "input_version"}
+	}
+	registeredSHA := strings.ToLower(strings.TrimSpace(in.RegisteredSHA))
+	fileSHA := strings.ToLower(strings.TrimSpace(in.FileSHA))
+	if !in.Registered || strings.TrimSpace(in.AssetID) == "" || len(registeredSHA) != 64 || registeredSHA != fileSHA {
+		return AdmitDecision{Reason: "asset_hash"}
+	}
+	if in.Origin != OriginFixture {
+		return AdmitDecision{Reason: "not_fixture"}
+	}
+	if in.SelectedVersion != "" && in.SelectedVersion != in.ResultVersion {
+		return AdmitDecision{Reason: "selected_version"}
+	}
+	return AdmitDecision{Show: true}
+}
+
+// RealGenerationCompleted 本轮恒为假。夹具不是模型结果，本包也不生成图片字节。
+func RealGenerationCompleted(bool, string) bool { return false }
 
 // NoteOutputID 记下别人填上的输出编号，但不把它当成核销凭证或成片。
 func NoteOutputID(rec Record, outputID string) Record {
