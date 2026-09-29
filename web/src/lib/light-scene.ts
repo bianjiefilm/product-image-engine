@@ -1,5 +1,20 @@
 export const BILLING_PENDING = "计费待确认";
 export const HONESTY = "生成质量未验证，不代表生产出图已通过";
+export const REAL_GENERATION_INCOMPLETE = "真实出图未完成";
+
+// quoteStatusLabel 只转述报价状态。空状态是尚未报价，确认后才允许提交。
+export function quoteStatusLabel(status?: string | null): string {
+  switch ((status ?? "").trim()) {
+    case "unconfirmed":
+      return "报价未确认";
+    case "confirmed":
+      return "报价已确认";
+    case "invalid":
+      return "报价已失效";
+    default:
+      return "尚未报价";
+  }
+}
 
 // billingLine 只转述服务端文案。没有金额时固定为计费待确认,不编造人民币。
 export function billingLine(label?: string | null): string {

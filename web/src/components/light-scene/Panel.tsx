@@ -7,9 +7,11 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import {
   BILLING_PENDING,
   HONESTY,
+  REAL_GENERATION_INCOMPLETE,
   billingLine,
   creativeChoice,
   quoteStale,
+  quoteStatusLabel,
   subjectProtectionLabel,
 } from "@/lib/light-scene";
 
@@ -33,6 +35,7 @@ interface Job {
   mode: string;
   protected_region: string;
   lighting_intent: string;
+  fingerprint: string;
   job_status: string;
   quality: string;
   quote_status: string;
@@ -42,8 +45,11 @@ interface Job {
   allowed_uses: string[];
   output_asset_id: string;
   output_version: string;
+  model_ref: string;
+  model_fingerprint: string;
   verified_product: boolean;
   honesty: string;
+  real_generation_notice?: string;
 }
 
 interface Sample {
@@ -154,8 +160,16 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
     if (data?.job) setActive(data.job as Job);
   }
 
+  const quoteStatus = active?.quote_status ?? "";
   return (
-    <Card>
+    <Card
+      data-light-panel=""
+      data-light-quote-status={quoteStatus || "none"}
+      data-charged="null"
+      data-billing-passed="false"
+      data-production-authorized="false"
+      data-real-generation="incomplete"
+    >
       <CardHeader>
         <CardTitle>光影场景</CardTitle>
         <CardDescription>
@@ -165,7 +179,9 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
       <p>
         <Badge variant="warn">{bill || BILLING_PENDING}</Badge>{" "}
         <Badge>质量 {active?.quality ?? "unknown"}</Badge>{" "}
-        <Badge>{subjectProtectionLabel(active?.quality)}</Badge>
+        <Badge>{subjectProtectionLabel(active?.quality)}</Badge>{" "}
+        <Badge data-light-quote-status={quoteStatus || "none"}>{quoteStatusLabel(quoteStatus)}</Badge>{" "}
+        <Badge variant="warn">{active?.real_generation_notice || REAL_GENERATION_INCOMPLETE}</Badge>
       </p>
       <div className="row">
         <div>
@@ -227,6 +243,11 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
             输入版本 {active.input_version} · 模式 {modeLabel[active.mode] ?? active.mode} · 保护区域{" "}
             {active.protected_region} · 状态 {statusLabel[active.job_status] ?? active.job_status}
           </p>
+          <p className="muted">
+            版本 {active.input_version}
+            {active.output_version ? ` / ${active.output_version}` : ""} · 模型 {active.model_ref || "无"} ·
+            模型指纹 {active.model_fingerprint || "无"} · 任务指纹 {active.fingerprint || "无"}
+          </p>
           <p>
             对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}{" "}
             {active.output_version || ""}
@@ -273,7 +294,7 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
         </table>
       ) : null}
       {jobs.length > 0 ? <p className="muted">本工程已有 {jobs.length} 条光影场景记录。</p> : null}
-      <p className="muted">生产出图与计费均未标记为通过。顶栏不代表光影生成已通过。</p>
+      <p className="muted">生产出图与计费均未标记为通过。真实出图未完成。顶栏不代表光影生成已通过。</p>
     </Card>
   );
 }

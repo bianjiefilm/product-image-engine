@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	BillingPendingLabel = "计费待确认"
-	HonestyNotice       = "生成质量未验证，不代表生产出图已通过"
-	ReadinessInternal   = "internal_test"
+	BillingPendingLabel      = "计费待确认"
+	HonestyNotice            = "生成质量未验证，不代表生产出图已通过"
+	RealGenerationIncomplete = "真实出图未完成"
+	ProductionNotAuthorized  = "NOT_AUTHORIZED"
+	ReadinessInternal        = "internal_test"
 
 	ModeFidelity Mode = "fidelity"
 	ModeCreative Mode = "creative"
@@ -163,6 +165,33 @@ func billingLabel(connected bool, amount string) string {
 		return BillingPendingLabel
 	}
 	return amount
+}
+
+// ModelFingerprint 是模型引用的指纹。没有模型调用时为空，不编造。
+func ModelFingerprint(modelRef string) string {
+	modelRef = strings.TrimSpace(modelRef)
+	if modelRef == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(modelRef))
+	return hex.EncodeToString(sum[:])
+}
+
+// KeepSelectedVersion 让失败或未知留在原任务上，不替换用户已经选定的版本。
+func KeepSelectedVersion(ex Execution, status string) Execution {
+	ex.ProductionGenerationPassed = false
+	ex.BillingPassed = false
+	ex.CreativeFallback = false
+	if ex.Selection != "selected" || strings.TrimSpace(ex.OutputVersion) == "" {
+		return ex
+	}
+	switch status {
+	case StatusFailed, StatusUnknown:
+		ex.Status = status
+		ex.Deliverable = false
+		ex.VerifiedProduct = false
+	}
+	return ex
 }
 
 // Fingerprint 绑定租户、工程、输入版本、模式、保护区域与光影意图。

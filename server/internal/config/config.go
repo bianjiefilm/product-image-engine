@@ -70,6 +70,8 @@ type Config struct {
 	// 结果不能绕过主体保护，没有供应商回执时不能写成已验证产品图。
 	LightSceneEnabled    bool // FEATURE_LIGHT_SCENE,默认 off
 	LightCreativeEnabled bool // FEATURE_LIGHT_CREATIVE,默认 off
+	// LightModelCredential 只表示是否配置了图像模型凭证。值不回传、不入库。空则真实出图未完成。
+	LightModelCredential string // PRODUCT_LIGHT_MODEL_CREDENTIAL,默认空
 
 	// --- HUI-1698 FEAT-0199:主体保真记录(不调用生成、不扣费) ---
 	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
@@ -144,6 +146,7 @@ func Load() Config {
 
 		LightSceneEnabled:    getBoolEnv("FEATURE_LIGHT_SCENE", false),
 		LightCreativeEnabled: getBoolEnv("FEATURE_LIGHT_CREATIVE", false),
+		LightModelCredential: os.Getenv("PRODUCT_LIGHT_MODEL_CREDENTIAL"),
 
 		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 
@@ -223,6 +226,12 @@ func (c Config) TextImageModelConfigured() bool {
 	return strings.TrimSpace(c.TextImageModelCredential) != ""
 }
 
+// LightRealModelConfigured 只回答光影模型凭证是否存在，不暴露凭证内容。
+// 空则不得调用供应商，生成保持失败关闭。
+func (c Config) LightRealModelConfigured() bool {
+	return strings.TrimSpace(c.LightModelCredential) != ""
+}
+
 // CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。
 func (c Config) CreativePathAvailable() bool {
 	if !c.BgCreativeEnabled {
@@ -232,9 +241,10 @@ func (c Config) CreativePathAvailable() bool {
 	return st == 0
 }
 
-// LightCreativePathAvailable 只有光影创意开关与真实生成任务配置同时可用时才为真。
+// LightCreativePathAvailable 只有创意开关、图像模型凭证和生成任务同时可用时才为真。
+// 没有凭证时创意保持关闭，不能靠开关绕过保真失败。
 func (c Config) LightCreativePathAvailable() bool {
-	if !c.LightCreativeEnabled {
+	if !c.LightCreativeEnabled || !c.LightRealModelConfigured() {
 		return false
 	}
 	st, _ := c.GenerationUsable()

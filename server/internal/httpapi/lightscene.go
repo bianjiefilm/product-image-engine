@@ -19,8 +19,13 @@ func (s *Server) handleLightCapabilities(w http.ResponseWriter, r *http.Request)
 		"default_mode":                 string(lightscene.ModeFidelity),
 		"creative_available":           s.Cfg.LightCreativePathAvailable(),
 		"billing_label":                lightscene.BillingPendingLabel,
+		"charged":                      nil,
 		"production_generation_passed": false,
 		"billing_passed":               false,
+		"production_authorized":        false,
+		"production_authorization":     lightscene.ProductionNotAuthorized,
+		"real_generation_completed":    false,
+		"real_generation_notice":       lightscene.RealGenerationIncomplete,
 		"verified_product":             false,
 		"delivery_readiness":           lightscene.ReadinessInternal,
 		"honesty":                      lightscene.HonestyNotice,
@@ -31,8 +36,13 @@ func (s *Server) handleLightCapabilities(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleLightAcceptance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"samples":                      lightscene.AcceptanceSamples(),
+		"charged":                      nil,
 		"production_generation_passed": false,
 		"billing_passed":               false,
+		"production_authorized":        false,
+		"production_authorization":     lightscene.ProductionNotAuthorized,
+		"real_generation_completed":    false,
+		"real_generation_notice":       lightscene.RealGenerationIncomplete,
 		"verified_product":             false,
 	})
 }
@@ -135,7 +145,11 @@ func (s *Server) handleListLightScene(w http.ResponseWriter, r *http.Request) {
 	for _, job := range jobs {
 		views = append(views, s.lightView(job, false))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jobs": views, "billing_label": lightscene.BillingPendingLabel})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"jobs": views, "billing_label": lightscene.BillingPendingLabel,
+		"charged": nil, "billing_passed": false, "production_authorized": false,
+		"real_generation_notice": lightscene.RealGenerationIncomplete,
+	})
 }
 
 func (s *Server) handleConfirmLightScene(w http.ResponseWriter, r *http.Request) {
@@ -204,13 +218,14 @@ func (s *Server) handleSubmitLightScene(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	genSt, _ := s.Cfg.GenerationUsable()
-	if genSt != 0 {
+	if !s.Cfg.LightRealModelConfigured() || genSt != 0 {
 		job.JobStatus = lightscene.StatusFailed
 		job.Evidence = lightscene.EvidenceNone
-		job.Quality = lightscene.QualityUnknown
+		job.Quality = keepFail(job.Quality)
 		job.Deliverable = false
 		job.VerifiedProduct = false
-		job.Pending = append(job.Pending, "没有真实供应商，未执行生成")
+		job.Pending = lightscene.AppendPending(job.Pending, "没有真实供应商，未执行生成")
+		job.Pending = lightscene.AppendPending(job.Pending, lightscene.RealGenerationIncomplete)
 		if err := s.St.UpdateLightJob(r.Context(), job); err != nil {
 			writeStoreErr(w, err)
 			return
@@ -277,12 +292,15 @@ func (s *Server) handleRefreshLightScene(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
 		return
 	}
+	before := job
 	st, err := s.Tasks.Status(r.Context(), job.PlatformTaskID)
 	if err != nil {
 		job.JobStatus = lightscene.StatusUnknown
+		job = preserveSelectedLight(before, job, lightscene.StatusUnknown)
 		job.VerifiedProduct = false
 		job.Deliverable = false
 		job.Pending = lightscene.AppendPending(job.Pending, "供应商结果未知，先核对")
+		job.Pending = lightscene.AppendPending(job.Pending, lightscene.RealGenerationIncomplete)
 		if uerr := s.St.UpdateLightJob(r.Context(), job); uerr != nil {
 			writeStoreErr(w, uerr)
 			return
@@ -294,16 +312,20 @@ func (s *Server) handleRefreshLightScene(w http.ResponseWriter, r *http.Request)
 	case "failed":
 		job.JobStatus = lightscene.StatusFailed
 	default:
-		// 平台成功或仍在跑都先待核对。输出编号不是供应商回执。
+		// 平台成功或仍在跑都先待核对。输出编号不是供应商回执，也不是模型结果。
 		job.JobStatus = lightscene.StatusUnknown
 		if receipt, _ := st.Result["vendor_receipt_id"].(string); strings.TrimSpace(receipt) != "" {
 			job.VendorReceiptID = strings.TrimSpace(receipt)
 		}
 		job.Pending = lightscene.AppendPending(job.Pending, "供应商结果待核对")
 	}
+	absorbLightModel(&job, st.Result)
+	job = preserveSelectedLight(before, job, job.JobStatus)
 	job.VerifiedProduct = false
 	job.Deliverable = false
+	job.Pending = lightscene.AppendPending(job.Pending, lightscene.RealGenerationIncomplete)
 	job = s.persistLightGate(r, job)
+	job = preserveSelectedLight(before, job, job.JobStatus)
 	if err := s.St.UpdateLightJob(r.Context(), job); err != nil {
 		writeStoreErr(w, err)
 		return
@@ -452,12 +474,16 @@ func (s *Server) lightView(job store.LightJob, idempotent bool) map[string]any {
 		"lighting_intent": job.LightingIntent, "fingerprint": job.Fingerprint,
 		"quote_status": job.QuoteStatus, "billing_label": job.BillingLabel,
 		"job_status": job.JobStatus, "quality": job.Quality, "evidence": job.Evidence,
-		"platform_task_id": job.PlatformTaskID, "output_asset_id": job.OutputAssetID,
-		"output_version": job.OutputVersion, "vendor_receipt_id": job.VendorReceiptID,
+		"platform_task_id": job.PlatformTaskID, "model_ref": job.ModelRef,
+		"model_fingerprint": lightscene.ModelFingerprint(job.ModelRef),
+		"output_asset_id":   job.OutputAssetID,
+		"output_version":    job.OutputVersion, "vendor_receipt_id": job.VendorReceiptID,
 		"selection": job.Selection, "export_count": job.ExportCount,
 		"deliverable": job.Deliverable, "verified_product": job.VerifiedProduct,
 		"pending": job.Pending, "allowed_uses": job.AllowedUses,
-		"production_generation_passed": false, "billing_passed": false,
+		"charged": nil, "production_generation_passed": false, "billing_passed": false,
+		"production_authorized": false, "production_authorization": lightscene.ProductionNotAuthorized,
+		"real_generation_completed": false, "real_generation_notice": lightscene.RealGenerationIncomplete,
 		"delivery_readiness": lightscene.ReadinessInternal, "honesty": lightscene.HonestyNotice,
 		"idempotent": idempotent,
 	}
@@ -490,6 +516,31 @@ func executionFromLight(job store.LightJob) lightscene.Execution {
 		VendorReceiptID: job.VendorReceiptID, Selection: job.Selection, Pending: job.Pending,
 		AllowedUses: job.AllowedUses, DeliveryReadiness: lightscene.ReadinessInternal,
 	}
+}
+
+func absorbLightModel(job *store.LightJob, result map[string]any) {
+	if job == nil || job.ModelRef != "" || result == nil {
+		return
+	}
+	if ref, _ := result["model_ref"].(string); strings.TrimSpace(ref) != "" {
+		job.ModelRef = strings.TrimSpace(ref)
+	}
+}
+
+// preserveSelectedLight 失败和 unknown 不能换掉用户后来选定的版本，也不能把晚到资产写成输出。
+func preserveSelectedLight(before, job store.LightJob, status string) store.LightJob {
+	kept := lightscene.KeepSelectedVersion(executionFromLight(before), status)
+	if before.Selection != "selected" || strings.TrimSpace(before.OutputVersion) == "" {
+		return job
+	}
+	job.JobStatus = kept.Status
+	job.OutputVersion = before.OutputVersion
+	job.OutputAssetID = before.OutputAssetID
+	job.Selection = before.Selection
+	job.Mode = before.Mode
+	job.VerifiedProduct = false
+	job.Deliverable = false
+	return job
 }
 
 func keepFail(quality string) string {

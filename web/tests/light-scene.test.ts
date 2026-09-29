@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   BILLING_PENDING,
   HONESTY,
+  REAL_GENERATION_INCOMPLETE,
   billingLine,
   creativeChoice,
+  quoteStatusLabel,
   quoteStale,
   subjectProtectionLabel,
 } from "@/lib/light-scene";
@@ -36,6 +38,31 @@ describe("光影场景诚实文案", () => {
     expect(subjectProtectionLabel("fail")).toBe("主体保护未通过");
     expect(subjectProtectionLabel("pass")).toBe("主体保护待确认");
     expect(subjectProtectionLabel(undefined)).toBe("主体保护待确认");
+  });
+
+  it("没有凭证时文案写明真实出图未完成", () => {
+    expect(REAL_GENERATION_INCOMPLETE).toBe("真实出图未完成");
+  });
+
+  it("报价状态跟着选择走", () => {
+    expect(quoteStatusLabel("unconfirmed")).toBe("报价未确认");
+    expect(quoteStatusLabel("confirmed")).toBe("报价已确认");
+    expect(quoteStatusLabel("invalid")).toBe("报价已失效");
+    expect(quoteStatusLabel("")).toBe("尚未报价");
+  });
+
+  it("面板标出未完成和指纹，不画模型图", () => {
+    const panel = readFileSync(
+      path.join(process.cwd(), "src/components/light-scene/Panel.tsx"),
+      "utf8"
+    );
+    expect(panel).toContain(REAL_GENERATION_INCOMPLETE);
+    expect(panel).toContain("任务指纹");
+    expect(panel).toContain("data-charged");
+    expect(panel).toContain("data-production-authorized");
+    expect(panel).toContain("data-light-quote-status");
+    expect(panel).not.toMatch(/<img[\s>]/);
+    expect(panel).not.toContain("已结算");
   });
 
   it("面板不宣称主体保护或生产出图已通过", () => {
