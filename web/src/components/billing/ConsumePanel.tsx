@@ -9,6 +9,8 @@ export type ConsumePanelProps = {
   mustRequote: boolean;
   topup?: { entry: string; returnTarget: string; quoteRef: string } | null;
   levels: CompletionLevels;
+  connection?: string;
+  settlement?: string;
   onReconfirm?: () => void;
 };
 
@@ -22,6 +24,9 @@ export function ConsumePanel(props: ConsumePanelProps) {
       <p>
         报价 <Badge variant="warn">{props.presentation}</Badge>
       </p>
+      {props.connection ? <p>连接 {props.connection}</p> : null}
+      {props.settlement ? <p>结算 {props.settlement}</p> : null}
+      <p>生成完成不等于已结算。</p>
       {props.mustRequote ? (
         <Button type="button" variant="secondary" onClick={props.onReconfirm}>
           重新确认报价

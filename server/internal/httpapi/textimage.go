@@ -6,17 +6,20 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bianjiefilm/product-image-engine/server/internal/billconsume"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 	"github.com/bianjiefilm/product-image-engine/server/internal/textimage"
 )
 
 func (s *Server) handleTextImageCapabilities(w http.ResponseWriter, r *http.Request) {
+	label, settlement := s.shownBilling("", "", "")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":               true,
 		"photo_required":        false,
-		"billing_label":         textimage.BillingPendingLabel,
-		"charged":               false,
+		"billing_label":         label,
+		"settlement":            settlement,
+		"charged":               nil,
 		"billing_passed":        false,
 		"production_authorized": false,
 		"subject_protected":     false,
@@ -53,6 +56,7 @@ func (s *Server) handleCreateTextImage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	// 客户端金额不进入领域层。展示文案按真实连接状态覆盖，BillingConnected 不是资金证明。
 	if existing, ferr := s.St.FindTextImageByFingerprint(r.Context(), proj.TenantID, q.Fingerprint); ferr == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(existing, true)})
 		return
@@ -60,6 +64,13 @@ func (s *Server) handleCreateTextImage(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, ferr)
 		return
 	}
+	p, _ := principalFrom(r.Context())
+	payer, payerErr := serverPayer(p, proj)
+	if payerErr != nil {
+		payer = billconsume.Payer{}
+	}
+	label, _ := s.captionFor(r.Context(), payer, "image.text", 1, proj.WidthPx, proj.HeightPx, proj.ID, q.Fingerprint)
+	q.BillingLabel = label
 	job, err := s.St.InsertTextImageJob(r.Context(), store.TextImageJob{
 		TenantID: proj.TenantID, ProjectID: proj.ID, Prompt: q.Prompt, PhotoAssetID: q.PhotoAssetID,
 		Fingerprint: q.Fingerprint, QuoteStatus: q.QuoteStatus, BillingLabel: q.BillingLabel,
@@ -87,7 +98,8 @@ func (s *Server) handleListTextImage(w http.ResponseWriter, r *http.Request) {
 	for _, job := range jobs {
 		views = append(views, s.textImageView(job, false))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jobs": views, "billing_label": textimage.BillingPendingLabel, "show_image": false})
+	label, _ := s.shownBilling("", "", "")
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": views, "billing_label": label, "show_image": false, "charged": nil})
 }
 
 func (s *Server) handleConfirmTextImage(w http.ResponseWriter, r *http.Request) {
@@ -268,9 +280,7 @@ func (s *Server) textProject(w http.ResponseWriter, r *http.Request) (store.Proj
 }
 
 func (s *Server) textImageView(job store.TextImageJob, idempotent bool) map[string]any {
-	if job.BillingLabel == "" {
-		job.BillingLabel = textimage.BillingPendingLabel
-	}
+	label, settlement := s.shownBilling(job.BillingLabel, job.JobStatus, "")
 	statusLabel := "待确认"
 	if job.JobStatus == textimage.StatusFailed {
 		statusLabel = "失败"
@@ -281,11 +291,11 @@ func (s *Server) textImageView(job store.TextImageJob, idempotent bool) map[stri
 		"id": job.ID, "project_id": job.ProjectID, "prompt": job.Prompt,
 		"photo_asset_id": job.PhotoAssetID, "photo_required": false,
 		"fingerprint": job.Fingerprint, "quote_status": job.QuoteStatus,
-		"billing_label": job.BillingLabel, "job_status": job.JobStatus,
+		"billing_label": label, "settlement": settlement, "job_status": job.JobStatus,
 		"status_label": statusLabel, "quality": job.Quality,
 		"platform_task_id": job.PlatformTaskID, "output_asset_id": "",
 		"output_is_receipt": false, "show_image": false,
-		"charged": false, "billing_passed": false, "production_authorized": false,
+		"charged": nil, "billing_passed": false, "production_authorized": false,
 		"subject_protected": false, "pending": job.Pending,
 		"delivery_readiness": textimage.ReadinessInternal, "honesty": textimage.HonestyNotice,
 		"idempotent": idempotent,

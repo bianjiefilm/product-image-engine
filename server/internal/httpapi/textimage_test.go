@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -28,9 +29,10 @@ func TestTextImageStartsFromPromptWithoutPhoto(t *testing.T) {
 	if st != http.StatusOK {
 		t.Fatalf("能力接口 %d %v", st, capBody)
 	}
-	if capBody["billing_label"] != "计费待确认" || capBody["photo_required"] != false ||
+	if capBody["billing_label"] != "配置缺失" || capBody["photo_required"] != false ||
 		capBody["billing_passed"] != false || capBody["production_authorized"] != false ||
-		capBody["subject_protected"] != false {
+		capBody["subject_protected"] != false || capBody["charged"] != nil || capBody["show_image"] != false ||
+		capBody["settlement"] != "unknown" {
 		t.Fatalf("能力接口不得宣称已出图或已扣费: %#v", capBody)
 	}
 
@@ -46,10 +48,10 @@ func TestTextImageStartsFromPromptWithoutPhoto(t *testing.T) {
 		t.Fatalf("开文字请求 %d %v", st, created)
 	}
 	job, _ := created["job"].(map[string]any)
-	if job["billing_label"] != "计费待确认" || job["photo_required"] != false || job["show_image"] != false {
+	if job["billing_label"] != "配置缺失" || job["photo_required"] != false || job["show_image"] != false || job["settlement"] != "unknown" {
 		t.Fatalf("文字入口不诚实: %#v", job)
 	}
-	if job["charged"] != false || job["billing_passed"] != false || job["production_authorized"] != false || job["subject_protected"] != false {
+	if job["charged"] != nil || job["billing_passed"] != false || job["production_authorized"] != false || job["subject_protected"] != false || strings.Contains(mapString(job), "¥9.90") {
 		t.Fatalf("客户端不能自称已保护或已扣费: %#v", job)
 	}
 	id, _ := job["id"].(string)
@@ -73,7 +75,7 @@ func TestTextImageSubmitWithoutSupplierStaysFailed(t *testing.T) {
 	if st != http.StatusOK || job["job_status"] != "failed" || job["show_image"] != false || job["subject_protected"] != false {
 		t.Fatalf("没有供应商时应失败且不出图: %d %#v", st, job)
 	}
-	if job["billing_passed"] != false || job["production_authorized"] != false || job["charged"] != false {
+	if job["billing_passed"] != false || job["production_authorized"] != false || job["charged"] != nil || job["billing_label"] != "配置缺失" {
 		t.Fatalf("失败不能标成计费或生产通过: %#v", job)
 	}
 	st, claimed := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/claim", tok, map[string]any{
@@ -194,8 +196,20 @@ func TestTextImageFromPersonalEntryDoesNotNeedPhoto(t *testing.T) {
 		t.Fatalf("个人工程上的文字请求 %d %v", st, created)
 	}
 	job, _ := created["job"].(map[string]any)
-	if job["photo_required"] != false || job["show_image"] != false || job["billing_label"] != "计费待确认" {
+	if job["photo_required"] != false || job["show_image"] != false || job["billing_label"] != "配置缺失" || job["charged"] != nil || job["billing_passed"] != false {
 		t.Fatalf("个人文字入口不诚实: %#v", job)
+	}
+}
+
+func TestTextImageConfiguredWithoutPortIsUnimplemented(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.BillingEnabled = true
+	})
+	_, tok := f.loginOK(t)
+	st, capBody := f.do(t, "GET", "/api/v1/text-images/capabilities", tok, nil)
+	if st != http.StatusOK || capBody["billing_label"] != "未实现" || capBody["charged"] != nil || capBody["show_image"] != false || capBody["billing_passed"] != false {
+		t.Fatalf("配了计费但没有端口应报未实现，仍不出图: %d %#v", st, capBody)
 	}
 }
 

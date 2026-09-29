@@ -7,7 +7,7 @@ import { ConsumePanel } from "@/components/billing/ConsumePanel";
 import { StartScreen } from "@/components/first-image/StartScreen";
 import { TextImagePanel } from "@/components/text-image/Panel";
 import { Button } from "@/components/ui/button";
-import { canGenerate, completionLevels, payerLabel, presentQuote, quoteFingerprint } from "@/lib/consume";
+import { canGenerate, completionLevels, presentQuote, quoteFingerprint } from "@/lib/consume";
 import { firstScreen, PERSONAL_SCOPE, presentResult, resumeTask, statusLabel } from "@/lib/first-image";
 
 type SessionBody = {
@@ -259,11 +259,22 @@ export default function StartClient() {
   const sourceLabel = sourced ? `${source === "order" ? "订单" : "活动"} ${sourceRef}` : "";
   const topupPage = search.get("topup") || "";
   const quoteRef = search.get("quote_ref") || "";
-  const payerDisplay = payerLabel({
-    sourceType: source,
-    personalDisplay: "个人付款",
-    verifiedOrgDisplay: sourced ? "组织付款" : undefined,
-  });
+  const payerDisplay = sourced ? "待确认" : "个人付款";
+  useEffect(() => {
+    if (topupPage !== "success" || !projectId) return;
+    let cancelled = false;
+    (async () => {
+      await fetch("/api/billing/consume/return", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, page: "success" }),
+      });
+      if (!cancelled) setQuotedGenerate(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [topupPage, projectId]);
   const fingerprint = quoteFingerprint({
     payerAccountRef: sourced ? sourceTenant || "organization" : "personal",
     imageCount: 1,

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
+	"github.com/bianjiefilm/product-image-engine/server/internal/billassemble"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/httpapi"
 	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
@@ -72,6 +73,10 @@ func main() {
 		Tasks:   &platform.TaskClient{BaseURL: cfg.TaskBaseURL, AppID: cfg.IdentityAppID, Token: cfg.TaskToken},
 		Uploads: &platform.UploadClient{BaseURL: cfg.UploadBaseURL, AppID: cfg.IdentityAppID, Token: cfg.UploadToken},
 		Billing: &platform.BillingClient{BaseURL: cfg.BillingBaseURL, AppID: cfg.IdentityAppID, Token: cfg.BillingToken},
+		Bills: &billassemble.Live{
+			AppID: cfg.IdentityAppID, BillingToken: cfg.BillingToken, TaskToken: cfg.TaskToken,
+			BillingBase: cfg.BillingBaseURL, TaskBase: cfg.TaskBaseURL, Enabled: cfg.BillingEnabled,
+		},
 	}
 
 	ln, err := net.Listen("tcp", cfg.Addr)

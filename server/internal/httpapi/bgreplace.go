@@ -7,18 +7,22 @@ import (
 	"strings"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
+	"github.com/bianjiefilm/product-image-engine/server/internal/billconsume"
 	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
 func (s *Server) handleBgCapabilities(w http.ResponseWriter, r *http.Request) {
+	label, settlement := s.shownBilling("", "", "")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":                      true,
 		"default_mode":                 string(bgreplace.ModeFidelity),
 		"creative_available":           s.Cfg.CreativePathAvailable(),
 		"protection_scope":             bgreplace.ProtectionScope,
-		"billing_label":                bgreplace.BillingPendingLabel,
+		"billing_label":                label,
+		"settlement":                   settlement,
+		"charged":                      nil,
 		"production_generation_passed": false,
 		"billing_passed":               false,
 		"real_generation_completed":    false,
@@ -52,7 +56,8 @@ func (s *Server) handleCreateBgReplace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := r.PathValue("id")
-	if _, err := s.St.GetProject(r.Context(), p.Tenant(), projectID); err != nil {
+	proj, err := s.St.GetProject(r.Context(), p.Tenant(), projectID)
+	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
@@ -90,6 +95,7 @@ func (s *Server) handleCreateBgReplace(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	// 客户端金额不进入领域层。展示文案按真实连接状态覆盖，BillingConnected 不是资金证明。
 	if existing, ferr := s.St.FindBgJobByFingerprint(r.Context(), p.Tenant(), q.Fingerprint); ferr == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(existing, true)})
 		return
@@ -101,6 +107,12 @@ func (s *Server) handleCreateBgReplace(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
+	payer, payerErr := serverPayer(p, proj)
+	if payerErr != nil {
+		payer = billconsume.Payer{}
+	}
+	label, _ := s.captionFor(r.Context(), payer, "image.generate.background", 1, proj.WidthPx, proj.HeightPx, proj.ID, q.Fingerprint)
+	q.BillingLabel = label
 	job, err := s.St.InsertBgJob(r.Context(), store.BgJob{
 		TenantID: p.Tenant(), ProjectID: projectID, InputID: in.ID, InputVersion: version,
 		Mode: string(q.Mode), ProtectedRegion: q.ProtectedRegion, BackgroundIntent: q.BackgroundIntent,
@@ -130,7 +142,8 @@ func (s *Server) handleListBgReplace(w http.ResponseWriter, r *http.Request) {
 	for _, job := range jobs {
 		views = append(views, s.bgView(job, false))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jobs": views, "billing_label": bgreplace.BillingPendingLabel})
+	label, _ := s.shownBilling("", "", "")
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": views, "billing_label": label, "charged": nil})
 }
 
 func (s *Server) handleConfirmBgReplace(w http.ResponseWriter, r *http.Request) {
@@ -482,9 +495,7 @@ func (s *Server) loadBgJob(w http.ResponseWriter, r *http.Request) (store.BgJob,
 }
 
 func (s *Server) bgView(job store.BgJob, idempotent bool) map[string]any {
-	if job.BillingLabel == "" {
-		job.BillingLabel = bgreplace.BillingPendingLabel
-	}
+	label, settlement := s.shownBilling(job.BillingLabel, job.JobStatus, job.FeeRef)
 	checks := bgreplace.ParseChecks(job.ProductChecksJSON)
 	done, notice := bgreplace.RealGenerationState(bgreplace.RealGenerationInput{
 		Credential: s.Cfg.BgRealModelConfigured(),
@@ -503,7 +514,8 @@ func (s *Server) bgView(job store.BgJob, idempotent bool) map[string]any {
 		"input_version": job.InputVersion, "mode": job.Mode, "protected_region": job.ProtectedRegion,
 		"protection_scope":  job.ProtectedRegion,
 		"background_intent": job.BackgroundIntent, "fingerprint": job.Fingerprint,
-		"quote_status": job.QuoteStatus, "billing_label": job.BillingLabel,
+		"quote_status": job.QuoteStatus, "billing_label": label, "settlement": settlement,
+		"charged":    nil,
 		"job_status": job.JobStatus, "quality": job.Quality, "evidence": job.Evidence,
 		"platform_task_id": job.PlatformTaskID, "model_ref": job.ModelRef, "fee_ref": job.FeeRef,
 		"output_asset_id": job.OutputAssetID,
