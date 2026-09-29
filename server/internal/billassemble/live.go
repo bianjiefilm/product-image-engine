@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -27,46 +28,53 @@ type Live struct {
 
 func (p *Live) Quote(ctx context.Context, in QuoteCall) (QuoteFact, error) {
 	if err := p.billingReady(); err != nil {
-		return QuoteFact{Connection: ConnMissing}, err
+		return QuoteFact{Connection: ConnMissing, FundsState: FundsUnconfigured}, err
 	}
 	if strings.TrimSpace(in.PayerAccountID) == "" || in.Quantity <= 0 || strings.TrimSpace(in.Capability) == "" || strings.TrimSpace(in.IdempotencyKey) == "" || strings.TrimSpace(in.PricingVersion) == "" {
-		return QuoteFact{Connection: ConnReady}, ErrUsageInvalid
+		return QuoteFact{Connection: ConnReady, FundsState: FundsNotSent}, ErrUsageInvalid
 	}
 	usageID, err := p.ingest(ctx, in)
 	if err != nil {
-		return QuoteFact{Connection: ConnReady}, err
+		state := FundsNotSent
+		conn := ConnReady
+		if errors.Is(err, ErrConfigMissing) {
+			state = FundsUnconfigured
+			conn = ConnMissing
+		}
+		return QuoteFact{Connection: conn, FundsState: state}, err
 	}
 	fact, err := p.quoteUsage(ctx, usageID)
 	if err != nil {
-		return QuoteFact{Connection: ConnReady, UsageID: usageID}, err
+		return QuoteFact{Connection: ConnReady, UsageID: usageID, FundsState: FundsNotSent}, err
 	}
 	fact.UsageID = usageID
 	fact.Connection = ConnReady
 	fact.Sent = true
 	fact.Currency = "CNY"
-	p.attachBalance(ctx, in.PayerAccountID, &fact)
+	fact.FundsState = FundsNotSent
+	p.attachBalance(ctx, in.TenantID, in.PayerAccountID, &fact)
 	return fact, nil
 }
 
 func (p *Live) Hold(context.Context, HoldCall) (HoldFact, error) {
 	if err := p.billingReady(); err != nil {
-		return HoldFact{Connection: ConnMissing, FundsAction: FundsNotExecuted}, err
+		return HoldFact{Connection: ConnMissing, FundsAction: FundsUnconfigured, Sent: false}, err
 	}
-	return HoldFact{Connection: ConnReady, FundsAction: FundsNotExecuted}, ErrFundsNotExecuted
+	return HoldFact{Connection: ConnReady, FundsAction: FundsNotSent, Sent: false}, ErrFundsNotExecuted
 }
 
 func (p *Live) Release(context.Context, ReleaseCall) (ReleaseFact, error) {
 	if err := p.billingReady(); err != nil {
-		return ReleaseFact{FundsAction: FundsNotExecuted}, err
+		return ReleaseFact{FundsAction: FundsUnconfigured, Sent: false}, err
 	}
-	return ReleaseFact{FundsAction: FundsNotExecuted}, ErrFundsNotExecuted
+	return ReleaseFact{FundsAction: FundsNotSent, Sent: false}, ErrFundsNotExecuted
 }
 
 func (p *Live) Settle(context.Context, SettleCall) (SettleFact, error) {
 	if err := p.billingReady(); err != nil {
-		return SettleFact{FundsAction: FundsNotExecuted}, err
+		return SettleFact{FundsAction: FundsUnconfigured, Sent: false}, err
 	}
-	return SettleFact{FundsAction: FundsNotExecuted}, ErrFundsNotExecuted
+	return SettleFact{FundsAction: FundsNotSent, Sent: false}, ErrFundsNotExecuted
 }
 
 func (p *Live) Lookup(ctx context.Context, in LookupCall) (LookupFact, error) {
@@ -108,13 +116,18 @@ func (p *Live) Lookup(ctx context.Context, in LookupCall) (LookupFact, error) {
 }
 
 func (p *Live) ReadBalance(ctx context.Context, accountID string) (Balance, error) {
+	return p.ReadBalanceFor(ctx, "", accountID)
+}
+
+// ReadBalanceFor 只读指定租户名下的账号。租户不匹配时余额未知，不返回别的租户的数字。
+func (p *Live) ReadBalanceFor(ctx context.Context, tenantID, accountID string) (Balance, error) {
 	if err := p.billingReady(); err != nil {
 		return Balance{Connection: ConnMissing}, err
 	}
 	var fact QuoteFact
-	p.attachBalance(ctx, accountID, &fact)
+	p.attachBalance(ctx, tenantID, accountID, &fact)
 	if !fact.BalanceKnown {
-		return Balance{Connection: ConnReady}, nil
+		return Balance{Known: false, Connection: ConnReady}, nil
 	}
 	return Balance{Known: true, Minor: fact.BalanceMinor, Connection: ConnReady}, nil
 }
@@ -130,11 +143,21 @@ func (p *Live) billingReady() error {
 }
 
 func (p *Live) ingest(ctx context.Context, in QuoteCall) (string, error) {
-	status, body, err := p.postBilling(ctx, "/internal/v1/billing/unified/usage", map[string]any{
+	payload := map[string]any{
 		"app_id": p.AppID, "capability": in.Capability, "quantity": in.Quantity,
 		"pricing_version": in.PricingVersion, "business_ref": in.BusinessRef,
 		"payer_account_id": in.PayerAccountID, "idempotency_key": in.IdempotencyKey,
-	})
+	}
+	if strings.TrimSpace(in.TenantID) != "" {
+		payload["tenant_id"] = strings.TrimSpace(in.TenantID)
+	}
+	if strings.TrimSpace(in.Model) != "" {
+		payload["model"] = strings.TrimSpace(in.Model)
+	}
+	if strings.TrimSpace(in.Size) != "" {
+		payload["size"] = strings.TrimSpace(in.Size)
+	}
+	status, body, err := p.postBilling(ctx, "/internal/v1/billing/unified/usage", payload)
 	if err != nil {
 		return "", ErrUnavailable
 	}
@@ -171,17 +194,23 @@ func (p *Live) quoteUsage(ctx context.Context, usageID string) (QuoteFact, error
 	}
 	var doc struct {
 		Quote struct {
-			AmountMinor int64 `json:"amount_minor"`
+			AmountMinor int64  `json:"amount_minor"`
+			Origin      string `json:"origin"`
 		} `json:"quote"`
 	}
 	if json.Unmarshal(res.Body, &doc) != nil {
 		return QuoteFact{}, ErrUnavailable
 	}
-	return QuoteFact{AmountMinor: doc.Quote.AmountMinor, Currency: "CNY"}, nil
+	return QuoteFact{AmountMinor: doc.Quote.AmountMinor, Currency: "CNY", Origin: strings.TrimSpace(doc.Quote.Origin)}, nil
 }
 
-func (p *Live) attachBalance(ctx context.Context, accountID string, fact *QuoteFact) {
-	status, body, err := p.getBilling(ctx, "/internal/v1/billing/unified/accounts?account_id="+url.QueryEscape(accountID))
+func (p *Live) attachBalance(ctx context.Context, tenantID, accountID string, fact *QuoteFact) {
+	query := url.Values{}
+	query.Set("account_id", accountID)
+	if strings.TrimSpace(tenantID) != "" {
+		query.Set("tenant_id", strings.TrimSpace(tenantID))
+	}
+	status, body, err := p.getBilling(ctx, "/internal/v1/billing/unified/accounts?"+query.Encode())
 	if err != nil || status != http.StatusOK {
 		return
 	}

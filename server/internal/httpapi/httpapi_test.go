@@ -395,9 +395,10 @@ func TestReadyzReportsGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	raw, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 503 {
-		t.Fatalf("配置不完整时登录应 503, got %d", res.StatusCode)
+	if res.StatusCode != 503 || !strings.Contains(string(raw), "配置缺失") || strings.Contains(string(raw), "代码未实现") {
+		t.Fatalf("配置不完整时应说明配置缺失, got %d %s", res.StatusCode, raw)
 	}
 }
 

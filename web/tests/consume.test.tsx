@@ -8,14 +8,25 @@ import {
   afterTopupPage,
   canGenerate,
   completionLevels,
+  configurationLabel,
+  estimateShown,
   payerLabel,
   presentQuote,
+  quoteFingerprint,
   visibleBooks,
 } from "@/lib/consume";
 
 describe("产品图消费报价", () => {
   it("独立使用默认个人付款，活动入口只显示已验证组织", () => {
     expect(payerLabel({ sourceType: "", personalDisplay: "个人付款" })).toBe("个人付款");
+    expect(
+      payerLabel({
+        sourceType: "campaign",
+        personalDisplay: "个人付款",
+        verifiedOrgDisplay: "A商家付款",
+        identityConfigured: false,
+      })
+    ).toBe("配置缺失");
     expect(
       payerLabel({
         sourceType: "campaign",
@@ -95,6 +106,56 @@ describe("产品图消费报价", () => {
     expect(html).not.toContain("B商家");
     expect(html).not.toContain("点数");
     expect(html).toContain('data-generate="false"');
+    expect(html).not.toContain("<input");
+    expect(html).toContain('data-payer-source="server"');
+  });
+
+  it("没有报价对象时不显示人民币，夹具报价不是 Billing PASS", () => {
+    expect(estimateShown("本次预计 ¥1.50", false)).toBe("待确认");
+    expect(estimateShown("本次预计 ¥1.50", true)).toBe("本次预计 ¥1.50");
+    expect(configurationLabel({ identityConfigured: false, billingConfigured: true, adapterPresent: true })).toBe("配置缺失");
+    expect(configurationLabel({ identityConfigured: true, billingConfigured: false, adapterPresent: true })).toBe("配置缺失");
+    expect(configurationLabel({ identityConfigured: true, billingConfigured: true, adapterPresent: false })).toBe("未实现");
+    expect(configurationLabel({ identityConfigured: false, billingConfigured: false, adapterPresent: true })).not.toBe("代码未实现");
+    const base = quoteFingerprint({
+      payerAccountRef: "acct_a",
+      imageCount: 1,
+      resolution: "800x800",
+      capability: "image.generate.standard",
+      pricingVersion: "pricing-2026-09",
+      model: "standard",
+      size: "800x800",
+    });
+    expect(
+      quoteFingerprint({
+        payerAccountRef: "acct_a",
+        imageCount: 1,
+        resolution: "800x800",
+        capability: "image.generate.standard",
+        pricingVersion: "pricing-2026-09",
+        model: "premium",
+        size: "800x800",
+      })
+    ).not.toBe(base);
+    const html = renderToStaticMarkup(
+      createElement(ConsumePanel, {
+        payerDisplay: "个人付款",
+        presentation: "本次预计 ¥1.50",
+        generateAllowed: false,
+        mustRequote: true,
+        quoted: true,
+        quoteOrigin: "fixture",
+        fundsState: "not_sent",
+        connection: "已配置",
+        levels: completionLevels(),
+      })
+    );
+    expect(html).toContain("本次预计 ¥1.50");
+    expect(html).toContain('data-quote-origin="fixture"');
+    expect(html).toContain("not_sent");
+    expect(html).toContain('data-billing-pass="UNKNOWN"');
+    expect(html).not.toContain("Billing PASS");
+    expect(html).not.toContain("<input");
   });
 
   it("活动入口在服务端回答前不自称组织付款", () => {
@@ -105,6 +166,12 @@ describe("产品图消费报价", () => {
     expect(start).not.toContain("组织付款");
     expect(start).toContain("/api/billing/consume/return");
     expect(start).toContain("个人付款");
+    expect(start).not.toContain("payer_account_ref");
+    expect(start).not.toContain("代码未实现");
+    expect(start).toContain("配置缺失");
+    expect(start).toContain("funds_state");
+    expect(start).toContain('model: form.model');
+    expect(start).not.toContain("topupPage === \"success\" ? false : quotedGenerate && generate");
   });
 });
 

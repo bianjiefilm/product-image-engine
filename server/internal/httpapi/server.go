@@ -252,7 +252,7 @@ func (s *Server) guard(needsAuth bool, next http.HandlerFunc) http.Handler {
 		}
 		// 致命配置问题:显式 503,绝不带病服务。
 		if fatal := s.Cfg.FatalProblems(); len(fatal) > 0 {
-			writeErr(w, http.StatusServiceUnavailable, "config_incomplete", "服务配置不完整:"+strings.Join(fatal, ";"))
+			writeErr(w, http.StatusServiceUnavailable, "config_incomplete", "配置缺失:"+strings.Join(fatal, ";"))
 			return
 		}
 		ctx := r.Context()

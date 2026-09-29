@@ -46,8 +46,8 @@ func (r *Record) Quote(_ context.Context, in QuoteCall) (QuoteFact, error) {
 	fact := QuoteFact{
 		UsageID: "usg_" + shortKey(in.IdempotencyKey), AmountMinor: amount, Currency: "CNY",
 		IncludedAllowance: r.Included, BalanceKnown: r.BalanceKnown, BalanceMinor: r.BalanceMinor,
-		Sent: false, Connection: ConnReady, EntitlementsKnown: true,
-		Entitlements: append([]string(nil), r.Entitled...),
+		Sent: false, Connection: ConnReady, Origin: QuoteOriginFixture, FundsState: FundsNotSent,
+		EntitlementsKnown: true, Entitlements: append([]string(nil), r.Entitled...),
 	}
 	if r.BalanceKnown && !r.Included && r.BalanceMinor < amount {
 		fact.FundsShort = true
