@@ -1,0 +1,157 @@
+// Package billassemble 把产品图用量接到已有平台报价和查回。
+// 真实端口可以报价、只读余额、查询任务。本轮不发送预占、结算或释放。
+package billassemble
+
+import (
+	"context"
+	"errors"
+	"strings"
+)
+
+const (
+	PricingVersion = "pricing-2026-09"
+
+	ConnMissing       = "配置缺失"
+	ConnUnimplemented = "未实现"
+	ConnReady         = "已配置"
+
+	SettlementUnknown = "unknown"
+	PendingCheck      = "作品完成待核对"
+	FundsNotExecuted  = "未执行"
+)
+
+var (
+	ErrConfigMissing    = errors.New(ConnMissing)
+	ErrUnimplemented    = errors.New(ConnUnimplemented)
+	ErrFundsNotExecuted = errors.New(FundsNotExecuted)
+	ErrUnavailable      = errors.New("计费服务不可达")
+	ErrUsageInvalid     = errors.New("用量事实不完整")
+)
+
+// LinkConfig 是计费连接。缺任一项都是配置缺失，而不是「未扣费」。
+type LinkConfig struct {
+	Enabled bool
+	BaseURL string
+	Token   string
+	AppID   string
+}
+
+func Connection(cfg LinkConfig) string {
+	if !cfg.Enabled || strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(cfg.AppID) == "" {
+		return ConnMissing
+	}
+	return ConnReady
+}
+
+// QuoteCall 是服务端已经决定的用量。付款人不能从浏览器正文抄进来。
+type QuoteCall struct {
+	PayerAccountID string
+	Capability     string
+	Quantity       int64
+	PricingVersion string
+	BusinessRef    string
+	IdempotencyKey string
+}
+
+// QuoteFact 是一次报价读到的事实。余额未知时不得当成充足。
+type QuoteFact struct {
+	UsageID           string
+	AmountMinor       int64
+	Currency          string
+	IncludedAllowance bool
+	BalanceKnown      bool
+	BalanceMinor      int64
+	FundsShort        bool
+	Sent              bool
+	Connection        string
+	EntitlementsKnown bool
+	Entitlements      []string
+}
+
+type HoldCall struct {
+	UsageID        string
+	PayerAccountID string
+	IdempotencyKey string
+	AmountMinor    int64
+}
+
+type HoldFact struct {
+	HoldID      string
+	AmountMinor int64
+	Sent        bool
+	FundsAction string
+	Connection  string
+}
+
+type ReleaseCall struct {
+	HoldID         string
+	IdempotencyKey string
+}
+
+type ReleaseFact struct {
+	ReleasedMinor int64
+	Sent          bool
+	FundsAction   string
+}
+
+type SettleCall struct {
+	UsageID        string
+	IdempotencyKey string
+}
+
+type SettleFact struct {
+	ChargeID    string
+	Sent        bool
+	FundsAction string
+}
+
+type LookupCall struct {
+	TaskID  string
+	UsageID string
+}
+
+// LookupFact 没有账单时 Settlement 保持 unknown，不用 false 表示已核对。
+type LookupFact struct {
+	TaskID      string
+	TaskStatus  string
+	ChargeRef   string
+	FoundTask   bool
+	FoundCharge bool
+	Sent        bool
+	Settlement  string
+	Connection  string
+}
+
+type Balance struct {
+	Known      bool
+	Minor      int64
+	Connection string
+}
+
+// Port 是报价装配。测试双和真实端口都实现它。
+type Port interface {
+	Quote(ctx context.Context, in QuoteCall) (QuoteFact, error)
+	Hold(ctx context.Context, in HoldCall) (HoldFact, error)
+	Release(ctx context.Context, in ReleaseCall) (ReleaseFact, error)
+	Settle(ctx context.Context, in SettleCall) (SettleFact, error)
+	Lookup(ctx context.Context, in LookupCall) (LookupFact, error)
+	ReadBalance(ctx context.Context, accountID string) (Balance, error)
+}
+
+// ReconcileResult 是生成结果和账单对照。没有账单不能通过。
+type ReconcileResult struct {
+	Settlement    string
+	BillingPassed bool
+	Regenerate    bool
+}
+
+// Reconcile 作品完成但没有账单时待核对，不重新生成。
+func Reconcile(workComplete bool, look LookupFact) ReconcileResult {
+	if look.FoundCharge {
+		return ReconcileResult{Settlement: "charged", BillingPassed: true, Regenerate: false}
+	}
+	if workComplete {
+		return ReconcileResult{Settlement: PendingCheck, BillingPassed: false, Regenerate: false}
+	}
+	return ReconcileResult{Settlement: SettlementUnknown, BillingPassed: false, Regenerate: false}
+}
