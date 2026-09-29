@@ -20,31 +20,48 @@ export function canStartWithText(prompt: string): boolean {
   return prompt.trim().length > 0;
 }
 
+const REAL_GENERATION = "真实出图未完成";
+const CONCEPTUAL = "概念输出，不宣称主体保真";
+
 export function presentTextJob(job: {
   id?: string;
   job_status?: string;
+  origin?: string;
   billing_label?: string;
+  settlement?: string;
   show_image?: boolean;
   subject_protected?: boolean;
   billing_passed?: boolean;
   production_authorized?: boolean;
   output_asset_id?: string;
+  photo_asset_id?: string;
+  real_generation_completed?: boolean;
 }): {
-  showImage: false;
+  showImage: boolean;
   billingLabel: string;
-  subjectLabel: "主体保护待确认";
+  subjectLabel: string;
   billingPassed: false;
   productionAuthorized: false;
+  realGeneration: "真实出图未完成";
+  settlementLabel: string;
   headline: string;
 } {
+  const trusted =
+    job.job_status === "completed" &&
+    job.origin === "fixture" &&
+    job.show_image === true &&
+    job.real_generation_completed !== true;
   const failed = (job.job_status ?? "") === "failed";
+  const noPhoto = !(job.photo_asset_id ?? "").trim();
   return {
-    showImage: false,
+    showImage: trusted,
     billingLabel: honestBillingLabel(job.billing_label),
-    subjectLabel: "主体保护待确认",
+    subjectLabel: noPhoto ? CONCEPTUAL : "有实物参考，主体保真仍未核实",
     billingPassed: false,
     productionAuthorized: false,
-    headline: failed ? "未能生成，没有真实产品图" : "结果待确认，没有真实产品图",
+    realGeneration: REAL_GENERATION,
+    settlementLabel: job.settlement === "作品完成待核对" ? "作品完成待核对" : "账单尚未核对",
+    headline: trusted ? "夹具图可以查看，这不是模型出图" : failed ? "未能生成，没有真实产品图" : "结果待确认，没有真实产品图",
   };
 }
 

@@ -22,10 +22,41 @@ describe("文字描述入口", () => {
     });
     expect(view.showImage).toBe(false);
     expect(view.billingLabel).toBe(BILLING_PENDING);
-    expect(view.subjectLabel).toBe("主体保护待确认");
+    expect(view.subjectLabel).toContain("不宣称主体保真");
     expect(view.billingPassed).toBe(false);
     expect(view.productionAuthorized).toBe(false);
+    expect(view.realGeneration).toBe("真实出图未完成");
     expect(view.headline).toContain("没有真实产品图");
+  });
+
+  it("只有服务端夹具完成时才出图，并且不把它当成模型或已结算", () => {
+    const view = presentTextJob({
+      id: "txt_fixture",
+      job_status: "completed",
+      origin: "fixture",
+      show_image: true,
+      billing_label: "配置缺失",
+      settlement: "作品完成待核对",
+      real_generation_completed: false,
+    });
+    expect(view.showImage).toBe(true);
+    expect(view.billingPassed).toBe(false);
+    expect(view.productionAuthorized).toBe(false);
+    expect(view.realGeneration).toBe("真实出图未完成");
+    expect(view.settlementLabel).toBe("作品完成待核对");
+    expect(view.headline).toContain("不是模型出图");
+    expect(view.subjectLabel).toContain("不宣称主体保真");
+    const forged = presentTextJob({
+      job_status: "completed",
+      origin: "supplier",
+      show_image: true,
+      real_generation_completed: true,
+      billing_passed: true,
+      production_authorized: true,
+    });
+    expect(forged.showImage).toBe(false);
+    expect(forged.billingPassed).toBe(false);
+    expect(forged.realGeneration).toBe("真实出图未完成");
   });
 
   it("待确认刷新后仍是同一条记录", () => {
@@ -50,17 +81,24 @@ describe("文字描述入口", () => {
   it("界面不放假图，也不把计费或生产授权标成通过", () => {
     const panel = readFileSync(path.join(process.cwd(), "src/components/text-image/Panel.tsx"), "utf8");
     const start = readFileSync(path.join(process.cwd(), "src/app/start/ui.tsx"), "utf8");
+    const lib = readFileSync(path.join(process.cwd(), "src/lib/text-image.ts"), "utf8");
     expect(panel).toContain("只用文字描述");
     expect(panel).toContain(BILLING_PENDING);
     expect(panel).toContain("view.billingLabel");
-    expect(panel).toContain("生成完成不等于已结算");
-    expect(panel).toContain("主体保护待确认");
-    expect(panel).not.toContain("<img");
+    expect(panel).toContain("view.subjectLabel");
+    expect(panel).toContain("view.realGeneration");
+    expect(panel).toContain("view.showImage");
+    expect(panel).toContain("不是模型出图");
+    expect(panel).toContain("@/components/ui/card");
+    expect(panel).not.toContain("已结算");
     expect(panel).not.toContain("主体已保护");
     expect(panel).not.toContain("Billing PASS");
     expect(panel).not.toContain("Production Authorized");
     expect(panel).not.toContain("可售");
     expect(panel).toContain("@/components/ui/button");
+    expect(lib).toContain("真实出图未完成");
+    expect(lib).toContain("概念输出，不宣称主体保真");
+    expect(lib).toContain("作品完成待核对");
     expect(start).toContain("TextImagePanel");
   });
 });
