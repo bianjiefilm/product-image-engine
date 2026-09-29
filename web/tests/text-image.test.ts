@@ -36,11 +36,24 @@ describe("文字描述入口", () => {
     expect(view.headline).toContain("待确认");
   });
 
+  it("只转述服务端的诚实计费文案，客户端金额不能当成报价", () => {
+    for (const label of ["配置缺失", "未实现", "作品完成待核对", "已包含额度", "待确认", "本次预计 ¥1.50"]) {
+      const view = presentTextJob({ billing_label: label, show_image: true, billing_passed: true });
+      expect(view.billingLabel).toBe(label);
+      expect(view.showImage).toBe(false);
+      expect(view.billingPassed).toBe(false);
+    }
+    expect(presentTextJob({ billing_label: "¥9.90" }).billingLabel).toBe(BILLING_PENDING);
+    expect(presentTextJob({ billing_label: "已扣费" }).billingLabel).toBe(BILLING_PENDING);
+  });
+
   it("界面不放假图，也不把计费或生产授权标成通过", () => {
     const panel = readFileSync(path.join(process.cwd(), "src/components/text-image/Panel.tsx"), "utf8");
     const start = readFileSync(path.join(process.cwd(), "src/app/start/ui.tsx"), "utf8");
     expect(panel).toContain("只用文字描述");
     expect(panel).toContain(BILLING_PENDING);
+    expect(panel).toContain("view.billingLabel");
+    expect(panel).toContain("生成完成不等于已结算");
     expect(panel).toContain("主体保护待确认");
     expect(panel).not.toContain("<img");
     expect(panel).not.toContain("主体已保护");

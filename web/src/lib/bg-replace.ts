@@ -3,12 +3,15 @@ export const HONESTY = "生成质量未验证，不代表生产出图已通过";
 export const PROTECTION_SCOPE = "logo,packaging_text,spec,structure";
 export const REAL_GENERATION_INCOMPLETE = "真实出图未完成";
 
-// billingLine 只转述服务端文案。没有金额时固定为计费待确认,不编造人民币。
+const HONEST_BILLING = new Set(["配置缺失", "未实现", "作品完成待核对", "已包含额度", "待确认"]);
+
+// billingLine 只转述服务端文案。裸金额和「已扣费」都不当成报价。
 export function billingLine(label?: string | null): string {
   const text = (label ?? "").trim();
   if (!text || text === BILLING_PENDING) return BILLING_PENDING;
-  if (!text.includes("¥")) return BILLING_PENDING;
-  return text;
+  if (HONEST_BILLING.has(text)) return text;
+  if (text.startsWith("本次预计 ¥") || text.startsWith("-本次预计 ¥")) return text;
+  return BILLING_PENDING;
 }
 
 export function creativeChoice(available: boolean): { enabled: boolean; reason: string } {

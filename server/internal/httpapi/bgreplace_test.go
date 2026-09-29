@@ -32,7 +32,7 @@ func TestBackgroundReplaceQuoteBillingPendingAndNoFakePass(t *testing.T) {
 	if st != http.StatusOK {
 		t.Fatalf("能力接口 %d %v", st, capBody)
 	}
-	if capBody["billing_label"] != "计费待确认" || capBody["production_generation_passed"] != false || capBody["billing_passed"] != false {
+	if capBody["billing_label"] != "配置缺失" || capBody["production_generation_passed"] != false || capBody["billing_passed"] != false || capBody["settlement"] != "unknown" {
 		t.Fatalf("能力接口不得宣称出图或计费已通过: %#v", capBody)
 	}
 	if capBody["creative_available"] != false {
@@ -49,7 +49,7 @@ func TestBackgroundReplaceQuoteBillingPendingAndNoFakePass(t *testing.T) {
 		t.Fatalf("开报价 %d %v", st, created)
 	}
 	job, _ := created["job"].(map[string]any)
-	if job["billing_label"] != "计费待确认" || job["mode"] != "fidelity" || job["quality"] != "unknown" {
+	if job["billing_label"] != "配置缺失" || job["mode"] != "fidelity" || job["quality"] != "unknown" || job["settlement"] != "unknown" || job["billing_passed"] != false {
 		t.Fatalf("报价不诚实: %#v", job)
 	}
 	if job["protected_region"] != bgreplace.ProtectionScope || job["real_generation_notice"] != bgreplace.RealGenerationIncomplete {

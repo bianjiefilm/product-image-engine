@@ -77,8 +77,13 @@ describe("产品图消费报价", () => {
           quoteRef: "qte_1",
         },
         levels: completionLevels(),
+        connection: "配置缺失",
+        settlement: "作品完成待核对",
       })
     );
+    expect(html).toContain("配置缺失");
+    expect(html).toContain("作品完成待核对");
+    expect(html).toContain("生成完成不等于已结算");
     expect(html).toContain("A商家付款");
     expect(html).toContain("本次预计 ¥1.50");
     expect(html).toContain("重新确认报价");
@@ -90,6 +95,16 @@ describe("产品图消费报价", () => {
     expect(html).not.toContain("B商家");
     expect(html).not.toContain("点数");
     expect(html).toContain('data-generate="false"');
+  });
+
+  it("活动入口在服务端回答前不自称组织付款", () => {
+    const start = require("node:fs").readFileSync(
+      require("node:path").join(process.cwd(), "src/app/start/ui.tsx"),
+      "utf8"
+    );
+    expect(start).not.toContain("组织付款");
+    expect(start).toContain("/api/billing/consume/return");
+    expect(start).toContain("个人付款");
   });
 });
 

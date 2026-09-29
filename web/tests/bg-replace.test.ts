@@ -41,6 +41,15 @@ describe("背景替换诚实文案", () => {
   it("没有人民币符号的费用文案不当成已报价", () => {
     expect(billingLine("已扣费")).toBe(BILLING_PENDING);
     expect(billingLine("本次预计 ¥1.20")).toBe("本次预计 ¥1.20");
+    expect(billingLine("¥9.90")).toBe(BILLING_PENDING);
+  });
+
+  it("配置缺失、未实现和待核对要原样显示", () => {
+    expect(billingLine("配置缺失")).toBe("配置缺失");
+    expect(billingLine("未实现")).toBe("未实现");
+    expect(billingLine("作品完成待核对")).toBe("作品完成待核对");
+    expect(billingLine("已包含额度")).toBe("已包含额度");
+    expect(billingLine("待确认")).toBe("待确认");
   });
 
   it("面板使用诚实文案,不宣称生产出图或计费已通过", () => {

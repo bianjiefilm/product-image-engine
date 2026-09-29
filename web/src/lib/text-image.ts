@@ -1,5 +1,21 @@
 export const BILLING_PENDING = "计费待确认";
 
+const HONEST_LABELS = new Set([
+  BILLING_PENDING,
+  "配置缺失",
+  "未实现",
+  "作品完成待核对",
+  "已包含额度",
+  "待确认",
+]);
+
+export function honestBillingLabel(raw?: string | null): string {
+  const text = (raw ?? "").trim();
+  if (HONEST_LABELS.has(text)) return text;
+  if (text.startsWith("本次预计 ¥") || text.startsWith("-本次预计 ¥")) return text;
+  return BILLING_PENDING;
+}
+
 export function canStartWithText(prompt: string): boolean {
   return prompt.trim().length > 0;
 }
@@ -15,7 +31,7 @@ export function presentTextJob(job: {
   output_asset_id?: string;
 }): {
   showImage: false;
-  billingLabel: typeof BILLING_PENDING;
+  billingLabel: string;
   subjectLabel: "主体保护待确认";
   billingPassed: false;
   productionAuthorized: false;
@@ -24,7 +40,7 @@ export function presentTextJob(job: {
   const failed = (job.job_status ?? "") === "failed";
   return {
     showImage: false,
-    billingLabel: BILLING_PENDING,
+    billingLabel: honestBillingLabel(job.billing_label),
     subjectLabel: "主体保护待确认",
     billingPassed: false,
     productionAuthorized: false,

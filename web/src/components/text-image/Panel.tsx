@@ -126,7 +126,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
         </CardDescription>
       </CardHeader>
       <p>
-        <Badge variant="warn">{BILLING_PENDING}</Badge>{" "}
+        <Badge variant="warn">{view.billingLabel || BILLING_PENDING}</Badge>{" "}
         <Badge>主体保护待确认</Badge>{" "}
         <Badge>{job?.status_label || (job?.job_status === "failed" ? "失败" : "待确认")}</Badge>
       </p>
@@ -143,7 +143,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
         </Button>
       </div>
       <p>{view.headline}</p>
-      <p>计费待确认。Billing 未通过，Production 未授权。不扣真实费用。</p>
+      <p>生成完成不等于已结算。计费待确认。Billing 未通过，Production 未授权。不扣真实费用。</p>
       {job?.id ? <p>记录 {job.id}</p> : null}
       {!same ? <p>刷新后的记录编号变了，请不要把它当成同一次请求。</p> : null}
       {notice ? <p>{notice}</p> : null}
