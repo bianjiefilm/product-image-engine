@@ -1,6 +1,9 @@
 package textimage
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestOpenAllowsTextWithoutPhotoAndKeepsBillingPending(t *testing.T) {
 	q, err := Open(OpenInput{
@@ -113,5 +116,67 @@ func TestFingerprintChangesWithPrompt(t *testing.T) {
 	b := Fingerprint("ten", "prj", "蓝色水壶")
 	if a == "" || a == b {
 		t.Fatal("不同文字描述必须是不同请求")
+	}
+}
+
+func trustedFixtureAdmit() AdmitInput {
+	return AdmitInput{
+		Status: StatusCompleted, JobTenant: "ten", JobProject: "prj",
+		ActorTenant: "ten", ActorProject: "prj",
+		InputVersion: "ver-1", AssetInputVersion: "ver-1",
+		AssetID: "txfix_1", Registered: true,
+		RegisteredSHA: strings.Repeat("ab", 32), FileSHA: strings.Repeat("ab", 32),
+		Origin: OriginFixture, ResultVersion: "txfix_1",
+	}
+}
+
+func TestAdmitFixtureWhenEveryCheckHolds(t *testing.T) {
+	got := Admit(trustedFixtureAdmit())
+	if !got.Show || got.Reason != "" {
+		t.Fatalf("五项齐全的夹具应可展示: %+v", got)
+	}
+}
+
+func TestAdmitRejectsUntrustedResults(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*AdmitInput)
+		reason string
+	}{
+		{"客户端自报", func(in *AdmitInput) { in.ClientSupplied = true }, "client_claim"},
+		{"别的租户", func(in *AdmitInput) { in.ActorTenant = "other" }, "tenant_or_project"},
+		{"别的工程", func(in *AdmitInput) { in.ActorProject = "other" }, "tenant_or_project"},
+		{"尚未完成", func(in *AdmitInput) { in.Status = StatusFailed }, "not_completed"},
+		{"输入版本不一致", func(in *AdmitInput) { in.AssetInputVersion = "ver-old" }, "input_version"},
+		{"没有登记", func(in *AdmitInput) { in.Registered = false }, "asset_hash"},
+		{"哈希不符", func(in *AdmitInput) { in.FileSHA = strings.Repeat("cd", 32) }, "asset_hash"},
+		{"空资产", func(in *AdmitInput) { in.AssetID = "" }, "asset_hash"},
+		{"不是夹具", func(in *AdmitInput) { in.Origin = "supplier" }, "not_fixture"},
+		{"晚于选定版本", func(in *AdmitInput) {
+			in.SelectedVersion = "txfix_kept"
+			in.ResultVersion = "txfix_late"
+		}, "selected_version"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := trustedFixtureAdmit()
+			tc.mutate(&in)
+			got := Admit(in)
+			if got.Show || got.Reason != tc.reason {
+				t.Fatalf("应拒绝 %s: %+v", tc.reason, got)
+			}
+		})
+	}
+}
+
+func TestRealGenerationStaysIncomplete(t *testing.T) {
+	if RealGenerationCompleted(true, OriginFixture) || RealGenerationCompleted(true, "supplier") || RealGenerationCompleted(false, "") {
+		t.Fatal("本轮不能把任何图写成真实出图完成")
+	}
+	if RealGenerationIncomplete != "真实出图未完成" || !strings.Contains(ConceptualNotice, "不宣称主体保真") || !strings.Contains(FixtureNotice, "不是模型出图") {
+		t.Fatal("文案必须标明夹具、概念输出和真实出图未完成")
+	}
+	if ProductionNotAuthorized != "NOT_AUTHORIZED" {
+		t.Fatalf("生产授权应为 NOT_AUTHORIZED, got %s", ProductionNotAuthorized)
 	}
 }

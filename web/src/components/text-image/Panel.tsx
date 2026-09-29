@@ -13,7 +13,11 @@ type Job = {
   status_label?: string;
   quote_status?: string;
   billing_label?: string;
+  settlement?: string;
+  origin?: string;
   show_image?: boolean;
+  photo_asset_id?: string;
+  real_generation_completed?: boolean;
   honesty?: string;
   pending?: string[];
 };
@@ -118,16 +122,23 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
   }
 
   return (
-    <Card data-text-entry="true" data-show-image="false" data-photo-required="false" data-billing-passed="false" data-production-authorized="false">
+    <Card
+      data-text-entry="true"
+      data-show-image={view.showImage ? "true" : "false"}
+      data-text-result={view.showImage ? "fixture" : "none"}
+      data-photo-required="false"
+      data-billing-passed="false"
+      data-production-authorized="false"
+    >
       <CardHeader>
         <CardTitle>只用文字描述</CardTitle>
         <CardDescription>
-          不上传实物照片也可以开始。没有真实生成供应商时，这里只记录失败或待确认，不会显示产品图。
+          不上传实物照片也可以开始。没有真实模型凭证时不会画出成功图。服务端登记的夹具可以查看，那不是模型出图。
         </CardDescription>
       </CardHeader>
       <p>
         <Badge variant="warn">{view.billingLabel || BILLING_PENDING}</Badge>{" "}
-        <Badge>主体保护待确认</Badge>{" "}
+        <Badge>{view.subjectLabel}</Badge>{" "}
         <Badge>{job?.status_label || (job?.job_status === "failed" ? "失败" : "待确认")}</Badge>
       </p>
       <label>
@@ -143,7 +154,20 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
         </Button>
       </div>
       <p>{view.headline}</p>
-      <p>生成完成不等于已结算。计费待确认。Billing 未通过，Production 未授权。不扣真实费用。</p>
+      {view.showImage && boundProject && job?.id ? (
+        <figure>
+          <img
+            alt="服务端登记的夹具图，不是模型出图"
+            src={`/api/projects/${boundProject}/text-images/${job.id}/download`}
+            data-text-image-fixture="true"
+            style={{ maxWidth: "100%" }}
+          />
+          <figcaption>服务端登记的夹具图，不是模型出图。</figcaption>
+        </figure>
+      ) : null}
+      <p>{view.realGeneration}</p>
+      <p>{view.settlementLabel}</p>
+      <p>生成完成不等于账单核对完成。计费待确认。不把生产标成已授权。不扣真实费用。</p>
       {job?.id ? <p>记录 {job.id}</p> : null}
       {!same ? <p>刷新后的记录编号变了，请不要把它当成同一次请求。</p> : null}
       {notice ? <p>{notice}</p> : null}

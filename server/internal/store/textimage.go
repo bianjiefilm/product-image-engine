@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -25,6 +27,11 @@ type TextImageJob struct {
 	Quality              string
 	PlatformTaskID       string
 	OutputAssetID        string
+	InputVersion         string
+	OutputSHA256         string
+	ResultVersion        string
+	SelectedVersion      string
+	Origin               string
 	Charged              bool
 	BillingPassed        bool
 	ProductionAuthorized bool
@@ -45,6 +52,9 @@ func (s *Store) InsertTextImageJob(ctx context.Context, job TextImageJob) (TextI
 	job.BillingPassed = false
 	job.ProductionAuthorized = false
 	job.SubjectProtected = false
+	if strings.TrimSpace(job.InputVersion) == "" {
+		job.InputVersion = job.Fingerprint
+	}
 	if job.Pending == nil {
 		job.Pending = []string{}
 	}
@@ -55,11 +65,11 @@ func (s *Store) InsertTextImageJob(ctx context.Context, job TextImageJob) (TextI
 	_, err = s.db.ExecContext(ctx, `INSERT INTO text_image_jobs (
 		id, tenant_id, project_id, prompt, photo_asset_id, fingerprint, quote_status, billing_label,
 		job_status, quality, platform_task_id, output_asset_id, charged, billing_passed,
-		production_authorized, subject_protected, pending_json, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		production_authorized, subject_protected, pending_json, created_at, updated_at, input_version)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		job.ID, job.TenantID, job.ProjectID, job.Prompt, job.PhotoAssetID, job.Fingerprint, job.QuoteStatus,
 		job.BillingLabel, job.JobStatus, job.Quality, job.PlatformTaskID, job.OutputAssetID,
-		0, 0, 0, 0, string(pending), now.Format(time.RFC3339), now.Format(time.RFC3339))
+		0, 0, 0, 0, string(pending), now.Format(time.RFC3339), now.Format(time.RFC3339), job.InputVersion)
 	if isUniqueErr(err) {
 		return TextImageJob{}, fmt.Errorf("%w: 同一文字请求已存在", ErrConflict)
 	}
@@ -152,7 +162,8 @@ func (s *Store) ClaimTextImageSubmit(ctx context.Context, tenantID, id string) (
 
 const textImageSelect = `SELECT id, tenant_id, project_id, prompt, photo_asset_id, fingerprint, quote_status,
 	billing_label, job_status, quality, platform_task_id, output_asset_id, charged, billing_passed,
-	production_authorized, subject_protected, pending_json, created_at, updated_at FROM text_image_jobs`
+	production_authorized, subject_protected, pending_json, created_at, updated_at,
+	input_version, output_sha256, result_version, selected_version, origin FROM text_image_jobs`
 
 func scanTextImage(sc bgScanner) (TextImageJob, error) {
 	var job TextImageJob
@@ -160,7 +171,8 @@ func scanTextImage(sc bgScanner) (TextImageJob, error) {
 	var pending, created, updated string
 	err := sc.Scan(&job.ID, &job.TenantID, &job.ProjectID, &job.Prompt, &job.PhotoAssetID, &job.Fingerprint,
 		&job.QuoteStatus, &job.BillingLabel, &job.JobStatus, &job.Quality, &job.PlatformTaskID, &job.OutputAssetID,
-		&charged, &billingPassed, &productionAuthorized, &subjectProtected, &pending, &created, &updated)
+		&charged, &billingPassed, &productionAuthorized, &subjectProtected, &pending, &created, &updated,
+		&job.InputVersion, &job.OutputSHA256, &job.ResultVersion, &job.SelectedVersion, &job.Origin)
 	if err != nil {
 		return TextImageJob{}, err
 	}
@@ -175,4 +187,140 @@ func scanTextImage(sc bgScanner) (TextImageJob, error) {
 	job.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	job.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
 	return job, nil
+}
+
+// TextImageFixture 是服务端自己登记的夹具字节。客户端资产编号不在这里。
+type TextImageFixture struct {
+	TenantID     string
+	ProjectID    string
+	JobID        string
+	FixtureLabel string
+	SHA256       string
+	MediaType    string
+	Bytes        []byte
+}
+
+// RegisterTextImageFixture 写入夹具并标记完成。已有资产时返回原任务，不覆盖字节。
+// 失败或待确认不能借此改成完成。
+func (s *Store) RegisterTextImageFixture(ctx context.Context, in TextImageFixture) (TextImageJob, bool, error) {
+	if !strings.Contains(in.FixtureLabel, "fixture") {
+		return TextImageJob{}, false, fmt.Errorf("%w: 夹具数据必须标明 fixture", ErrValidation)
+	}
+	switch in.MediaType {
+	case "image/png", "image/jpeg", "image/webp":
+	default:
+		return TextImageJob{}, false, fmt.Errorf("%w: 夹具媒体类型不受支持", ErrValidation)
+	}
+	if len(in.Bytes) == 0 {
+		return TextImageJob{}, false, fmt.Errorf("%w: 夹具字节为空", ErrValidation)
+	}
+	sum := sha256.Sum256(in.Bytes)
+	gotSHA := hex.EncodeToString(sum[:])
+	if gotSHA != strings.ToLower(strings.TrimSpace(in.SHA256)) {
+		return TextImageJob{}, false, fmt.Errorf("%w: 夹具字节与申报哈希不一致", ErrValidation)
+	}
+	current, err := s.GetTextImageJob(ctx, in.TenantID, in.ProjectID, in.JobID)
+	if err != nil {
+		return TextImageJob{}, false, err
+	}
+	if current.JobStatus == textimage.StatusFailed || current.JobStatus == textimage.StatusUnknown {
+		return TextImageJob{}, false, fmt.Errorf("%w: 失败或待确认记录不能改成夹具完成", ErrConflict)
+	}
+	if current.OutputAssetID != "" {
+		return current, true, nil
+	}
+	if current.JobStatus != textimage.StatusQuoted || strings.TrimSpace(current.InputVersion) == "" {
+		return TextImageJob{}, false, fmt.Errorf("%w: 当前文字请求不能登记夹具", ErrConflict)
+	}
+	assetID := newID("txfix")
+	now := Now().Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return TextImageJob{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO text_image_blobs (
+		asset_id, tenant_id, project_id, job_id, input_version, sha256, media_type, origin, content, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		assetID, current.TenantID, current.ProjectID, current.ID, current.InputVersion, gotSHA,
+		in.MediaType, textimage.OriginFixture, in.Bytes, now); err != nil {
+		return TextImageJob{}, false, fmt.Errorf("store: 写入夹具字节失败: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE text_image_jobs SET
+		job_status=?, output_asset_id=?, output_sha256=?, result_version=?, origin=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND project_id=? AND job_status=? AND output_asset_id=''`,
+		textimage.StatusCompleted, assetID, gotSHA, assetID, textimage.OriginFixture, now,
+		current.ID, current.TenantID, current.ProjectID, textimage.StatusQuoted)
+	if err != nil {
+		return TextImageJob{}, false, fmt.Errorf("store: 登记夹具失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		return TextImageJob{}, false, fmt.Errorf("%w: 夹具登记没有写上原任务", ErrConflict)
+	}
+	if err := tx.Commit(); err != nil {
+		return TextImageJob{}, false, err
+	}
+	saved, err := s.GetTextImageJob(ctx, current.TenantID, current.ProjectID, current.ID)
+	return saved, false, err
+}
+
+// SelectTextImageVersion 把当前夹具版本记为用户选定。已选定则保持，不改资产。
+func (s *Store) SelectTextImageVersion(ctx context.Context, tenantID, projectID, jobID string) (TextImageJob, error) {
+	current, err := s.GetTextImageJob(ctx, tenantID, projectID, jobID)
+	if err != nil {
+		return TextImageJob{}, err
+	}
+	if current.JobStatus != textimage.StatusCompleted || current.Origin != textimage.OriginFixture || current.ResultVersion == "" || current.OutputAssetID == "" {
+		return TextImageJob{}, fmt.Errorf("%w: 没有可选定的夹具版本", ErrConflict)
+	}
+	if current.SelectedVersion == current.ResultVersion {
+		return current, nil
+	}
+	if current.SelectedVersion != "" {
+		return TextImageJob{}, fmt.Errorf("%w: 晚到结果不能覆盖已选定版本", ErrConflict)
+	}
+	now := Now().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `UPDATE text_image_jobs SET selected_version=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND project_id=? AND selected_version='' AND result_version=?`,
+		current.ResultVersion, now, current.ID, current.TenantID, current.ProjectID, current.ResultVersion)
+	if err != nil {
+		return TextImageJob{}, fmt.Errorf("store: 选定文字版本失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return TextImageJob{}, fmt.Errorf("%w: 选定版本没有写上", ErrConflict)
+	}
+	return s.GetTextImageJob(ctx, tenantID, projectID, jobID)
+}
+
+// OpenTextImageDownload 在租户、版本和字节哈希都一致时返回夹具字节。
+func (s *Store) OpenTextImageDownload(ctx context.Context, tenantID, projectID, jobID string) (string, []byte, error) {
+	job, err := s.GetTextImageJob(ctx, tenantID, projectID, jobID)
+	if err != nil {
+		return "", nil, err
+	}
+	if job.OutputAssetID == "" || job.Origin != textimage.OriginFixture || job.JobStatus != textimage.StatusCompleted {
+		return "", nil, ErrNotFound
+	}
+	if job.SelectedVersion != "" && job.SelectedVersion != job.ResultVersion {
+		return "", nil, fmt.Errorf("%w: 晚到结果不能覆盖已选定版本", ErrConflict)
+	}
+	var blobTenant, blobProject, blobJob, blobVersion, blobSHA, media, origin string
+	var content []byte
+	err = s.db.QueryRowContext(ctx, `SELECT tenant_id, project_id, job_id, input_version, sha256, media_type, origin, content
+		FROM text_image_blobs WHERE asset_id=? AND tenant_id=? AND project_id=?`,
+		job.OutputAssetID, tenantID, projectID).Scan(&blobTenant, &blobProject, &blobJob, &blobVersion, &blobSHA, &media, &origin, &content)
+	if err == sql.ErrNoRows {
+		return "", nil, ErrNotFound
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("store: 读取夹具字节失败: %w", err)
+	}
+	sum := sha256.Sum256(content)
+	fileSHA := hex.EncodeToString(sum[:])
+	if blobTenant != tenantID || blobProject != projectID || blobJob != job.ID || origin != textimage.OriginFixture ||
+		blobVersion != job.InputVersion || fileSHA != job.OutputSHA256 || fileSHA != blobSHA {
+		return "", nil, fmt.Errorf("%w: 文件字节与登记不一致", ErrConflict)
+	}
+	return media, content, nil
 }

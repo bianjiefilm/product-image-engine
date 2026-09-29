@@ -78,6 +78,10 @@ type Config struct {
 	// --- HUI-1701 FEAT-0202:文字描述生成入口 ---
 	// 默认开放入口,方便只写文字开始。没有真实供应商时只记失败或待确认,不出图、不扣费。
 	TextToImageEnabled bool // FEATURE_TEXT_TO_IMAGE,默认 on
+	// TextImageFixtureRegister 只允许测试登记夹具字节。默认关闭。打开后也只记 origin=fixture，不是模型结果。
+	TextImageFixtureRegister bool // TEXT_IMAGE_FIXTURE_REGISTER,默认 off
+	// TextImageModelCredential 只表示是否配置了图像模型凭证。值不回传、不入库。空则真实出图未完成。
+	TextImageModelCredential string // PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL,默认空
 
 	// --- HUI-1702 FEAT-0203:已有产品图发起展示视频 ---
 	// 默认开放入口。没有真实视频供应商时只记失败或待确认,不播放静图或假视频,不扣费。
@@ -143,7 +147,9 @@ func Load() Config {
 
 		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 
-		TextToImageEnabled: getBoolEnv("FEATURE_TEXT_TO_IMAGE", true),
+		TextToImageEnabled:       getBoolEnv("FEATURE_TEXT_TO_IMAGE", true),
+		TextImageFixtureRegister: getBoolEnv("TEXT_IMAGE_FIXTURE_REGISTER", false),
+		TextImageModelCredential: os.Getenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL"),
 
 		ShowcaseVideoEnabled: getBoolEnv("FEATURE_SHOWCASE_VIDEO", true),
 	}
@@ -210,6 +216,11 @@ func (c Config) PhotoUploadUsable() (int, string) {
 // 空则背景替换不得把任务受理写成真实出图完成。
 func (c Config) BgRealModelConfigured() bool {
 	return strings.TrimSpace(c.BgModelCredential) != ""
+}
+
+// TextImageModelConfigured 只回答文生图凭证是否存在，不暴露凭证内容。
+func (c Config) TextImageModelConfigured() bool {
+	return strings.TrimSpace(c.TextImageModelCredential) != ""
 }
 
 // CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。
