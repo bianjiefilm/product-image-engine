@@ -223,18 +223,68 @@ func (s *Server) handleRefreshTextImage(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, true)})
 		return
 	}
-	if st.Status == "failed" {
+	if strings.EqualFold(st.Status, "failed") {
 		job.JobStatus = textimage.StatusFailed
-	} else {
-		job.JobStatus = textimage.StatusUnknown
+		job.OutputAssetID = ""
+		job.Pending = appendPendingText(job.Pending, "填上的输出编号不算核销凭证")
+		if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+			writeStoreErr(w, uerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, true)})
+		return
 	}
-	job.OutputAssetID = ""
-	job.Pending = appendPendingText(job.Pending, "填上的输出编号不算核销凭证")
-	if err := s.St.UpdateTextImageJob(r.Context(), job); err != nil {
+	asset := assetFromTask(st)
+	payload, payloadOK, payloadBad := serverTaskImage(st.Result)
+	imageBytes := []byte(nil)
+	haveBytes := false
+	if payloadOK {
+		imageBytes = payload
+		haveBytes = true
+	} else if !payloadBad && strings.TrimSpace(asset) != "" {
+		painted, perr := s.paintTextImage(r.Context(), job.Prompt)
+		if perr == nil {
+			if _, probeErr := imgprobe.Probe(painted); probeErr == nil {
+				imageBytes = painted
+				haveBytes = true
+			}
+		}
+	}
+	decision := textimage.AcceptServerTask(textimage.ServerTaskInput{
+		Status: st.Status, AssetID: asset, ServerBytes: haveBytes,
+		CredentialConfigured: s.Cfg.TextImageModelConfigured(),
+	})
+	if !decision.Accept {
+		job.JobStatus = textimage.StatusUnknown
+		job.OutputAssetID = ""
+		job.Pending = appendPendingText(job.Pending, "填上的输出编号不算核销凭证")
+		if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+			writeStoreErr(w, uerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, true)})
+		return
+	}
+	meta, err := imgprobe.Probe(imageBytes)
+	if err != nil {
+		job.JobStatus = textimage.StatusUnknown
+		job.OutputAssetID = ""
+		if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+			writeStoreErr(w, uerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, true)})
+		return
+	}
+	updated, already, err := s.St.CompleteTextImageServer(r.Context(), store.TextImageServerResult{
+		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
+		AssetID: decision.AssetID, MediaType: meta.MediaType, Bytes: imageBytes,
+	})
+	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, true)})
+	writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), updated, already)})
 }
 
 func (s *Server) handleClaimTextImage(w http.ResponseWriter, r *http.Request) {
@@ -324,9 +374,13 @@ func (s *Server) handleDownloadTextImage(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusNotFound, "not_found", "没有可打开的夹具图")
 		return
 	}
+	filename := "fixture.png"
+	if job.Origin != textimage.OriginFixture {
+		filename = "server.png"
+	}
 	w.Header().Set("Content-Type", media)
-	w.Header().Set("Content-Disposition", `inline; filename="fixture.png"`)
-	w.Header().Set("X-Text-Image-Origin", textimage.OriginFixture)
+	w.Header().Set("Content-Disposition", `inline; filename="`+filename+`"`)
+	w.Header().Set("X-Text-Image-Origin", job.Origin)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
@@ -425,6 +479,9 @@ func (s *Server) textImageView(ctx context.Context, job store.TextImageJob, idem
 		statusLabel = "待确认报价"
 	case textimage.StatusCompleted:
 		statusLabel = "夹具已登记"
+		if job.Origin == textimage.OriginServer {
+			statusLabel = "任务已完成"
+		}
 	}
 	subjectNotice := textimage.ConceptualNotice
 	if strings.TrimSpace(job.PhotoAssetID) != "" {
@@ -472,6 +529,35 @@ func (s *Server) admitTextImage(ctx context.Context, job store.TextImageJob) tex
 		RegisteredSHA: job.OutputSHA256, FileSHA: hex.EncodeToString(sum[:]),
 		Origin: job.Origin, SelectedVersion: job.SelectedVersion, ResultVersion: job.ResultVersion,
 	})
+}
+
+func (s *Server) paintTextImage(ctx context.Context, prompt string) ([]byte, error) {
+	if textimage.ModelCallUsable(s.Cfg.TextImageModelCredential) {
+		return nil, errors.New("图像模型端点未接入")
+	}
+	if s.TextPaint != nil {
+		return s.TextPaint.Paint(ctx, prompt)
+	}
+	return textimage.PaintLocalTest(prompt)
+}
+
+func serverTaskImage(result map[string]any) (raw []byte, ok bool, bad bool) {
+	if result == nil {
+		return nil, false, false
+	}
+	value, present := result["data_b64"]
+	if !present {
+		return nil, false, false
+	}
+	text, _ := value.(string)
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(text))
+	if err != nil || len(decoded) == 0 {
+		return nil, false, true
+	}
+	if _, err := imgprobe.Probe(decoded); err != nil {
+		return nil, false, true
+	}
+	return decoded, true, false
 }
 
 func appendPendingText(items []string, item string) []string {

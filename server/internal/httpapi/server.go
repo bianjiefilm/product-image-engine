@@ -42,11 +42,19 @@ type Server struct {
 	// TplBuiltins 内置模板集(HUI-1705 FEAT-0206;main 装配,代码只读种子)。
 	// nil 时模板端点 fail-closed 503。
 	TplBuiltins *imagetmpl.BuiltinSet
+	// TextPaint 由服务端调用，取得要保存的文生图字节。
+	// nil 时用本地测试图。它不是平台状态，缺凭证也不能因此写成模型成功。
+	TextPaint TextImagePainter
 
 	// batchSubmitSem 批量提交进程内信号量(HUI-1704 拍板:并发上限 4,超出排队)。
 	// 惰性初始化;semMu 仅保护初始化。
 	semMu          sync.Mutex
 	batchSubmitSem chan struct{}
+}
+
+// TextImagePainter 只提供图片字节。调用它不等于平台任务成功。
+type TextImagePainter interface {
+	Paint(context.Context, string) ([]byte, error)
 }
 
 type ctxKey int
@@ -175,8 +183,8 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/image-template-applies", s.guard(true, s.handleListTemplateApplies))
 	}
 
-	// 文字描述生成(HUI-1701 / FEAT-0202):开关 off → 路由不注册 = 404。
-	// 没有真实供应商时结果是失败或待确认,不出假图,不把计费或生产授权标成通过。
+	// 文字描述生成(HUI-1701):开关 off → 路由不注册 = 404。
+	// 客户端编号和缺资产的任务不出图。服务端持有的完成资产可以打开，但不写成已结算。
 	if s.Cfg.TextToImageEnabled {
 		mux.Handle("GET /api/v1/text-images/capabilities", s.guard(true, s.handleTextImageCapabilities))
 		mux.Handle("POST /api/v1/projects/{id}/text-images", s.guard(true, s.handleCreateTextImage))

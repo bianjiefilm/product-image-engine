@@ -1,6 +1,8 @@
 package textimage
 
 import (
+	"bytes"
+	"image/png"
 	"strings"
 	"testing"
 )
@@ -166,6 +168,76 @@ func TestAdmitRejectsUntrustedResults(t *testing.T) {
 				t.Fatalf("应拒绝 %s: %+v", tc.reason, got)
 			}
 		})
+	}
+}
+
+func TestAcceptServerTaskNeedsServerAssetAndBytes(t *testing.T) {
+	trusted := AcceptServerTask(ServerTaskInput{
+		Status: "succeeded", AssetID: "asset_real", ServerBytes: true,
+	})
+	if !trusted.Accept || trusted.Status != StatusCompleted || trusted.AssetID != "asset_real" || trusted.Reason != "" {
+		t.Fatalf("服务端任务带真实资产和字节时应完成: %+v", trusted)
+	}
+	cases := []struct {
+		name   string
+		in     ServerTaskInput
+		reason string
+	}{
+		{"没有资产", ServerTaskInput{Status: "succeeded"}, "no_server_asset"},
+		{"只有凭证", ServerTaskInput{Status: "succeeded", CredentialConfigured: true}, "no_server_asset"},
+		{"有资产没有字节", ServerTaskInput{Status: "completed", AssetID: "asset_real", CredentialConfigured: true}, "no_server_bytes"},
+		{"缺凭证有字节仍可接受的反例不能靠客户端", ServerTaskInput{Status: "succeeded", AssetID: "filled-output", ServerBytes: true, ClientSupplied: true}, "client_claim"},
+		{"客户端成功词", ServerTaskInput{Status: "success", AssetID: "asset_real", ServerBytes: true}, "pending"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := AcceptServerTask(tc.in)
+			if got.Accept || got.Status == StatusCompleted || got.AssetID != "" || got.Reason != tc.reason {
+				t.Fatalf("不应接受: %+v", got)
+			}
+		})
+	}
+	failed := AcceptServerTask(ServerTaskInput{Status: "failed", AssetID: "asset_real", ServerBytes: true})
+	if failed.Accept || failed.Status != StatusFailed || failed.AssetID != "" {
+		t.Fatalf("失败任务不能带着资产完成: %+v", failed)
+	}
+	bare := AcceptServerTask(ServerTaskInput{Status: "succeeded", CredentialConfigured: false})
+	if bare.Accept || bare.Status != StatusUnknown {
+		t.Fatalf("缺凭证不能本身变成成功: %+v", bare)
+	}
+}
+
+func TestAdmitServerOriginWhenBytesMatch(t *testing.T) {
+	in := trustedFixtureAdmit()
+	in.Origin = OriginServer
+	in.AssetID = "asset_real"
+	in.ResultVersion = "asset_real"
+	got := Admit(in)
+	if !got.Show || got.Reason != "" {
+		t.Fatalf("服务端登记且哈希一致应可展示: %+v", got)
+	}
+	in.SelectedVersion = "asset_kept"
+	in.ResultVersion = "asset_late"
+	late := Admit(in)
+	if late.Show || late.Reason != "selected_version" {
+		t.Fatalf("晚于选定版本的服务端结果不能展示: %+v", late)
+	}
+}
+
+func TestLocalTestPaintIsImageNotAPlatformStatus(t *testing.T) {
+	a, err := PaintLocalTest("红色水壶")
+	if err != nil || len(a) < 8 {
+		t.Fatal(err)
+	}
+	b, err := PaintLocalTest("蓝色水壶")
+	if err != nil || bytes.Equal(a, b) {
+		t.Fatalf("不同描述应得到不同的本地测试图: %v n=%d", err, len(b))
+	}
+	if _, err := png.Decode(bytes.NewReader(a)); err != nil {
+		t.Fatalf("本地测试图必须是可解码 PNG: %v", err)
+	}
+	if ModelCallUsable("") || ModelCallUsable("secret-model-key") {
+		t.Fatal("凭证字符串本身不是可调用的图像模型")
 	}
 }
 

@@ -125,7 +125,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
     <Card
       data-text-entry="true"
       data-show-image={view.showImage ? "true" : "false"}
-      data-text-result={view.showImage ? "fixture" : "none"}
+      data-text-result={view.showImage ? (job?.origin === "server" ? "server" : "fixture") : "none"}
       data-photo-required="false"
       data-billing-passed="false"
       data-production-authorized="false"
@@ -133,7 +133,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
       <CardHeader>
         <CardTitle>只用文字描述</CardTitle>
         <CardDescription>
-          不上传实物照片也可以开始。没有真实模型凭证时不会画出成功图。服务端登记的夹具可以查看，那不是模型出图。
+          不上传实物照片也可以开始。能查看的图只来自服务端核对过的夹具或任务结果，不是模型出图。没有真实模型结果时仍标明真实出图未完成。
         </CardDescription>
       </CardHeader>
       <p>
@@ -157,12 +157,13 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
       {view.showImage && boundProject && job?.id ? (
         <figure>
           <img
-            alt="服务端登记的夹具图，不是模型出图"
+            alt={view.imageCaption}
             src={`/api/projects/${boundProject}/text-images/${job.id}/download`}
-            data-text-image-fixture="true"
+            data-text-image-fixture={job?.origin === "server" ? undefined : "true"}
+            data-text-image-server={job?.origin === "server" ? "true" : undefined}
             style={{ maxWidth: "100%" }}
           />
-          <figcaption>服务端登记的夹具图，不是模型出图。</figcaption>
+          <figcaption>{view.imageCaption}</figcaption>
         </figure>
       ) : null}
       <p>{view.realGeneration}</p>
