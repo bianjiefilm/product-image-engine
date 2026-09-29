@@ -104,7 +104,8 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `PRODUCT_PHOTO_MAX_BYTES` | 默认 20971520 | 照片上传服务端单点大小上限(20MiB) |
 | `FEATURE_TEMPLATES` | 默认 0 | 产品图模板库开关(HUI-1705;off 时模板路由不注册=404 不可见;模板=确定性预设+参数引用集,零触发生成) |
 | `FEATURE_BG_REPLACE` | 默认 0 | AI 背景替换(HUI-1699;off 时路由不注册=404) |
-| `FEATURE_BG_CREATIVE` | 默认 0 | 创意背景路径;还需生成任务服务可用,否则界面保持关闭 |
+| `FEATURE_BG_CREATIVE` | 默认 0 | 创意背景路径;还需生成任务服务可用,否则界面不显示该选项 |
+| `PRODUCT_BG_MODEL_CREDENTIAL` | 默认空 | 真实背景模型凭证是否已配置。空则背景替换标明真实出图未完成;值不回传 |
 | `FEATURE_LIGHT_SCENE` | 默认 0 | 光影场景(HUI-1700;off 时路由不注册=404;不能绕过主体保护) |
 | `FEATURE_LIGHT_CREATIVE` | 默认 0 | 创意光影路径;还需生成任务服务可用,否则界面保持关闭 |
 | `FEATURE_SUBJECT_FIDELITY` | 默认 0 | 主体保真记录开关(HUI-1698;off 时路由不注册=404;on 也只记录保护范围与检查,不调用生成、不扣费,真实生成保真保持待确认) |
@@ -144,7 +145,10 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 光影场景开启但没有真实供应商 | 任务状态 `failed` 或 `unknown`(待核对),不把输出编号写成已验证产品图 |
 | 光影场景主体保护失败或缺失 | **409** 不能选定或导出为已验证产品图 |
 | 客户端把光影质量标为通过 | **409** `quality_pass_unauthorized` |
-| 创意路径未接通(`FEATURE_BG_CREATIVE=0` 或生成不可用) | **422** `creative_unavailable` |
+| 创意路径未接通(`FEATURE_BG_CREATIVE=0` 或生成不可用) | **422** `creative_unavailable`；界面不渲染创意选项 |
+| 背景替换没有真实模型凭证 | `real_generation_completed=false`，文案 **真实出图未完成**，不把任务受理写成出图成功 |
+| 背景替换额度不足、未知、模型失败、重复提交或刷新 | 恢复原任务，不第二次调用生成，不改模式 |
+| 背景替换 Logo/包装文字/规格/结构失败，或只有相似度 | 质量 `fail` 或 `unknown`，不能变成可交付版本 |
 | 无保真证据把质量标为通过 | **409** `quality_pass_unauthorized` |
 | 模板含生成参数字段(prompt/model/…) | **422** `forbidden_field`(模板库只收确定性预设参数) |
 | 改/删内置模板 | **403** `builtin_readonly`(只读;可派生为自定义) |

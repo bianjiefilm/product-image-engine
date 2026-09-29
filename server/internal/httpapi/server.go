@@ -139,6 +139,7 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/submit", s.guard(true, s.handleSubmitBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/refresh", s.guard(true, s.handleRefreshBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/quality", s.guard(true, s.handleBgQuality))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/inspect", s.guard(true, s.handleInspectBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/select", s.guard(true, s.handleSelectBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/export", s.guard(true, s.handleExportBgReplace))
 	}
@@ -315,6 +316,8 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 			"templates": map[string]any{"enabled": s.Cfg.TemplatesEnabled, "builtins_loaded": tplBuiltins},
 			"bg_replace": map[string]any{
 				"enabled": s.Cfg.BgReplaceEnabled, "creative_available": s.Cfg.CreativePathAvailable(),
+				"real_model_configured":     s.Cfg.BgRealModelConfigured(),
+				"real_generation_completed": false,
 			},
 			"light_scene": map[string]any{
 				"enabled": s.Cfg.LightSceneEnabled, "creative_available": s.Cfg.LightCreativePathAvailable(),
