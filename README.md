@@ -107,7 +107,8 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `FEATURE_BG_CREATIVE` | 默认 0 | 创意背景路径;还需生成任务服务可用,否则界面不显示该选项 |
 | `PRODUCT_BG_MODEL_CREDENTIAL` | 默认空 | 真实背景模型凭证是否已配置。空则背景替换标明真实出图未完成;值不回传 |
 | `FEATURE_LIGHT_SCENE` | 默认 0 | 光影场景(HUI-1700;off 时路由不注册=404;不能绕过主体保护) |
-| `FEATURE_LIGHT_CREATIVE` | 默认 0 | 创意光影路径;还需生成任务服务可用,否则界面保持关闭 |
+| `FEATURE_LIGHT_CREATIVE` | 默认 0 | 创意光影路径;还需图像模型凭证和生成任务服务可用,否则界面保持关闭 |
+| `PRODUCT_LIGHT_MODEL_CREDENTIAL` | 默认空 | 真实光影模型凭证是否已配置。空则生成失败关闭并标明真实出图未完成;值不回传、不入库 |
 | `FEATURE_SUBJECT_FIDELITY` | 默认 0 | 主体保真记录开关(HUI-1698;off 时路由不注册=404;on 也只记录保护范围与检查,不调用生成、不扣费,真实生成保真保持待确认) |
 | `FEATURE_SHOWCASE_VIDEO` | 默认 1 | 已有产品图发起展示视频(HUI-1702;off 时路由不注册=404;运镜只有 360 度或场景运镜;没有真实视频供应商时失败或待确认,不播放静图或假视频,不扣费) |
 
@@ -143,6 +144,7 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 计费未返回报价金额 | 文案 **计费待确认**,不编造人民币 |
 | `FEATURE_LIGHT_SCENE=0` | **404** 光影场景路由不注册(不可见) |
 | 光影场景开启但没有真实供应商 | 任务状态 `failed` 或 `unknown`(待核对),不把输出编号写成已验证产品图 |
+| 光影场景没有真实模型凭证 | 不调用供应商,任务失败关闭,`charged` 为 JSON null,`billing_passed` 与 `production_authorized` 为 false,文案 **真实出图未完成** |
 | 光影场景主体保护失败或缺失 | **409** 不能选定或导出为已验证产品图 |
 | 客户端把光影质量标为通过 | **409** `quality_pass_unauthorized` |
 | 创意路径未接通(`FEATURE_BG_CREATIVE=0` 或生成不可用) | **422** `creative_unavailable`；界面不渲染创意选项 |

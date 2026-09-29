@@ -29,6 +29,7 @@ type LightJob struct {
 	OutputAssetID   string
 	OutputVersion   string
 	VendorReceiptID string
+	ModelRef        string
 	Selection       string
 	ExportCount     int
 	Deliverable     bool
@@ -63,12 +64,12 @@ func (s *Store) InsertLightJob(ctx context.Context, job LightJob) (LightJob, err
 	_, err = s.db.ExecContext(ctx, `INSERT INTO light_scene_jobs (
 		id, tenant_id, project_id, input_id, input_version, mode, protected_region, lighting_intent,
 		fingerprint, quote_status, billing_label, job_status, quality, evidence, platform_task_id,
-		output_asset_id, output_version, vendor_receipt_id, selection, export_count, deliverable,
+		output_asset_id, output_version, vendor_receipt_id, model_ref, selection, export_count, deliverable,
 		verified_product, pending_json, allowed_uses_json, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		job.ID, job.TenantID, job.ProjectID, job.InputID, job.InputVersion, job.Mode, job.ProtectedRegion,
 		job.LightingIntent, job.Fingerprint, job.QuoteStatus, job.BillingLabel, job.JobStatus, job.Quality,
-		job.Evidence, job.PlatformTaskID, job.OutputAssetID, job.OutputVersion, job.VendorReceiptID,
+		job.Evidence, job.PlatformTaskID, job.OutputAssetID, job.OutputVersion, job.VendorReceiptID, job.ModelRef,
 		job.Selection, job.ExportCount, boolInt(job.Deliverable), boolInt(job.VerifiedProduct),
 		string(pending), string(uses), now.Format(time.RFC3339), now.Format(time.RFC3339))
 	if err != nil {
@@ -96,11 +97,11 @@ func (s *Store) UpdateLightJob(ctx context.Context, job LightJob) error {
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE light_scene_jobs SET
 		quote_status=?, billing_label=?, job_status=?, quality=?, evidence=?, platform_task_id=?,
-		output_asset_id=?, output_version=?, vendor_receipt_id=?, selection=?, export_count=?,
+		output_asset_id=?, output_version=?, vendor_receipt_id=?, model_ref=?, selection=?, export_count=?,
 		deliverable=?, verified_product=?, pending_json=?, allowed_uses_json=?, mode=?, updated_at=?
 		WHERE id=? AND tenant_id=?`,
 		job.QuoteStatus, job.BillingLabel, job.JobStatus, job.Quality, job.Evidence, job.PlatformTaskID,
-		job.OutputAssetID, job.OutputVersion, job.VendorReceiptID, job.Selection, job.ExportCount,
+		job.OutputAssetID, job.OutputVersion, job.VendorReceiptID, job.ModelRef, job.Selection, job.ExportCount,
 		boolInt(job.Deliverable), boolInt(job.VerifiedProduct), string(pending), string(uses),
 		job.Mode, now.Format(time.RFC3339), job.ID, job.TenantID)
 	if err != nil {
@@ -180,7 +181,7 @@ func (s *Store) InvalidateOpenLightQuotes(ctx context.Context, tenantID, project
 
 const lightJobSelect = `SELECT id, tenant_id, project_id, input_id, input_version, mode, protected_region,
 	lighting_intent, fingerprint, quote_status, billing_label, job_status, quality, evidence,
-	platform_task_id, output_asset_id, output_version, vendor_receipt_id, selection, export_count,
+	platform_task_id, output_asset_id, output_version, vendor_receipt_id, model_ref, selection, export_count,
 	deliverable, verified_product, pending_json, allowed_uses_json, created_at, updated_at FROM light_scene_jobs`
 
 func scanLightJob(sc bgScanner) (LightJob, error) {
@@ -190,7 +191,7 @@ func scanLightJob(sc bgScanner) (LightJob, error) {
 	err := sc.Scan(&job.ID, &job.TenantID, &job.ProjectID, &job.InputID, &job.InputVersion, &job.Mode,
 		&job.ProtectedRegion, &job.LightingIntent, &job.Fingerprint, &job.QuoteStatus, &job.BillingLabel,
 		&job.JobStatus, &job.Quality, &job.Evidence, &job.PlatformTaskID, &job.OutputAssetID, &job.OutputVersion,
-		&job.VendorReceiptID, &job.Selection, &job.ExportCount, &deliverable, &verified, &pending, &uses, &created, &updated)
+		&job.VendorReceiptID, &job.ModelRef, &job.Selection, &job.ExportCount, &deliverable, &verified, &pending, &uses, &created, &updated)
 	if err != nil {
 		return LightJob{}, err
 	}
