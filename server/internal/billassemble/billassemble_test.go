@@ -57,10 +57,14 @@ func TestReconcileKeepsUnknownWithoutABill(t *testing.T) {
 	}
 	unknown := Reconcile(false, LookupFact{})
 	if unknown.Settlement != SettlementUnknown || unknown.BillingPassed || unknown.Regenerate {
-		t.Fatalf("没有账单不能写成未扣费证明: %+v", unknown)
+		t.Fatalf("没有任务不能写成未扣费证明: %+v", unknown)
 	}
-	billed := Reconcile(true, LookupFact{FoundCharge: true, ChargeRef: "chg_1"})
-	if !billed.BillingPassed || billed.Settlement != "charged" || billed.Regenerate {
-		t.Fatalf("有账单才可以通过: %+v", billed)
+	referenced := Reconcile(true, LookupFact{FoundTask: true, FoundCharge: true, ChargeRef: "chg_1", Settlement: "charged"})
+	if referenced.BillingPassed || referenced.Settlement != PendingCheck || referenced.Regenerate {
+		t.Fatalf("费用引用不是账本核对，完成仍待核对: %+v", referenced)
+	}
+	noTask := Reconcile(false, LookupFact{FoundCharge: true, ChargeRef: "chg_1", Settlement: "charged"})
+	if noTask.Settlement != SettlementUnknown || noTask.BillingPassed || noTask.Regenerate {
+		t.Fatalf("没有任务仍是未知，费用引用不能写成已结算: %+v", noTask)
 	}
 }

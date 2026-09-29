@@ -129,3 +129,39 @@ func TestLiveLookupDoesNotInventACharge(t *testing.T) {
 		t.Fatalf("查回后仍待核对: %+v", reconciled)
 	}
 }
+
+func TestLiveLookupFeeRefIsNotASettlement(t *testing.T) {
+	for _, key := range []string{"charge_id", "charge_ref", "fee_ref"} {
+		t.Run(key, func(t *testing.T) {
+			var paths []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				if r.URL.Path != "/internal/v1/tasks/task_fee" {
+					t.Errorf("不该请求 %s", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"task_id": "task_fee", "status": "succeeded", key: "chg_on_ticket"})
+			}))
+			t.Cleanup(srv.Close)
+			live := &Live{AppID: "product-image", TaskToken: "task-tok", TaskBase: srv.URL, Enabled: true}
+			got, err := live.Lookup(context.Background(), LookupCall{TaskID: "task_fee"})
+			if err != nil || !got.FoundTask || !got.FoundCharge || got.ChargeRef != "chg_on_ticket" || got.Settlement != SettlementUnknown {
+				t.Fatalf("费用引用可以记下，但不是已结算: %+v %v", got, err)
+			}
+			done := Reconcile(true, got)
+			if done.BillingPassed || done.Settlement != PendingCheck || done.Regenerate {
+				t.Fatalf("作品完成仍待核对: %+v", done)
+			}
+			open := Reconcile(false, LookupFact{})
+			if open.Settlement != SettlementUnknown || open.BillingPassed || open.Regenerate {
+				t.Fatalf("没有任务仍是未知: %+v", open)
+			}
+			for _, path := range paths {
+				if strings.Contains(path, "hold") || strings.Contains(path, "charge") || strings.Contains(path, "refund") || strings.Contains(path, "billing") {
+					t.Fatalf("查回不能发资金请求: %v", paths)
+				}
+			}
+		})
+	}
+}

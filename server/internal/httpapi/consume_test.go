@@ -262,6 +262,22 @@ func TestConsumeUnknownLooksUpStoredTask(t *testing.T) {
 	if done["billing_pass"] != "UNKNOWN" || done["production_authorized"] != "NOT_AUTHORIZED" {
 		t.Fatalf("待核对不是计费通过: %v", done)
 	}
+	rec.ChargeByTask = map[string]string{"task_1": "chg_on_ticket"}
+	st, referenced := f.do(t, "POST", "/api/v1/billing/consume/recover", tok, map[string]any{
+		"project_id": project.ID, "status": "unknown", "work_complete": true,
+	})
+	if st != http.StatusOK || referenced["charge_ref"] != "chg_on_ticket" || referenced["settlement"] != "作品完成待核对" || referenced["billing_passed"] != false || referenced["regenerate"] != false || referenced["charged"] != nil {
+		t.Fatalf("任务单费用引用可以返回，但不能写成已结算: %d %v", st, referenced)
+	}
+	if referenced["billing_pass"] != "UNKNOWN" || referenced["production_authorized"] != "NOT_AUTHORIZED" {
+		t.Fatalf("费用引用不是计费通过: %v", referenced)
+	}
+	st, open := f.do(t, "POST", "/api/v1/billing/consume/recover", tok, map[string]any{
+		"project_id": project.ID, "status": "unknown",
+	})
+	if st != http.StatusOK || open["charge_ref"] != "chg_on_ticket" || open["settlement"] != "unknown" || open["billing_passed"] != false || open["charged"] != nil || open["billing_pass"] != "UNKNOWN" || open["production_authorized"] != "NOT_AUTHORIZED" {
+		t.Fatalf("未完成时费用引用仍不是结算: %d %v", st, open)
+	}
 	if rec.NetReserved() != 0 || rec.Settles != 0 {
 		t.Fatalf("查回不能扣费: reserved=%d settles=%d", rec.NetReserved(), rec.Settles)
 	}

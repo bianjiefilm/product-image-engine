@@ -104,7 +104,6 @@ func (r *Record) Lookup(_ context.Context, in LookupCall) (LookupFact, error) {
 	if charge := r.ChargeByTask[in.TaskID]; charge != "" && in.TaskID != "" {
 		fact.FoundCharge = true
 		fact.ChargeRef = charge
-		fact.Settlement = "charged"
 	}
 	return fact, nil
 }

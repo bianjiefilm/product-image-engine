@@ -101,7 +101,6 @@ func (p *Live) Lookup(ctx context.Context, in LookupCall) (LookupFact, error) {
 		if ref, _ := doc[key].(string); strings.TrimSpace(ref) != "" {
 			out.FoundCharge = true
 			out.ChargeRef = strings.TrimSpace(ref)
-			out.Settlement = "charged"
 			break
 		}
 	}

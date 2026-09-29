@@ -110,7 +110,7 @@ type LookupCall struct {
 	UsageID string
 }
 
-// LookupFact 没有账单时 Settlement 保持 unknown，不用 false 表示已核对。
+// LookupFact 记下任务和费用引用。引用只是任务单上的字符串，Settlement 在没有账本核对时保持 unknown。
 type LookupFact struct {
 	TaskID      string
 	TaskStatus  string
@@ -138,18 +138,16 @@ type Port interface {
 	ReadBalance(ctx context.Context, accountID string) (Balance, error)
 }
 
-// ReconcileResult 是生成结果和账单对照。没有账单不能通过。
+// ReconcileResult 是生成是否完成。费用引用不能当成计费通过。
 type ReconcileResult struct {
 	Settlement    string
 	BillingPassed bool
 	Regenerate    bool
 }
 
-// Reconcile 作品完成但没有账单时待核对，不重新生成。
-func Reconcile(workComplete bool, look LookupFact) ReconcileResult {
-	if look.FoundCharge {
-		return ReconcileResult{Settlement: "charged", BillingPassed: true, Regenerate: false}
-	}
+// Reconcile 在任何路径都不把计费写成通过，也不把费用引用写成已结算。
+// 作品完成时待核对，不重新生成。没有任务时保持 unknown。
+func Reconcile(workComplete bool, _ LookupFact) ReconcileResult {
 	if workComplete {
 		return ReconcileResult{Settlement: PendingCheck, BillingPassed: false, Regenerate: false}
 	}
