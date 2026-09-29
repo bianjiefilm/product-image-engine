@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -360,6 +361,183 @@ func TestTextImageCredentialDoesNotPaintModelImage(t *testing.T) {
 	}
 	if bytes.Contains(raw, []byte("secret-model-key")) {
 		t.Fatal("凭证不能出现在应答里")
+	}
+}
+
+type textPaintSpy struct {
+	n   atomic.Int32
+	png []byte
+}
+
+func (p *textPaintSpy) Paint(context.Context, string) ([]byte, error) {
+	p.n.Add(1)
+	return append([]byte(nil), p.png...), nil
+}
+
+type textTaskScript struct {
+	mu     sync.Mutex
+	status string
+	asset  string
+	data   string
+	polls  atomic.Int32
+}
+
+func (s *textTaskScript) set(status, asset, data string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status, s.asset, s.data = status, asset, data
+}
+
+func (s *textTaskScript) serve(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodPost {
+		_, _ = w.Write([]byte(`{"task_id":"task_text_real","status":"pending"}`))
+		return
+	}
+	s.polls.Add(1)
+	s.mu.Lock()
+	status, asset, data := s.status, s.asset, s.data
+	s.mu.Unlock()
+	result := map[string]any{}
+	if asset != "" {
+		result["platform_asset_id"] = asset
+	}
+	if data != "" {
+		result["data_b64"] = data
+	}
+	raw, _ := json.Marshal(map[string]any{"task_id": "task_text_real", "status": status, "result": result})
+	_, _ = w.Write(raw)
+}
+
+func (f *fixture) armTextTask(t *testing.T, script *textTaskScript, paint *textPaintSpy) {
+	t.Helper()
+	taskSrv := httptest.NewServer(http.HandlerFunc(script.serve))
+	t.Cleanup(taskSrv.Close)
+	f.srv.Cfg.TextToImageEnabled = true
+	f.srv.Cfg.GenerationEnabled = true
+	f.srv.Cfg.TaskBaseURL = taskSrv.URL
+	f.srv.Cfg.UploadBaseURL = "http://127.0.0.1:1"
+	f.srv.Cfg.UploadToken = "up"
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskSrv.URL, AppID: "product-image", Token: "task-tok"}
+	f.srv.TextPaint = paint
+	f.rearm(t)
+}
+
+func TestTextImageServerTaskAssetIsShownWithoutSettlement(t *testing.T) {
+	png := tinyPNG(t, 8, 6)
+	paint := &textPaintSpy{png: png}
+	script := &textTaskScript{status: "succeeded", asset: "asset_real"}
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+	})
+	funds := &textFundsSpy{}
+	f.srv.Bills = funds
+	f.armTextTask(t, script, paint)
+	_, tok := f.loginOK(t)
+	_, logged := f.login(t, "b@x.com", "right-pass")
+	tokB, _ := logged["access_token"].(string)
+	proj := f.standaloneProject(t, tok)
+	const prompt = "服务端任务白色陶瓷杯"
+	jobID := f.openAndConfirmText(t, tok, proj, prompt)
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["show_image"] != false || job["platform_task_id"] != "task_text_real" || paint.n.Load() != 0 {
+		t.Fatalf("受理任务还不能出图: %d %#v paints=%d", st, job, paint.n.Load())
+	}
+	st, refreshed := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/refresh", tok, map[string]any{
+		"output_asset_id": "filled-output", "job_status": "success",
+	})
+	raw, _ := json.Marshal(refreshed)
+	job, _ = refreshed["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "completed" || job["origin"] != "server" || job["output_asset_id"] != "asset_real" || job["show_image"] != true {
+		t.Fatalf("服务端资产应可展示: %d %#v", st, job)
+	}
+	if job["billing_passed"] != false || job["production_authorized"] != false || job["charged"] != nil || job["production_authorization"] != "NOT_AUTHORIZED" || job["settlement"] != "作品完成待核对" {
+		t.Fatalf("生成完成不是结算: %#v", job)
+	}
+	if job["real_generation_completed"] != false || job["real_generation_notice"] != "真实出图未完成" || job["subject_protected"] != false || !strings.Contains(fmtAny(job["subject_notice"]), "不宣称主体保真") {
+		t.Fatalf("本地测试图不是模型出图或主体保真: %#v", job)
+	}
+	if bytes.Contains(raw, []byte("secret-model-key")) || paint.n.Load() != 1 {
+		t.Fatalf("凭证不能回传，本地出图应只调用一次: paints=%d", paint.n.Load())
+	}
+	st, hdr, body := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(body, png) || hdr.Get("X-Text-Image-Origin") != "server" {
+		t.Fatalf("下载应是服务端保存的字节: %d origin=%s n=%d", st, hdr.Get("X-Text-Image-Origin"), len(body))
+	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images", tok, map[string]any{"prompt": prompt})
+	againJob, _ := again["job"].(map[string]any)
+	if st != http.StatusOK || againJob["id"] != jobID || againJob["idempotent"] != true || againJob["output_asset_id"] != "asset_real" {
+		t.Fatalf("同一描述应回到原任务: %d %#v", st, againJob)
+	}
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/select", tok, nil)
+	selectedJob, _ := selected["job"].(map[string]any)
+	if st != http.StatusOK || selectedJob["selected_version"] != "asset_real" || selectedJob["output_asset_id"] != "asset_real" {
+		t.Fatalf("选定应锁住服务端资产: %d %#v", st, selectedJob)
+	}
+	script.set("succeeded", "asset_late", base64.StdEncoding.EncodeToString(tinyPNG(t, 2, 2)))
+	st, late := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/refresh", tok, nil)
+	lateJob, _ := late["job"].(map[string]any)
+	if st != http.StatusOK || lateJob["output_asset_id"] != "asset_real" || lateJob["show_image"] != true || script.polls.Load() != 1 || paint.n.Load() != 1 {
+		t.Fatalf("晚到结果不能覆盖选定版本: polls=%d paints=%d %#v", script.polls.Load(), paint.n.Load(), lateJob)
+	}
+	st, _, kept := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(kept, png) {
+		t.Fatalf("下载仍应是选定前的字节: %d n=%d", st, len(kept))
+	}
+	if funds.hold.Load() != 0 || funds.release.Load() != 0 || funds.settle.Load() != 0 {
+		t.Fatalf("展示不能调用资金动作")
+	}
+	st, _, _ = f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tokB, nil)
+	if st != http.StatusNotFound {
+		t.Fatalf("别的租户不能下载: %d", st)
+	}
+}
+
+func TestTextImageRefreshIgnoresClientAssetAndBadPayload(t *testing.T) {
+	png := tinyPNG(t, 4, 4)
+	paint := &textPaintSpy{png: png}
+	script := &textTaskScript{status: "succeeded"}
+	f := newFixture(t, func(c *config.Config) { c.TextToImageEnabled = true })
+	f.armTextTask(t, script, paint)
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "没有资产的成功")
+	_, _ = f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	st, bare := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/refresh", tok, map[string]any{
+		"output_asset_id": "filled-output", "job_status": "succeeded",
+	})
+	job, _ := bare["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["show_image"] != false || job["output_asset_id"] != "" || paint.n.Load() != 0 {
+		t.Fatalf("没有服务端资产时不能展示客户端编号: %d %#v", st, job)
+	}
+	script.set("succeeded", "asset_real", base64.StdEncoding.EncodeToString([]byte("not-an-image")))
+	st, bad := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/refresh", tok, nil)
+	job, _ = bad["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["show_image"] != false || job["output_asset_id"] != "" || paint.n.Load() != 0 {
+		t.Fatalf("坏的任务载荷不能改用本地图: %d %#v paints=%d", st, job, paint.n.Load())
+	}
+}
+
+func TestTextImageTaskBytesAreStoredInsteadOfLocalPaint(t *testing.T) {
+	taskPNG := tinyPNG(t, 5, 3)
+	paint := &textPaintSpy{png: tinyPNG(t, 9, 9)}
+	script := &textTaskScript{status: "succeeded", asset: "asset_real", data: base64.StdEncoding.EncodeToString(taskPNG)}
+	f := newFixture(t, func(c *config.Config) { c.TextToImageEnabled = true })
+	f.armTextTask(t, script, paint)
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "任务自带字节")
+	_, _ = f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	st, refreshed := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/refresh", tok, nil)
+	job, _ := refreshed["job"].(map[string]any)
+	if st != http.StatusOK || job["show_image"] != true || job["origin"] != "server" || job["output_asset_id"] != "asset_real" || paint.n.Load() != 0 {
+		t.Fatalf("任务字节应直接保存，不调用本地出图: %d %#v paints=%d", st, job, paint.n.Load())
+	}
+	st, _, body := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(body, taskPNG) || job["real_generation_completed"] != false {
+		t.Fatalf("下载应是任务带回的字节，仍不是模型出图: %d n=%d %#v", st, len(body), job)
 	}
 }
 

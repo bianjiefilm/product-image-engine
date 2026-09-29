@@ -29,6 +29,7 @@ const (
 	QualityFail    = "fail"
 
 	OriginFixture            = "fixture"
+	OriginServer             = "server"
 	RealGenerationIncomplete = "真实出图未完成"
 	ConceptualNotice         = "文字描述是概念输出，没有实物参考时不宣称主体保真"
 	FixtureNotice            = "这是服务端登记的夹具图，不是模型出图"
@@ -194,7 +195,7 @@ type AdmitDecision struct {
 	Reason string
 }
 
-// Admit 只在完成、租户工程、输入版本、登记哈希和夹具来源同时成立时展示。
+// Admit 只在完成、租户工程、输入版本和登记哈希同时成立，且来源是夹具或服务端任务时展示。
 // 选定版本已存在时，晚到的另一版本不能顶上。
 func Admit(in AdmitInput) AdmitDecision {
 	if in.ClientSupplied {
@@ -214,7 +215,7 @@ func Admit(in AdmitInput) AdmitDecision {
 	if !in.Registered || strings.TrimSpace(in.AssetID) == "" || len(registeredSHA) != 64 || registeredSHA != fileSHA {
 		return AdmitDecision{Reason: "asset_hash"}
 	}
-	if in.Origin != OriginFixture {
+	if in.Origin != OriginFixture && in.Origin != OriginServer {
 		return AdmitDecision{Reason: "not_fixture"}
 	}
 	if in.SelectedVersion != "" && in.SelectedVersion != in.ResultVersion {
@@ -223,8 +224,60 @@ func Admit(in AdmitInput) AdmitDecision {
 	return AdmitDecision{Show: true}
 }
 
-// RealGenerationCompleted 本轮恒为假。夹具不是模型结果，本包也不生成图片字节。
+// RealGenerationCompleted 恒为假。夹具和本地测试图都不是模型出图。
+// 凭证是否存在不改变这个结论。
 func RealGenerationCompleted(bool, string) bool { return false }
+
+// ServerTaskInput 是服务端轮询到的任务事实。客户端请求体不在这里面。
+// CredentialConfigured 只说明凭证字符串是否存在，不能单独变成成功。
+type ServerTaskInput struct {
+	Status               string
+	AssetID              string
+	ClientSupplied       bool
+	CredentialConfigured bool
+	ServerBytes          bool
+}
+
+// ServerTaskDecision 决定这条服务端任务能不能写成完成。
+type ServerTaskDecision struct {
+	Accept  bool
+	Status  string
+	AssetID string
+	Reason  string
+}
+
+// AcceptServerTask 只接受服务端轮询到的完成态，并且资产编号和字节都在服务端。
+// 缺凭证、只有凭证、或请求体里的编号，都不是成功。
+func AcceptServerTask(in ServerTaskInput) ServerTaskDecision {
+	if in.ClientSupplied {
+		return ServerTaskDecision{Status: StatusUnknown, Reason: "client_claim"}
+	}
+	switch strings.ToLower(strings.TrimSpace(in.Status)) {
+	case "failed":
+		return ServerTaskDecision{Status: StatusFailed, Reason: "failed"}
+	case "succeeded", "completed":
+		asset := strings.TrimSpace(in.AssetID)
+		if asset == "" {
+			return ServerTaskDecision{Status: StatusUnknown, Reason: "no_server_asset"}
+		}
+		if !in.ServerBytes {
+			// 凭证不能代替字节。CredentialConfigured 为真也同样拒绝。
+			return ServerTaskDecision{Status: StatusUnknown, Reason: "no_server_bytes"}
+		}
+		return ServerTaskDecision{Accept: true, Status: StatusCompleted, AssetID: asset}
+	default:
+		return ServerTaskDecision{Status: StatusUnknown, Reason: "pending"}
+	}
+}
+
+// ModelCallUsable 回答现在能不能调用图像模型。非空凭证不是端点。
+// 本服务没有图像模型 URL，所以不能把凭证字符串当成一次出图。
+func ModelCallUsable(credential string) bool {
+	if strings.TrimSpace(credential) == "" {
+		return false
+	}
+	return false
+}
 
 // NoteOutputID 记下别人填上的输出编号，但不把它当成核销凭证或成片。
 func NoteOutputID(rec Record, outputID string) Record {

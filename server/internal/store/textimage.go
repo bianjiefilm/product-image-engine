@@ -271,8 +271,8 @@ func (s *Store) SelectTextImageVersion(ctx context.Context, tenantID, projectID,
 	if err != nil {
 		return TextImageJob{}, err
 	}
-	if current.JobStatus != textimage.StatusCompleted || current.Origin != textimage.OriginFixture || current.ResultVersion == "" || current.OutputAssetID == "" {
-		return TextImageJob{}, fmt.Errorf("%w: 没有可选定的夹具版本", ErrConflict)
+	if current.JobStatus != textimage.StatusCompleted || !trustedTextOrigin(current.Origin) || current.ResultVersion == "" || current.OutputAssetID == "" {
+		return TextImageJob{}, fmt.Errorf("%w: 没有可选定的版本", ErrConflict)
 	}
 	if current.SelectedVersion == current.ResultVersion {
 		return current, nil
@@ -299,7 +299,7 @@ func (s *Store) OpenTextImageDownload(ctx context.Context, tenantID, projectID, 
 	if err != nil {
 		return "", nil, err
 	}
-	if job.OutputAssetID == "" || job.Origin != textimage.OriginFixture || job.JobStatus != textimage.StatusCompleted {
+	if job.OutputAssetID == "" || !trustedTextOrigin(job.Origin) || job.JobStatus != textimage.StatusCompleted {
 		return "", nil, ErrNotFound
 	}
 	if job.SelectedVersion != "" && job.SelectedVersion != job.ResultVersion {
@@ -318,9 +318,96 @@ func (s *Store) OpenTextImageDownload(ctx context.Context, tenantID, projectID, 
 	}
 	sum := sha256.Sum256(content)
 	fileSHA := hex.EncodeToString(sum[:])
-	if blobTenant != tenantID || blobProject != projectID || blobJob != job.ID || origin != textimage.OriginFixture ||
+	if blobTenant != tenantID || blobProject != projectID || blobJob != job.ID || origin != job.Origin || !trustedTextOrigin(origin) ||
 		blobVersion != job.InputVersion || fileSHA != job.OutputSHA256 || fileSHA != blobSHA {
 		return "", nil, fmt.Errorf("%w: 文件字节与登记不一致", ErrConflict)
 	}
 	return media, content, nil
+}
+
+func trustedTextOrigin(origin string) bool {
+	return origin == textimage.OriginFixture || origin == textimage.OriginServer
+}
+
+// TextImageServerResult 是服务端自己取得并保存的任务字节。资产编号不来自客户端。
+type TextImageServerResult struct {
+	TenantID  string
+	ProjectID string
+	JobID     string
+	AssetID   string
+	MediaType string
+	Bytes     []byte
+}
+
+// CompleteTextImageServer 把服务端字节写成完成。已有资产或已选版本时返回原任务。
+// 失败、报价和通用更新都不能走到这里。不写计费通过。
+func (s *Store) CompleteTextImageServer(ctx context.Context, in TextImageServerResult) (TextImageJob, bool, error) {
+	assetID := strings.TrimSpace(in.AssetID)
+	if assetID == "" {
+		return TextImageJob{}, false, fmt.Errorf("%w: 服务端资产编号不能为空", ErrValidation)
+	}
+	switch in.MediaType {
+	case "image/png", "image/jpeg", "image/webp":
+	default:
+		return TextImageJob{}, false, fmt.Errorf("%w: 图片媒体类型不受支持", ErrValidation)
+	}
+	if len(in.Bytes) == 0 {
+		return TextImageJob{}, false, fmt.Errorf("%w: 服务端图片字节为空", ErrValidation)
+	}
+	sum := sha256.Sum256(in.Bytes)
+	gotSHA := hex.EncodeToString(sum[:])
+	current, err := s.GetTextImageJob(ctx, in.TenantID, in.ProjectID, in.JobID)
+	if err != nil {
+		return TextImageJob{}, false, err
+	}
+	if current.JobStatus == textimage.StatusFailed {
+		return TextImageJob{}, false, fmt.Errorf("%w: 失败记录不能改成完成", ErrConflict)
+	}
+	if current.OutputAssetID != "" || current.SelectedVersion != "" {
+		return current, true, nil
+	}
+	if !openTextTaskStatus(current.JobStatus) || strings.TrimSpace(current.InputVersion) == "" {
+		return TextImageJob{}, false, fmt.Errorf("%w: 当前文字请求不能写入服务端结果", ErrConflict)
+	}
+	now := Now().Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return TextImageJob{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO text_image_blobs (
+		asset_id, tenant_id, project_id, job_id, input_version, sha256, media_type, origin, content, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		assetID, current.TenantID, current.ProjectID, current.ID, current.InputVersion, gotSHA,
+		in.MediaType, textimage.OriginServer, in.Bytes, now); err != nil {
+		return TextImageJob{}, false, fmt.Errorf("store: 写入服务端图片失败: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE text_image_jobs SET
+		job_status=?, output_asset_id=?, output_sha256=?, result_version=?, origin=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND project_id=? AND output_asset_id='' AND selected_version=''
+		AND job_status IN (?,?,?)`,
+		textimage.StatusCompleted, assetID, gotSHA, assetID, textimage.OriginServer, now,
+		current.ID, current.TenantID, current.ProjectID,
+		textimage.StatusUnknown, textimage.StatusSubmitting, textimage.StatusQueued)
+	if err != nil {
+		return TextImageJob{}, false, fmt.Errorf("store: 写入服务端任务完成失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		return TextImageJob{}, false, fmt.Errorf("%w: 服务端结果没有写上原任务", ErrConflict)
+	}
+	if err := tx.Commit(); err != nil {
+		return TextImageJob{}, false, err
+	}
+	saved, err := s.GetTextImageJob(ctx, current.TenantID, current.ProjectID, current.ID)
+	return saved, false, err
+}
+
+func openTextTaskStatus(status string) bool {
+	switch status {
+	case textimage.StatusUnknown, textimage.StatusSubmitting, textimage.StatusQueued:
+		return true
+	default:
+		return false
+	}
 }

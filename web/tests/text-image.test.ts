@@ -59,6 +59,33 @@ describe("文字描述入口", () => {
     expect(forged.realGeneration).toBe("真实出图未完成");
   });
 
+  it("服务端任务完成且有资产时出图，仍不是模型或已结算", () => {
+    const view = presentTextJob({
+      id: "txt_server",
+      job_status: "completed",
+      origin: "server",
+      show_image: true,
+      output_asset_id: "asset_real",
+      billing_label: "配置缺失",
+      settlement: "作品完成待核对",
+      real_generation_completed: false,
+    });
+    expect(view.showImage).toBe(true);
+    expect(view.billingPassed).toBe(false);
+    expect(view.productionAuthorized).toBe(false);
+    expect(view.realGeneration).toBe("真实出图未完成");
+    expect(view.settlementLabel).toBe("作品完成待核对");
+    expect(view.headline).toContain("不是模型出图");
+    expect(view.subjectLabel).toContain("不宣称主体保真");
+    const noAsset = presentTextJob({
+      job_status: "completed",
+      origin: "server",
+      show_image: true,
+      output_asset_id: "",
+    });
+    expect(noAsset.showImage).toBe(false);
+  });
+
   it("待确认刷新后仍是同一条记录", () => {
     expect(sameRecord("txt_1", "txt_1")).toBe(true);
     expect(sameRecord("txt_2", "txt_1")).toBe(false);
