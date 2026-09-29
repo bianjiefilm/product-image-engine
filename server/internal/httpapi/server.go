@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
+	"github.com/bianjiefilm/product-image-engine/server/internal/billassemble"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
@@ -29,7 +30,9 @@ type Server struct {
 	Tasks   *platform.TaskClient
 	Uploads *platform.UploadClient
 	Billing *platform.BillingClient
-	// Consume 是本地报价顾问。nil 表示没有真实报价，也不能据此扣款。
+	// Bills 是报价装配端口。nil 且配置齐全表示代码未装上；配置缺失另报。
+	Bills billassemble.Port
+	// Consume 是权益回退。报价金额以 Bills 为准，不用这里的金额当账本。
 	Consume *ConsumeAdvisor
 	// Registry 应用登记表(HUI-1745 I1;nil 时回执/返回来源 fail-closed)。
 	Registry *appregistry.Manifest
