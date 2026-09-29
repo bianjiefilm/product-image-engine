@@ -11,30 +11,33 @@ import (
 
 // BgJob 是背景替换的一条逻辑任务。生产出图与计费通过与否不存放在本行。
 type BgJob struct {
-	ID               string
-	TenantID         string
-	ProjectID        string
-	InputID          string
-	InputVersion     string
-	Mode             string
-	ProtectedRegion  string
-	BackgroundIntent string
-	Fingerprint      string
-	QuoteStatus      string
-	BillingLabel     string
-	JobStatus        string
-	Quality          string
-	Evidence         string
-	PlatformTaskID   string
-	OutputAssetID    string
-	OutputVersion    string
-	Selection        string
-	ExportCount      int
-	Deliverable      bool
-	Pending          []string
-	AllowedUses      []string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                string
+	TenantID          string
+	ProjectID         string
+	InputID           string
+	InputVersion      string
+	Mode              string
+	ProtectedRegion   string
+	BackgroundIntent  string
+	Fingerprint       string
+	QuoteStatus       string
+	BillingLabel      string
+	JobStatus         string
+	Quality           string
+	Evidence          string
+	PlatformTaskID    string
+	OutputAssetID     string
+	OutputVersion     string
+	Selection         string
+	ExportCount       int
+	Deliverable       bool
+	Pending           []string
+	AllowedUses       []string
+	ModelRef          string
+	FeeRef            string
+	ProductChecksJSON string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (s *Store) GetInput(ctx context.Context, tenantID, projectID, id string) (ProjectInput, error) {
@@ -68,6 +71,9 @@ func (s *Store) InsertBgJob(ctx context.Context, job BgJob) (BgJob, error) {
 	if job.AllowedUses == nil {
 		job.AllowedUses = []string{}
 	}
+	if strings.TrimSpace(job.ProductChecksJSON) == "" {
+		job.ProductChecksJSON = "{}"
+	}
 	pending, err := json.Marshal(job.Pending)
 	if err != nil {
 		return BgJob{}, err
@@ -80,12 +86,13 @@ func (s *Store) InsertBgJob(ctx context.Context, job BgJob) (BgJob, error) {
 		id, tenant_id, project_id, input_id, input_version, mode, protected_region, background_intent,
 		fingerprint, quote_status, billing_label, job_status, quality, evidence, platform_task_id,
 		output_asset_id, output_version, selection, export_count, deliverable, pending_json, allowed_uses_json,
-		created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		model_ref, fee_ref, product_checks_json, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		job.ID, job.TenantID, job.ProjectID, job.InputID, job.InputVersion, job.Mode, job.ProtectedRegion,
 		job.BackgroundIntent, job.Fingerprint, job.QuoteStatus, job.BillingLabel, job.JobStatus, job.Quality,
 		job.Evidence, job.PlatformTaskID, job.OutputAssetID, job.OutputVersion, job.Selection, job.ExportCount,
-		boolInt(job.Deliverable), string(pending), string(uses), now.Format(time.RFC3339), now.Format(time.RFC3339))
+		boolInt(job.Deliverable), string(pending), string(uses), job.ModelRef, job.FeeRef, job.ProductChecksJSON,
+		now.Format(time.RFC3339), now.Format(time.RFC3339))
 	if err != nil {
 		return BgJob{}, fmt.Errorf("store: 写入背景替换失败: %w", err)
 	}
@@ -101,6 +108,9 @@ func (s *Store) UpdateBgJob(ctx context.Context, job BgJob) error {
 	if job.AllowedUses == nil {
 		job.AllowedUses = []string{}
 	}
+	if strings.TrimSpace(job.ProductChecksJSON) == "" {
+		job.ProductChecksJSON = "{}"
+	}
 	pending, err := json.Marshal(job.Pending)
 	if err != nil {
 		return err
@@ -112,11 +122,12 @@ func (s *Store) UpdateBgJob(ctx context.Context, job BgJob) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE bg_replace_jobs SET
 		quote_status=?, billing_label=?, job_status=?, quality=?, evidence=?, platform_task_id=?,
 		output_asset_id=?, output_version=?, selection=?, export_count=?, deliverable=?,
-		pending_json=?, allowed_uses_json=?, mode=?, updated_at=?
+		pending_json=?, allowed_uses_json=?, mode=?, model_ref=?, fee_ref=?, product_checks_json=?, updated_at=?
 		WHERE id=? AND tenant_id=?`,
 		job.QuoteStatus, job.BillingLabel, job.JobStatus, job.Quality, job.Evidence, job.PlatformTaskID,
 		job.OutputAssetID, job.OutputVersion, job.Selection, job.ExportCount, boolInt(job.Deliverable),
-		string(pending), string(uses), job.Mode, now.Format(time.RFC3339), job.ID, job.TenantID)
+		string(pending), string(uses), job.Mode, job.ModelRef, job.FeeRef, job.ProductChecksJSON,
+		now.Format(time.RFC3339), job.ID, job.TenantID)
 	if err != nil {
 		return fmt.Errorf("store: 更新背景替换失败: %w", err)
 	}
@@ -195,7 +206,8 @@ func (s *Store) InvalidateOpenBgQuotes(ctx context.Context, tenantID, projectID,
 const bgJobSelect = `SELECT id, tenant_id, project_id, input_id, input_version, mode, protected_region,
 	background_intent, fingerprint, quote_status, billing_label, job_status, quality, evidence,
 	platform_task_id, output_asset_id, output_version, selection, export_count, deliverable,
-	pending_json, allowed_uses_json, created_at, updated_at FROM bg_replace_jobs`
+	pending_json, allowed_uses_json, model_ref, fee_ref, product_checks_json, created_at, updated_at
+	FROM bg_replace_jobs`
 
 type bgScanner interface {
 	Scan(dest ...any) error
@@ -208,7 +220,8 @@ func scanBgJob(sc bgScanner) (BgJob, error) {
 	err := sc.Scan(&job.ID, &job.TenantID, &job.ProjectID, &job.InputID, &job.InputVersion, &job.Mode,
 		&job.ProtectedRegion, &job.BackgroundIntent, &job.Fingerprint, &job.QuoteStatus, &job.BillingLabel,
 		&job.JobStatus, &job.Quality, &job.Evidence, &job.PlatformTaskID, &job.OutputAssetID, &job.OutputVersion,
-		&job.Selection, &job.ExportCount, &deliverable, &pending, &uses, &created, &updated)
+		&job.Selection, &job.ExportCount, &deliverable, &pending, &uses, &job.ModelRef, &job.FeeRef,
+		&job.ProductChecksJSON, &created, &updated)
 	if err != nil {
 		return BgJob{}, err
 	}

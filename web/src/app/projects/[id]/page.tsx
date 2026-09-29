@@ -731,6 +731,9 @@ export default function ProjectDetailPage() {
       <BackgroundReplacePanel
         projectId={id ?? ""}
         inputs={inputs.map((item) => ({ id: item.id, snapshot_name: item.snapshot_name }))}
+        onInputsChanged={() => {
+          void load();
+        }}
       />
 
       <TextImagePanel projectId={id ?? ""} />

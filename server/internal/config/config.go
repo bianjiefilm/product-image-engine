@@ -62,6 +62,8 @@ type Config struct {
 	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
 	BgReplaceEnabled  bool // FEATURE_BG_REPLACE,默认 off
 	BgCreativeEnabled bool // FEATURE_BG_CREATIVE,默认 off
+	// BgModelCredential 只表示是否配置了真实模型凭证。值不回传、不入库。
+	BgModelCredential string // PRODUCT_BG_MODEL_CREDENTIAL,默认空
 
 	// --- HUI-1700 FEAT-0201:光影场景生成 ---
 	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
@@ -134,6 +136,7 @@ func Load() Config {
 
 		BgReplaceEnabled:  getBoolEnv("FEATURE_BG_REPLACE", false),
 		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
+		BgModelCredential: os.Getenv("PRODUCT_BG_MODEL_CREDENTIAL"),
 
 		LightSceneEnabled:    getBoolEnv("FEATURE_LIGHT_SCENE", false),
 		LightCreativeEnabled: getBoolEnv("FEATURE_LIGHT_CREATIVE", false),
@@ -201,6 +204,12 @@ func (c Config) PhotoUploadUsable() (int, string) {
 		return 503, "素材上传服务未配置(缺少 PLATFORM_UPLOAD_BASE_URL 或 PLATFORM_UPLOAD_TOKEN)"
 	}
 	return 0, ""
+}
+
+// BgRealModelConfigured 只回答凭证是否存在,不暴露凭证内容。
+// 空则背景替换不得把任务受理写成真实出图完成。
+func (c Config) BgRealModelConfigured() bool {
+	return strings.TrimSpace(c.BgModelCredential) != ""
 }
 
 // CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。

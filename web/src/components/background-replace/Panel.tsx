@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BILLING_PENDING, HONESTY, billingLine, creativeChoice, quoteStale } from "@/lib/bg-replace";
+import {
+  BILLING_PENDING,
+  HONESTY,
+  PROTECTION_SCOPE,
+  REAL_GENERATION_INCOMPLETE,
+  billingLine,
+  quoteStale,
+  showCreative,
+} from "@/lib/bg-replace";
 
 interface InputOpt {
   id: string;
@@ -17,6 +25,14 @@ interface Caps {
   honesty?: string;
   production_generation_passed?: boolean;
   billing_passed?: boolean;
+  real_generation_notice?: string;
+}
+
+interface Checks {
+  logo?: string;
+  packaging_text?: string;
+  spec?: string;
+  structure?: string;
 }
 
 interface Job {
@@ -39,6 +55,12 @@ interface Job {
   production_generation_passed: boolean;
   billing_passed: boolean;
   platform_task_id: string;
+  model_ref?: string;
+  fee_ref?: string;
+  real_generation_completed?: boolean;
+  real_generation_notice?: string;
+  product_checks?: Checks;
+  export_count?: number;
 }
 
 interface Sample {
@@ -49,9 +71,24 @@ interface Sample {
   cost_label: string;
 }
 
+type AxisKey = "logo" | "packaging_text" | "spec" | "structure";
 const modeLabel: Record<string, string> = { fidelity: "保真", creative: "创意" };
+const axisLabel: Record<AxisKey, string> = {
+  logo: "Logo",
+  packaging_text: "包装文字",
+  spec: "规格",
+  structure: "结构",
+};
 
-export function BackgroundReplacePanel({ projectId, inputs }: { projectId: string; inputs: InputOpt[] }) {
+export function BackgroundReplacePanel({
+  projectId,
+  inputs,
+  onInputsChanged,
+}: {
+  projectId: string;
+  inputs: InputOpt[];
+  onInputsChanged?: () => void;
+}) {
   const [hidden, setHidden] = useState(false);
   const [caps, setCaps] = useState<Caps | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -62,6 +99,15 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
   const [active, setActive] = useState<Job | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [axes, setAxes] = useState<Record<AxisKey, string>>({
+    logo: "unknown",
+    packaging_text: "unknown",
+    spec: "unknown",
+    structure: "unknown",
+  });
+  const [similarity, setSimilarity] = useState("");
+  const [similarityOnly, setSimilarityOnly] = useState(false);
 
   useEffect(() => {
     let gone = false;
@@ -81,7 +127,16 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
       const list = await fetch(`/api/projects/${projectId}/background-replacements`);
       if (list.ok) {
         const body = await list.json().catch(() => null);
-        if (!gone) setJobs(body?.jobs ?? []);
+        const rows = (body?.jobs ?? []) as Job[];
+        if (!gone) {
+          setJobs(rows);
+          if (rows[0]) {
+            setActive(rows[0]);
+            setInputId(rows[0].input_id);
+            if (rows[0].background_intent) setIntent(rows[0].background_intent);
+            if (rows[0].mode === "fidelity") setMode("fidelity");
+          }
+        }
       }
     })();
     return () => {
@@ -93,14 +148,19 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
     if (!inputId && inputs[0]) setInputId(inputs[0].id);
   }, [inputId, inputs]);
 
+  useEffect(() => {
+    if (!showCreative(Boolean(caps?.creative_available)) && mode === "creative") setMode("fidelity");
+  }, [caps, mode]);
+
   if (hidden) return null;
-  const creative = creativeChoice(Boolean(caps?.creative_available));
+  const creativeOn = showCreative(Boolean(caps?.creative_available));
   const bill = billingLine(caps?.billing_label ?? active?.billing_label);
   const quoted = active
     ? { mode: active.mode, inputId: active.input_id, intent: active.background_intent }
     : null;
   const stale = quoted ? quoteStale(quoted, { mode, inputId, intent }) : false;
-  const formBody = { mode, input_id: inputId, background_intent: intent };
+  const formBody = { mode, input_id: inputId, background_intent: intent, protected_region: PROTECTION_SCOPE };
+  const realNotice = active?.real_generation_notice || caps?.real_generation_notice || REAL_GENERATION_INCOMPLETE;
 
   async function send(path: string, method: string, body?: unknown) {
     setBusy(true);
@@ -122,10 +182,50 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
     }
   }
 
+  async function upload() {
+    if (!file) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const bytes = await file.arrayBuffer();
+      const qs = new URLSearchParams({ purpose: "project_photo", filename: file.name });
+      const up = await fetch(`/api/photos?${qs.toString()}`, { method: "POST", body: bytes });
+      const upData = await up.json().catch(() => null);
+      if (!up.ok) {
+        setNotice(upData?.error?.message ?? "上传失败");
+        return;
+      }
+      const photo = upData?.photo ?? {};
+      const attach = await fetch(`/api/projects/${projectId}/inputs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform_asset_id: photo.platform_asset_id ?? "",
+          snapshot_name: photo.original_name ?? file.name,
+          snapshot_size: photo.size_bytes ?? bytes.byteLength,
+          snapshot_content_type: photo.media_type ?? "application/octet-stream",
+        }),
+      });
+      const attachData = await attach.json().catch(() => null);
+      if (!attach.ok) {
+        setNotice(attachData?.error?.message ?? "上传成功,但挂接工程失败");
+        return;
+      }
+      const created = attachData?.input?.id as string | undefined;
+      if (created) setInputId(created);
+      setFile(null);
+      setNotice(upData?.idempotent ? "同内容已存在,已恢复原挂接" : "上传完成,请选择保真模式");
+      onInputsChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openQuote() {
     const data = await send(`/api/projects/${projectId}/background-replacements`, "POST", {
       input_id: inputId,
       mode,
+      protected_region: PROTECTION_SCOPE,
       background_intent: intent,
       explicit_creative: mode === "creative",
     });
@@ -142,23 +242,58 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
     if (data?.job) setActive(data.job as Job);
   }
 
+  async function inspect() {
+    const body: Record<string, unknown> = { ...axes, similarity_only: similarityOnly };
+    if (similarity.trim() !== "") {
+      const score = Number(similarity);
+      if (Number.isFinite(score)) body.similarity = score;
+    }
+    await act("inspect", body);
+  }
+
+  function restore(job: Job) {
+    setActive(job);
+    setInputId(job.input_id);
+    setIntent(job.background_intent || intent);
+    if (job.mode === "creative" && creativeOn) setMode("creative");
+    else setMode("fidelity");
+    setNotice("已恢复原任务,未重新生成");
+  }
+
   return (
-    <Card>
+    <Card data-testid="bg-replace-panel">
       <CardHeader>
         <CardTitle>AI 背景替换</CardTitle>
         <CardDescription>
-          默认保真模式,只改背景和已声明的主体保护区域。{caps?.honesty ?? HONESTY}
+          上传后默认保真,只改背景。Logo、包装文字、规格和结构不能被背景生成改写。{caps?.honesty ?? HONESTY}
         </CardDescription>
       </CardHeader>
+      <p className="muted">上传 → 选择保真模式 → 确认报价 → 生成 → 检查 → 选择/导出</p>
       <p>
         <Badge variant="warn">{bill || BILLING_PENDING}</Badge>{" "}
-        <Badge>质量 {active?.quality ?? "unknown"}</Badge>
+        <Badge>质量 {active?.quality ?? "unknown"}</Badge>{" "}
+        <Badge variant="warn">{realNotice || REAL_GENERATION_INCOMPLETE}</Badge>
       </p>
+      <div className="row" data-testid="bg-upload">
+        <div>
+          <label>上传商品照片</label>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </div>
+        <div style={{ flex: 0 }}>
+          <Button type="button" disabled={busy || !file} onClick={() => void upload()}>
+            上传并挂接
+          </Button>
+        </div>
+      </div>
       <div className="row">
         <div>
           <label>商品输入</label>
           <select value={inputId} onChange={(e) => setInputId(e.target.value)}>
-            {inputs.length === 0 ? <option value="">先挂接商品照片</option> : null}
+            {inputs.length === 0 ? <option value="">先上传或挂接商品照片</option> : null}
             {inputs.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.snapshot_name || item.id}
@@ -171,31 +306,28 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
           <input value={intent} onChange={(e) => setIntent(e.target.value)} />
         </div>
       </div>
-      <div className="row" style={{ marginTop: 8 }}>
+      <div className="row" style={{ marginTop: 8 }} data-testid="bg-mode">
         <label>
-          <input type="radio" checked={mode === "fidelity"} onChange={() => setMode("fidelity")} /> 保真
+          <input type="radio" name="bg-mode" checked={mode === "fidelity"} onChange={() => setMode("fidelity")} /> 保真
         </label>
-        <label title={creative.reason}>
-          <input
-            type="radio"
-            checked={mode === "creative"}
-            disabled={!creative.enabled}
-            onChange={() => setMode("creative")}
-          />{" "}
-          创意{creative.enabled ? "" : "（未接通）"}
-        </label>
+        {creativeOn ? (
+          <label>
+            <input type="radio" name="bg-mode" checked={mode === "creative"} onChange={() => setMode("creative")} /> 创意
+          </label>
+        ) : null}
       </div>
+      <p className="muted">主体保护范围 {PROTECTION_SCOPE}。模式、保护范围和输入版本进入任务指纹。</p>
       {stale ? <p className="banner warn">模式、输入或背景方向已变,原报价失效,请重新生成报价。</p> : null}
       {notice ? <p className="banner">{notice}</p> : null}
       <div className="row" style={{ marginTop: 12 }}>
-        <Button type="button" disabled={busy || !inputId} onClick={openQuote}>
+        <Button type="button" disabled={busy || !inputId} onClick={() => void openQuote()}>
           生成报价
         </Button>
         <Button
           type="button"
           variant="outline"
           disabled={busy || !active || stale || active.quote_status !== "unconfirmed"}
-          onClick={() => act("confirm", formBody)}
+          onClick={() => void act("confirm", formBody)}
         >
           确认报价
         </Button>
@@ -203,36 +335,68 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
           type="button"
           variant="secondary"
           disabled={busy || !active || stale || active.job_status !== "quoted" || active.quote_status !== "confirmed"}
-          onClick={() => act("submit", formBody)}
+          onClick={() => void act("submit", formBody)}
         >
-          提交背景替换
+          生成背景
         </Button>
       </div>
       {active ? (
         <div style={{ marginTop: 16 }}>
           <p className="muted">
-            输入版本 {active.input_version} · 模式 {modeLabel[active.mode] ?? active.mode} · 保护区域{" "}
+            输入版本 {active.input_version} · 模式 {modeLabel[active.mode] ?? active.mode} · 保护范围{" "}
             {active.protected_region} · 状态 {active.job_status}
-            {active.platform_task_id ? ` · 任务 ${active.platform_task_id}` : ""}
           </p>
           <p>
-            对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}{" "}
-            {active.output_version || ""}
+            模型 {active.model_ref || "未记录"} · 任务 {active.platform_task_id || "未记录"} · 资产{" "}
+            {active.output_asset_id || "未记录"} {active.output_version || ""} · 费用 {active.fee_ref || active.billing_label || BILLING_PENDING}
           </p>
-          <p>主体质量检查:{active.quality}。允许用途:{(active.allowed_uses ?? []).join("、") || "预览"}。</p>
+          <p>
+            对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}。允许用途:
+            {(active.allowed_uses ?? []).join("、") || "预览"}。
+          </p>
           <p>待确认:{(active.pending ?? []).join("；") || "无"}</p>
           <p className="muted">{active.honesty || HONESTY}</p>
+          <p className="muted">{realNotice || REAL_GENERATION_INCOMPLETE}</p>
+          <div className="row" data-testid="bg-inspect">
+            {(Object.keys(axisLabel) as AxisKey[]).map((key) => (
+              <div key={key}>
+                <label>{axisLabel[key]}</label>
+                <select
+                  value={axes[key]}
+                  onChange={(e) => setAxes({ ...axes, [key]: e.target.value })}
+                >
+                  <option value="unknown">未检查</option>
+                  <option value="pass">未见改写</option>
+                  <option value="fail">已改写</option>
+                </select>
+              </div>
+            ))}
+          </div>
           <div className="row">
-            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => act("select")}>
+            <div>
+              <label>相似度分(不能单独通过)</label>
+              <input value={similarity} onChange={(e) => setSimilarity(e.target.value)} inputMode="decimal" />
+            </div>
+            <label>
+              <input type="checkbox" checked={similarityOnly} onChange={(e) => setSimilarityOnly(e.target.checked)} />{" "}
+              只提供相似度
+            </label>
+          </div>
+          <div className="row">
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void inspect()}>
+              检查商品
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void act("select")}>
               选定此候选
             </Button>
-            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => act("export")}>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void act("export")}>
               导出同一版本
             </Button>
-            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => act("refresh")}>
-              核对任务
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void act("refresh")}>
+              刷新并恢复原任务
             </Button>
           </div>
+          {active.export_count ? <p className="muted">已导出 {active.export_count} 次,每次都是同一资产版本。</p> : null}
         </div>
       ) : null}
       {samples.length > 0 ? (
@@ -257,8 +421,19 @@ export function BackgroundReplacePanel({ projectId, inputs }: { projectId: strin
           </tbody>
         </table>
       ) : null}
-      {jobs.length > 0 ? <p className="muted">本工程已有 {jobs.length} 条背景替换记录。</p> : null}
-      <p className="muted">生产出图与计费均未标记为通过。</p>
+      {jobs.length > 0 ? (
+        <div style={{ marginTop: 12 }}>
+          <p className="muted">本工程已有 {jobs.length} 条背景替换记录。点恢复不会重新生成。</p>
+          <div className="row">
+            {jobs.map((job) => (
+              <Button key={job.id} type="button" size="sm" variant="outline" disabled={busy} onClick={() => restore(job)}>
+                恢复 {modeLabel[job.mode] ?? job.mode} {job.job_status}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <p className="muted">生产出图与计费均未标记为通过。{REAL_GENERATION_INCOMPLETE}</p>
     </Card>
   );
 }

@@ -7,6 +7,9 @@ import {
   billingLine,
   creativeChoice,
   quoteStale,
+  showCreative,
+  PROTECTION_SCOPE,
+  REAL_GENERATION_INCOMPLETE,
 } from "@/lib/bg-replace";
 
 describe("背景替换诚实文案", () => {
@@ -17,12 +20,14 @@ describe("背景替换诚实文案", () => {
     expect(billingLine(BILLING_PENDING)).toBe(BILLING_PENDING);
   });
 
-  it("创意路径未接通时不能选", () => {
+  it("创意路径未接通时不能选,界面也不渲染该选项", () => {
     expect(creativeChoice(false)).toEqual({
       enabled: false,
       reason: "创意模式尚未接通真实生成路径",
     });
     expect(creativeChoice(true).enabled).toBe(true);
+    expect(showCreative(false)).toBe(false);
+    expect(showCreative(true)).toBe(true);
   });
 
   it("改模式、改输入或改背景方向使报价失效", () => {
@@ -46,8 +51,17 @@ describe("背景替换诚实文案", () => {
     );
     expect(lib).toContain(BILLING_PENDING);
     expect(lib).toContain(HONESTY);
+    expect(lib).toContain(REAL_GENERATION_INCOMPLETE);
+    expect(lib).toContain(PROTECTION_SCOPE);
     expect(panel).toContain("HONESTY");
     expect(panel).toContain("BILLING_PENDING");
+    expect(panel).toContain("REAL_GENERATION_INCOMPLETE");
+    expect(panel).toContain("PROTECTION_SCOPE");
+    expect(panel).toContain("showCreative");
+    expect(panel).toContain("/api/photos");
+    expect(panel).toContain("/api/projects/");
+    expect(panel).not.toContain("未接通");
+    expect(panel).not.toContain("/internal/");
     expect(panel).toContain("@/components/ui/button");
     expect(panel).not.toContain("计费已通过");
     expect(panel).not.toContain("生产出图已经通过");
