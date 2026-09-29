@@ -1,12 +1,17 @@
 package httpapi
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/bianjiefilm/product-image-engine/server/internal/billassemble"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 )
@@ -211,6 +216,222 @@ func TestTextImageConfiguredWithoutPortIsUnimplemented(t *testing.T) {
 	if st != http.StatusOK || capBody["billing_label"] != "未实现" || capBody["charged"] != nil || capBody["show_image"] != false || capBody["billing_passed"] != false {
 		t.Fatalf("配了计费但没有端口应报未实现，仍不出图: %d %#v", st, capBody)
 	}
+}
+
+func TestTextImageFixtureIsListedDetailedAndDownloaded(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageFixtureRegister = true
+	})
+	spy := &textFundsSpy{}
+	f.srv.Bills = spy
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "fixture 白色陶瓷杯")
+	png := tinyPNG(t, 8, 8)
+	body := f.registerTextFixture(t, tok, proj, jobID, png, http.StatusCreated)
+	job, _ := body["job"].(map[string]any)
+	if !trustedFixtureJob(t, job) {
+		t.Fatalf("夹具登记后应可展示且未结算: %#v", job)
+	}
+	asset, _ := job["output_asset_id"].(string)
+	st, listed := f.do(t, "GET", "/api/v1/projects/"+proj+"/text-images", tok, nil)
+	jobs, _ := listed["jobs"].([]any)
+	if st != http.StatusOK || len(jobs) != 1 || !trustedFixtureJob(t, jobs[0].(map[string]any)) {
+		t.Fatalf("列表应打开夹具: %d %#v", st, listed)
+	}
+	st, detail := f.do(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID, tok, nil)
+	detailJob, _ := detail["job"].(map[string]any)
+	if st != http.StatusOK || !trustedFixtureJob(t, detailJob) || detailJob["output_asset_id"] != asset {
+		t.Fatalf("详情应打开同一夹具: %d %#v", st, detailJob)
+	}
+	st, hdr, raw := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(raw, png) || !strings.HasPrefix(hdr.Get("Content-Type"), "image/png") || !strings.Contains(hdr.Get("Content-Disposition"), "fixture") {
+		t.Fatalf("下载应是登记字节: %d type=%s disp=%s n=%d", st, hdr.Get("Content-Type"), hdr.Get("Content-Disposition"), len(raw))
+	}
+	if spy.hold.Load() != 0 || spy.release.Load() != 0 || spy.settle.Load() != 0 {
+		t.Fatalf("夹具路径不能调用资金动作 hold=%d release=%d settle=%d", spy.hold.Load(), spy.release.Load(), spy.settle.Load())
+	}
+}
+
+func TestTextImageClientClaimAndForeignAssetStayHidden(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageFixtureRegister = true
+	})
+	_, tok := f.loginOK(t)
+	stLogin, logged := f.login(t, "b@x.com", "right-pass")
+	tokB, _ := logged["access_token"].(string)
+	if stLogin != http.StatusOK || tokB == "" {
+		t.Fatalf("第二租户登录失败: %d %v", stLogin, logged)
+	}
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "fixture 金属壶")
+	png := tinyPNG(t, 6, 6)
+	body := f.registerTextFixture(t, tok, proj, jobID, png, http.StatusCreated)
+	job, _ := body["job"].(map[string]any)
+	asset, _ := job["output_asset_id"].(string)
+	st, claimed := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/claim", tok, map[string]any{
+		"claim": "success", "output_asset_id": "filled-output",
+	})
+	if st != http.StatusConflict {
+		t.Fatalf("客户端不能把夹具改成模型成功: %d %v", st, claimed)
+	}
+	st, refreshed := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/refresh", tok, map[string]any{
+		"output_asset_id": "filled-output", "job_status": "succeeded",
+	})
+	job, _ = refreshed["job"].(map[string]any)
+	if st != http.StatusOK || job["output_asset_id"] != asset || job["show_image"] != true || job["origin"] != "fixture" || job["real_generation_completed"] != false {
+		t.Fatalf("任意资产编号不能换掉夹具: %d %#v", st, job)
+	}
+	st, foreign := f.do(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID, tokB, nil)
+	if st != http.StatusNotFound {
+		t.Fatalf("别的租户不能看详情: %d %v", st, foreign)
+	}
+	st, _, _ = f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tokB, nil)
+	if st != http.StatusNotFound {
+		t.Fatalf("别的租户不能下载: %d", st)
+	}
+}
+
+func TestTextImageSameKeyReturnsFixtureWithoutNewBytes(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageFixtureRegister = true
+	})
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	prompt := "fixture 蓝色水壶"
+	jobID := f.openAndConfirmText(t, tok, proj, prompt)
+	png := tinyPNG(t, 5, 5)
+	first := f.registerTextFixture(t, tok, proj, jobID, png, http.StatusCreated)
+	asset := first["job"].(map[string]any)["output_asset_id"]
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images", tok, map[string]any{"prompt": prompt})
+	job, _ := again["job"].(map[string]any)
+	if st != http.StatusOK || job["id"] != jobID || job["idempotent"] != true || job["show_image"] != true || job["output_asset_id"] != asset {
+		t.Fatalf("应答丢失后应按原键查回: %d %#v", st, job)
+	}
+	second := f.registerTextFixture(t, tok, proj, jobID, png, http.StatusOK)
+	if second["idempotent"] != true || second["job"].(map[string]any)["output_asset_id"] != asset {
+		t.Fatalf("同一夹具应幂等: %#v", second)
+	}
+}
+
+func TestTextImageLateFixtureDoesNotReplaceSelection(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageFixtureRegister = true
+	})
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "fixture 选定版本")
+	firstPNG := tinyPNG(t, 4, 4)
+	latePNG := tinyPNG(t, 7, 7)
+	body := f.registerTextFixture(t, tok, proj, jobID, firstPNG, http.StatusCreated)
+	asset := body["job"].(map[string]any)["output_asset_id"]
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/select", tok, nil)
+	job, _ := selected["job"].(map[string]any)
+	if st != http.StatusOK || job["selected_version"] == "" || job["selected_version"] != job["result_version"] || job["output_asset_id"] != asset {
+		t.Fatalf("选定应锁住当前夹具: %d %#v", st, job)
+	}
+	late := f.registerTextFixture(t, tok, proj, jobID, latePNG, http.StatusOK)
+	if late["late_result_ignored"] != true || late["job"].(map[string]any)["output_asset_id"] != asset {
+		t.Fatalf("晚到结果不能覆盖选定版本: %#v", late)
+	}
+	st, _, raw := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(raw, firstPNG) {
+		t.Fatalf("下载仍应是选定前的原字节: %d n=%d", st, len(raw))
+	}
+}
+
+func TestTextImageCredentialDoesNotPaintModelImage(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+	})
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "红色水壶")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["show_image"] != false || job["output_asset_id"] != "" || job["real_generation_completed"] != false || job["real_generation_notice"] != "真实出图未完成" {
+		t.Fatalf("有凭证字符串也不能画模型图: %d %#v", st, job)
+	}
+	if bytes.Contains(raw, []byte("secret-model-key")) {
+		t.Fatal("凭证不能出现在应答里")
+	}
+}
+
+func TestTextImageFixtureRouteHiddenWhenDisabled(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) { c.TextToImageEnabled = true })
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "fixture 未开关注册")
+	st, body := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/fixture", tok, map[string]any{
+		"fixture": "fixture", "data_b64": base64.StdEncoding.EncodeToString(tinyPNG(t, 3, 3)),
+	})
+	if st != http.StatusNotFound {
+		t.Fatalf("默认不能登记夹具: %d %v", st, body)
+	}
+	st, listed := f.do(t, "GET", "/api/v1/projects/"+proj+"/text-images", tok, nil)
+	job := listed["jobs"].([]any)[0].(map[string]any)
+	if st != http.StatusOK || job["show_image"] != false || job["job_status"] == "completed" {
+		t.Fatalf("关闭开关时不能出现完成图: %d %#v", st, job)
+	}
+}
+
+func trustedFixtureJob(t *testing.T, job map[string]any) bool {
+	t.Helper()
+	return job["show_image"] == true && job["origin"] == "fixture" && job["job_status"] == "completed" &&
+		job["output_asset_id"] != "" && job["output_asset_id"] != "filled-output" &&
+		job["charged"] == nil && job["billing_passed"] == false && job["production_authorized"] == false &&
+		job["production_authorization"] == "NOT_AUTHORIZED" && job["settlement"] == "作品完成待核对" &&
+		job["real_generation_completed"] == false && job["real_generation_notice"] == "真实出图未完成" &&
+		job["subject_protected"] == false && strings.Contains(fmtAny(job["subject_notice"]), "不宣称主体保真") &&
+		job["billing_label"] == "配置缺失"
+}
+
+func fmtAny(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func (f *fixture) registerTextFixture(t *testing.T, tok, proj, jobID string, png []byte, want int) map[string]any {
+	t.Helper()
+	st, body := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/fixture", tok, map[string]any{
+		"fixture": "fixture", "data_b64": base64.StdEncoding.EncodeToString(png),
+	})
+	if st != want {
+		t.Fatalf("登记夹具 %d 期望 %d %v", st, want, body)
+	}
+	return body
+}
+
+type textFundsSpy struct {
+	hold, release, settle atomic.Int32
+}
+
+func (s *textFundsSpy) Quote(context.Context, billassemble.QuoteCall) (billassemble.QuoteFact, error) {
+	return billassemble.QuoteFact{}, billassemble.ErrUnimplemented
+}
+func (s *textFundsSpy) Hold(context.Context, billassemble.HoldCall) (billassemble.HoldFact, error) {
+	s.hold.Add(1)
+	return billassemble.HoldFact{}, billassemble.ErrFundsNotExecuted
+}
+func (s *textFundsSpy) Release(context.Context, billassemble.ReleaseCall) (billassemble.ReleaseFact, error) {
+	s.release.Add(1)
+	return billassemble.ReleaseFact{}, billassemble.ErrFundsNotExecuted
+}
+func (s *textFundsSpy) Settle(context.Context, billassemble.SettleCall) (billassemble.SettleFact, error) {
+	s.settle.Add(1)
+	return billassemble.SettleFact{}, billassemble.ErrFundsNotExecuted
+}
+func (s *textFundsSpy) Lookup(context.Context, billassemble.LookupCall) (billassemble.LookupFact, error) {
+	return billassemble.LookupFact{}, billassemble.ErrUnimplemented
+}
+func (s *textFundsSpy) ReadBalance(context.Context, string) (billassemble.Balance, error) {
+	return billassemble.Balance{}, billassemble.ErrUnimplemented
 }
 
 func (f *fixture) standaloneProject(t *testing.T, tok string) string {

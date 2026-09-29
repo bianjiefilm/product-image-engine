@@ -17,6 +17,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"FEATURE_PHOTO_UPLOAD", "PRODUCT_PHOTO_MAX_BYTES",
 		"FEATURE_SIZE_ADAPT", "FEATURE_TEMPLATES", "FEATURE_SUBJECT_FIDELITY",
 		"FEATURE_BG_REPLACE", "FEATURE_BG_CREATIVE", "PRODUCT_BG_MODEL_CREDENTIAL",
+		"TEXT_IMAGE_FIXTURE_REGISTER", "PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL",
 	} {
 		t.Setenv(k, "")
 	}
@@ -51,7 +52,8 @@ func TestDefaultsAreSafe(t *testing.T) {
 	}
 	if c.BillingEnabled || c.GenerationEnabled || c.SizeAdaptEnabled ||
 		c.PhotoUploadEnabled || c.TemplatesEnabled || c.SubjectFidelityEnabled ||
-		c.BgReplaceEnabled || c.BgCreativeEnabled || c.BgRealModelConfigured() {
+		c.BgReplaceEnabled || c.BgCreativeEnabled || c.BgRealModelConfigured() ||
+		c.TextImageFixtureRegister || c.TextImageModelConfigured() {
 		t.Fatal("全部登记制/能力开关默认必须全 off")
 	}
 	if len(c.FatalProblems()) == 0 {

@@ -185,6 +185,12 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/submit", s.guard(true, s.handleSubmitTextImage))
 		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/refresh", s.guard(true, s.handleRefreshTextImage))
 		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/claim", s.guard(true, s.handleClaimTextImage))
+		mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/select", s.guard(true, s.handleSelectTextImage))
+		mux.Handle("GET /api/v1/projects/{id}/text-images/{jobId}", s.guard(true, s.handleGetTextImage))
+		mux.Handle("GET /api/v1/projects/{id}/text-images/{jobId}/download", s.guard(true, s.handleDownloadTextImage))
+		if s.Cfg.TextImageFixtureRegister {
+			mux.Handle("POST /api/v1/projects/{id}/text-images/{jobId}/fixture", s.guard(true, s.handleRegisterTextImageFixture))
+		}
 	}
 
 	// 展示视频(HUI-1702 / FEAT-0203):开关 off → 路由不注册 = 404。
