@@ -18,9 +18,47 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
+
+const (
+	minCanvasPixels = 262144
+	maxCanvasPixels = 4194304
+
+	// SizeMismatchNote 只说明输出像素和项目画布不一致。它不是保真通过，也不是电商尺寸验收。
+	SizeMismatchNote = "输出尺寸与项目不一致"
+	// SizeOutOfDomainNote 说明项目尺寸不在模型像素域，请求没有改用这个尺寸。
+	SizeOutOfDomainNote = "项目尺寸不在模型像素域"
+)
+
+// CanvasSize 只在宽高都为正，且像素数落在模型自由像素域时返回 WxH。
+// 域外尺寸返回空串，调用方继续使用端点默认尺寸，不能把空串说成已按电商尺寸出图。
+func CanvasSize(w, h int) string {
+	if w < 1 || h < 1 || w > 4096 || h > 4096 {
+		return ""
+	}
+	px := w * h
+	if px < minCanvasPixels || px > maxCanvasPixels {
+		return ""
+	}
+	return strconv.Itoa(w) + "x" + strconv.Itoa(h)
+}
+
+// SizeNotes 只在项目写了尺寸时返回说明。尺寸一致时返回空，不表示保真、计费或生产通过。
+func SizeNotes(projectW, projectH, outputW, outputH int) []string {
+	if projectW < 1 || projectH < 1 {
+		return nil
+	}
+	if CanvasSize(projectW, projectH) == "" {
+		return []string{SizeOutOfDomainNote}
+	}
+	if outputW != projectW || outputH != projectH {
+		return []string{SizeMismatchNote}
+	}
+	return nil
+}
 
 // Request 是一次图像生成。凭证只放在发往生成端点的请求头里。
 // Refs 是可选参考图。没有参考图时 JSON 不带 image；有则 image 为 data URL 数组。
@@ -41,6 +79,8 @@ type Result struct {
 	HostLive      bool
 	BillingPassed bool
 	StatusCode    int
+	WidthPx       int
+	HeightPx      int
 }
 
 // Generate 向端点 POST 一次。端点路径不是 /images/generations 时补上这一段。
@@ -134,6 +174,10 @@ func Generate(ctx context.Context, client *http.Client, req Request) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
+	width, height := 0, 0
+	if cfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(picture)); cfgErr == nil {
+		width, height = cfg.Width, cfg.Height
+	}
 	sum := sha256.Sum256(picture)
 	return Result{
 		Bytes:         picture,
@@ -142,6 +186,8 @@ func Generate(ctx context.Context, client *http.Client, req Request) (Result, er
 		HostLive:      !loopbackHost(host),
 		BillingPassed: false,
 		StatusCode:    resp.StatusCode,
+		WidthPx:       width,
+		HeightPx:      height,
 	}, nil
 }
 

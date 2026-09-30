@@ -684,6 +684,89 @@ func TestBackgroundReplaceModelReadyDoesNotNeedPlatformGeneration(t *testing.T) 
 	assertBgBillingAndProductionStayFalse(t, job)
 }
 
+func TestBackgroundReplaceProjectCanvasSizeIsRequestedAndMismatchStaysUndeliverable(t *testing.T) {
+	const secret = "secret-model-key"
+	original := tinyPNG(t, 4, 3)
+	out := tinyPNG(t, 5, 4)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: out}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, "http://127.0.0.1:1", up.srv.URL, func(c *config.Config) {
+		c.GenerationEnabled = false
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	st, created := f.do(t, "POST", "/api/v1/projects", tok, map[string]any{
+		"name": "电商背景", "source_type": "standalone", "width_px": 800, "height_px": 800,
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("建工程 %d %v", st, created)
+	}
+	proj := created["project"].(map[string]any)["id"].(string)
+	st, in := f.do(t, "POST", "/api/v1/projects/"+proj+"/inputs", tok, map[string]any{
+		"platform_asset_id": "asset_in", "snapshot_name": "pack.png",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("挂输入 %d %v", st, in)
+	}
+	inputID := in["input"].(map[string]any)["id"].(string)
+	jobID := f.openAndConfirmCreative(t, tok, proj, inputID, "电商主图背景")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || job["origin"] != "model_http" || !strings.Contains(rt.body, `"size":"800x800"`) {
+		t.Fatalf("应按项目画布请求尺寸: %d body=%s %#v", st, rt.body, job)
+	}
+	if !bytes.Contains(pending, []byte("输出尺寸与项目不一致")) || job["deliverable"] != false || job["real_generation_completed"] != false {
+		t.Fatalf("尺寸不一致不能当成电商尺寸通过: pending=%s %#v", pending, job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+}
+
+func TestBackgroundReplaceOutOfDomainCanvasKeepsDefaultSize(t *testing.T) {
+	original := tinyPNG(t, 3, 3)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: tinyPNG(t, 2, 2)}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, "http://127.0.0.1:1", up.srv.URL, func(c *config.Config) {
+		c.GenerationEnabled = false
+		c.BgModelCredential = "secret-model-key"
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	st, created := f.do(t, "POST", "/api/v1/projects", tok, map[string]any{
+		"name": "过小画布", "source_type": "standalone", "width_px": 100, "height_px": 100,
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("建工程 %d %v", st, created)
+	}
+	proj := created["project"].(map[string]any)["id"].(string)
+	st, in := f.do(t, "POST", "/api/v1/projects/"+proj+"/inputs", tok, map[string]any{
+		"platform_asset_id": "asset_in", "snapshot_name": "pack.png",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("挂输入 %d %v", st, in)
+	}
+	jobID := f.openAndConfirmCreative(t, tok, proj, in["input"].(map[string]any)["id"].(string), "域外尺寸")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || strings.Contains(rt.body, "100x100") || !strings.Contains(rt.body, `"size":"1024x1024"`) {
+		t.Fatalf("域外尺寸不能送出: %d body=%s", st, rt.body)
+	}
+	if !bytes.Contains(pending, []byte("项目尺寸不在模型像素域")) || job["deliverable"] != false {
+		t.Fatalf("应记下未按项目尺寸请求: pending=%s %#v", pending, job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+}
+
 func TestBackgroundReplaceLoopbackModelBytesStayHidden(t *testing.T) {
 	const secret = "secret-model-key"
 	original := tinyPNG(t, 3, 3)

@@ -442,6 +442,36 @@ func TestTextImageModelPostStoresDecodedBytesWithoutBilling(t *testing.T) {
 	}
 }
 
+func TestTextImageProjectCanvasSizeIsRequestedAndMismatchIsNotAPass(t *testing.T) {
+	png := tinyPNG(t, 5, 4)
+	rt := &modelRoundTrip{png: png}
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+		c.TextImageModelURL = "https://images.example/v1"
+		c.TextImageModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	st, created := f.do(t, "POST", "/api/v1/projects", tok, map[string]any{
+		"name": "电商文字", "source_type": "standalone", "width_px": 800, "height_px": 800,
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("建工程 %d %v", st, created)
+	}
+	proj := created["project"].(map[string]any)["id"].(string)
+	jobID := f.openAndConfirmText(t, tok, proj, "白色陶瓷杯，800 主图")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || !strings.Contains(rt.lastBody, `"size":"800x800"`) {
+		t.Fatalf("文字生成应按项目画布请求尺寸: %d body=%s", st, rt.lastBody)
+	}
+	if !bytes.Contains(pending, []byte("输出尺寸与项目不一致")) || job["real_generation_completed"] != false || job["billing_passed"] != false || job["production_authorized"] != false {
+		t.Fatalf("尺寸不一致不能写成出图或计费通过: pending=%s %#v", pending, job)
+	}
+}
+
 func TestTextImageLoopbackModelBytesStayUnknown(t *testing.T) {
 	png := tinyPNG(t, 4, 4)
 	rt := &modelRoundTrip{png: png}

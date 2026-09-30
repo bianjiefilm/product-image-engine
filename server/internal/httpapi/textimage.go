@@ -532,11 +532,13 @@ func (s *Server) textModelReady() bool {
 }
 
 func (s *Server) finishTextImageModel(w http.ResponseWriter, r *http.Request, job store.TextImageJob) {
+	size, projectW, projectH := s.projectCanvas(r.Context(), job.TenantID, job.ProjectID)
 	result, err := imagemodel.Generate(r.Context(), s.ImageHTTP, imagemodel.Request{
 		Endpoint:   s.Cfg.TextImageModelURL,
 		Credential: s.Cfg.TextImageModelCredential,
 		Model:      s.Cfg.TextImageModelName,
 		Prompt:     job.Prompt,
+		Size:       size,
 	})
 	if err != nil {
 		job.JobStatus = textimage.StatusFailed
@@ -574,6 +576,9 @@ func (s *Server) finishTextImageModel(w http.ResponseWriter, r *http.Request, jo
 		return
 	}
 	job.JobStatus = textimage.StatusSubmitting
+	for _, note := range imagemodel.SizeNotes(projectW, projectH, result.WidthPx, result.HeightPx) {
+		job.Pending = appendPendingText(job.Pending, note)
+	}
 	job.Pending = appendPendingText(job.Pending, textimage.ModelDecodedNotice)
 	if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
 		writeStoreErr(w, uerr)
