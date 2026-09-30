@@ -584,6 +584,7 @@ func (s *Server) finishTextImageModel(w http.ResponseWriter, r *http.Request, jo
 	for _, note := range imagemodel.SizeNotes(projectW, projectH, result.WidthPx, result.HeightPx) {
 		job.Pending = appendPendingText(job.Pending, note)
 	}
+	job.Pending = appendPendingText(job.Pending, result.UsageNote)
 	job.Pending = appendPendingText(job.Pending, textimage.ModelDecodedNotice)
 	if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
 		writeStoreErr(w, uerr)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -366,12 +367,13 @@ func TestTextImageCredentialDoesNotPaintModelImage(t *testing.T) {
 }
 
 type modelRoundTrip struct {
-	n        atomic.Int32
-	png      []byte
-	status   int
-	lastAuth string
-	lastPath string
-	lastBody string
+	n          atomic.Int32
+	png        []byte
+	status     int
+	imageCount int
+	lastAuth   string
+	lastPath   string
+	lastBody   string
 }
 
 func (m *modelRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -385,6 +387,9 @@ func (m *modelRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) {
 		code = http.StatusOK
 	}
 	payload := `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(m.png) + `"}]}`
+	if m.imageCount > 0 {
+		payload = `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(m.png) + `"}],"usage":{"image_count":` + strconv.Itoa(m.imageCount) + `,"price":9.9}}`
+	}
 	if code != http.StatusOK {
 		payload = `{"error":{"message":"denied"}}`
 	}
@@ -417,6 +422,10 @@ func TestTextImageModelPostStoresDecodedBytesWithoutBilling(t *testing.T) {
 	}
 	if job["real_generation_completed"] != false || job["real_generation_notice"] != "真实出图未完成" || job["billing_passed"] != false || job["production_authorized"] != false || job["charged"] != nil {
 		t.Fatalf("解码不是保真、计费或生产通过: %#v", job)
+	}
+	pending, _ := json.Marshal(job["pending"])
+	if !bytes.Contains(pending, []byte("供应商用量未返回")) {
+		t.Fatalf("没有用量时应说明未返回: %s", pending)
 	}
 	if job["status_label"] != "供应商图片已解码" || job["honesty"] != "图像模型已返回字节。主体保真未核实，计费未通过，生产未授权。" || job["fixture_notice"] != "" {
 		t.Fatalf("模型来源文案不对: %#v", job)
@@ -746,6 +755,33 @@ func TestModelTextImageBytesStayUnusableCandidates(t *testing.T) {
 	if st != http.StatusCreated || eco.uploads.Load() != 1 {
 		t.Fatalf("其他图片仍可登记: %d uploads=%d %#v", st, eco.uploads.Load(), other)
 	}
+}
+
+func TestTextImageUsageCountIsNotAUserPrice(t *testing.T) {
+	png := tinyPNG(t, 7, 5)
+	rt := &modelRoundTrip{png: png, imageCount: 1}
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+		c.TextImageModelURL = "https://images.example/v1"
+		c.TextImageModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "用量不是报价")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || !bytes.Contains(pending, []byte("供应商返回 1 张，不是用户报价")) || bytes.Contains(raw, []byte("9.9")) || bytes.Contains(raw, []byte("secret-model-key")) {
+		t.Fatalf("张数不能变成报价或泄露凭证: %d %s", st, raw)
+	}
+	if job["billing_passed"] != false || job["charged"] != nil || job["production_authorized"] != false || job["real_generation_completed"] != false {
+		t.Fatalf("用量不是计费或生产通过: %#v", job)
+	}
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/select", tok, nil)
+	assertNotUsableCandidate(t, st, selected)
 }
 
 func trustedFixtureJob(t *testing.T, job map[string]any) bool {
