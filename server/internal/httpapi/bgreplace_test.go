@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1055,4 +1058,162 @@ func TestBackgroundReplaceMissingOriginalDoesNotCallModel(t *testing.T) {
 		t.Fatal("原图错误不能带上凭证")
 	}
 	assertBgBillingAndProductionStayFalse(t, job)
+}
+
+func TestFidelityLockKeepsSubjectWithoutModelTaskOrPrice(t *testing.T) {
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task_id":"task_should_not_lock","status":"pending"}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	plate := flatPNG(t, 2, 2, color.NRGBA{R: 200, G: 1, B: 1, A: 255})
+	other := flatPNG(t, 2, 2, color.NRGBA{R: 1, G: 180, B: 1, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	want, err := bgreplace.LockSubject(original, plate, mask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: other}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.srv.Cfg.BgCreativeEnabled = true
+	f.srv.Cfg.GenerationEnabled = true
+	f.srv.Cfg.TaskBaseURL = taskSrv.URL
+	f.srv.Cfg.TaskToken = "task-tok"
+	f.srv.Cfg.UploadBaseURL = up.srv.URL
+	f.srv.Cfg.UploadToken = "up-tok"
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskSrv.URL, AppID: "product-image", Token: "task-tok"}
+	f.srv.Uploads = &platform.UploadClient{BaseURL: up.srv.URL, AppID: "product-image", Token: "up-tok"}
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements", tok, map[string]any{
+		"input_id": in, "background_intent": "户外",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开报价 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	lockPath := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/lock"
+	st, blocked := f.do(t, "POST", lockPath, tok, map[string]any{
+		"plate_png_base64": base64.StdEncoding.EncodeToString(plate),
+		"mask_png_base64":  base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusConflict {
+		t.Fatalf("未确认报价不能锁定: %d %v", st, blocked)
+	}
+	st, conf := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, nil)
+	if st != http.StatusOK {
+		t.Fatalf("确认 %d %v", st, conf)
+	}
+	st, priced := f.do(t, "POST", lockPath, tok, map[string]any{
+		"plate_png_base64": base64.StdEncoding.EncodeToString(plate),
+		"mask_png_base64":  base64.StdEncoding.EncodeToString(mask),
+		"price":            "9.9",
+	})
+	if st != http.StatusBadRequest {
+		t.Fatalf("报价字段不能进锁定请求: %d %v", st, priced)
+	}
+	st, locked := f.do(t, "POST", lockPath, tok, map[string]any{
+		"plate_png_base64": base64.StdEncoding.EncodeToString(plate),
+		"mask_png_base64":  base64.StdEncoding.EncodeToString(mask),
+	})
+	raw, _ := json.Marshal(locked)
+	job, _ := locked["job"].(map[string]any)
+	if st != http.StatusOK || job["origin"] != bgreplace.OriginSubjectLock || job["mode"] != "fidelity" || job["job_status"] != "completed" {
+		t.Fatalf("保真锁定应留下可打开结果: %d %#v", st, job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	if job["platform_task_id"] != "" || job["model_ref"] != "" || job["fee_ref"] != "" || tasks.Load() != 0 || rt.n.Load() != 0 {
+		t.Fatalf("锁定不能调用模型或平台任务: tasks=%d n=%d %#v", tasks.Load(), rt.n.Load(), job)
+	}
+	pending, _ := json.Marshal(job["pending"])
+	if !bytes.Contains(pending, []byte(bgreplace.RealGenerationIncomplete)) || !bytes.Contains(pending, []byte(bgreplace.SubjectLockNotice)) || !bytes.Contains(pending, []byte(bgreplace.SubjectLockNotModel)) {
+		t.Fatalf("锁定说明不完整: %s", pending)
+	}
+	if bytes.Contains(raw, []byte("9.9")) || bytes.Contains(raw, []byte(`"price"`)) {
+		t.Fatalf("锁定结果不能带价格: %s", raw)
+	}
+	cst, hdr, body := f.doBytes(t, "GET", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/content", tok, nil)
+	if cst != http.StatusOK || !bytes.Equal(body, want) || hdr.Get("X-Bg-Origin") != bgreplace.OriginSubjectLock || hdr.Get("Content-Type") != "image/png" {
+		t.Fatalf("锁定结果打不开或不保主体: %d origin=%s %d bytes", cst, hdr.Get("X-Bg-Origin"), len(body))
+	}
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/select", tok, nil)
+	if st != http.StatusConflict || codeOf(t, mustJSON(selected)) != "not_usable_candidate" {
+		t.Fatalf("未完成商品检查不能选定: %d %v", st, selected)
+	}
+	st, exported := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/export", tok, nil)
+	if st != http.StatusConflict || codeOf(t, mustJSON(exported)) != "not_usable_candidate" {
+		t.Fatalf("未完成商品检查不能导出: %d %v", st, exported)
+	}
+	st, again := f.do(t, "POST", lockPath, tok, map[string]any{
+		"plate_png_base64": base64.StdEncoding.EncodeToString(other),
+		"mask_png_base64":  base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || tasks.Load() != 0 || rt.n.Load() != 0 {
+		t.Fatalf("重复锁定不能重做: %d tasks=%d %#v", st, tasks.Load(), again)
+	}
+	_, _, body = f.doBytes(t, "GET", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/content", tok, nil)
+	if !bytes.Equal(body, want) {
+		t.Fatal("重复锁定改写了已锁像素")
+	}
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	if st != http.StatusOK || tasks.Load() != 0 || rt.n.Load() != 0 {
+		t.Fatalf("锁定后提交不能再生成: %d tasks=%d %#v", st, tasks.Load(), submitted)
+	}
+
+	creativeID := f.openAndConfirmCreative(t, tok, proj, in, "不要锁创意")
+	st, denied := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+creativeID+"/lock", tok, map[string]any{
+		"plate_png_base64": base64.StdEncoding.EncodeToString(plate),
+		"mask_png_base64":  base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusUnprocessableEntity || tasks.Load() != 0 || rt.n.Load() != 0 {
+		t.Fatalf("创意模式不能走主体锁定: %d tasks=%d n=%d %v", st, tasks.Load(), rt.n.Load(), denied)
+	}
+}
+
+func flatPNG(t *testing.T, w, h int, c color.NRGBA) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func alphaMaskPNG(t *testing.T, protect [][]bool) []byte {
+	t.Helper()
+	h := len(protect)
+	w := len(protect[0])
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			a := uint8(0)
+			if protect[y][x] {
+				a = 255
+			}
+			img.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: a})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }

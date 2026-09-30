@@ -151,6 +151,7 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/background-replacements", s.guard(true, s.handleListBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/confirm", s.guard(true, s.handleConfirmBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/submit", s.guard(true, s.handleSubmitBgReplace))
+		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/lock", s.guard(true, s.handleLockBgReplace))
 		mux.Handle("GET /api/v1/projects/{id}/background-replacements/{jobId}/content", s.guard(true, s.handleBgContent))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/refresh", s.guard(true, s.handleRefreshBgReplace))
 		mux.Handle("POST /api/v1/projects/{id}/background-replacements/{jobId}/quality", s.guard(true, s.handleBgQuality))

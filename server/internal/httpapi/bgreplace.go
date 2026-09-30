@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -412,6 +413,81 @@ func (s *Server) readBgOriginal(ctx context.Context, p platform.Principal, job s
 	return body, nil
 }
 
+func (s *Server) handleLockBgReplace(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r.Context())
+	job, ok := s.loadBgJob(w, r)
+	if !ok {
+		return
+	}
+	if job.Origin == bgreplace.OriginSubjectLock && job.OutputAssetID != "" {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
+		return
+	}
+	if job.Mode != string(bgreplace.ModeFidelity) {
+		writeErr(w, http.StatusUnprocessableEntity, "creative_cannot_lock", "创意模式不能走主体锁定")
+		return
+	}
+	if job.QuoteStatus != bgreplace.QuoteConfirmed {
+		writeErr(w, http.StatusConflict, "quote_blocked", bgreplace.ErrQuoteUnconfirmed.Error())
+		return
+	}
+	if job.PlatformTaskID != "" || (job.JobStatus != bgreplace.StatusQuoted && job.JobStatus != bgreplace.StatusGenerationUnavailable) {
+		writeErr(w, http.StatusConflict, "lock_after_submit", "已提交的任务不能再锁定")
+		return
+	}
+	var req struct {
+		PlatePNGBase64 string `json:"plate_png_base64"`
+		MaskPNGBase64  string `json:"mask_png_base64"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 48<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_request", "锁定请求只能带背景图和主体蒙版")
+		return
+	}
+	plate, err := decodeLockedPNG(req.PlatePNGBase64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_request", "背景图不是 PNG")
+		return
+	}
+	mask, err := decodeLockedPNG(req.MaskPNGBase64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_request", "主体蒙版不是 PNG")
+		return
+	}
+	original, err := s.readBgOriginal(r.Context(), p, job)
+	if err != nil {
+		writeErr(w, http.StatusConflict, "original_missing", "原图缺失")
+		return
+	}
+	locked, err := bgreplace.LockSubject(original, plate, mask)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "lock_rejected", err.Error())
+		return
+	}
+	pending := job.Pending
+	pending = bgreplace.AppendPending(pending, bgreplace.SubjectLockNotice)
+	pending = bgreplace.AppendPending(pending, bgreplace.SubjectLockNotModel)
+	pending = bgreplace.AppendPending(pending, bgreplace.RealGenerationIncomplete)
+	saved, already, err := s.St.SaveBgLockedBytes(r.Context(), store.BgModelBytes{
+		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
+		MediaType: "image/png", Bytes: locked, Pending: pending,
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(saved, already)})
+}
+
+func decodeLockedPNG(raw string) ([]byte, error) {
+	body, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil || len(body) == 0 || len(body) > 20<<20 {
+		return nil, errors.New("图片不是 PNG")
+	}
+	return body, nil
+}
+
 func (s *Server) handleBgContent(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	job, ok := s.loadBgJob(w, r)
@@ -419,7 +495,7 @@ func (s *Server) handleBgContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media, body, err := s.St.OpenBgResult(r.Context(), p.Tenant(), job.ProjectID, job.ID)
-	if errors.Is(err, store.ErrNotFound) || job.Origin != "model_http" {
+	if errors.Is(err, store.ErrNotFound) || (job.Origin != "model_http" && job.Origin != bgreplace.OriginSubjectLock) {
 		writeErr(w, http.StatusNotFound, "not_found", "没有可打开的背景结果")
 		return
 	}
@@ -579,8 +655,8 @@ func (s *Server) handleSelectBgReplace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// 模型字节可以查看。主体保真未核实，不能选定为可用候选。
-	if job.Origin == "model_http" {
+	// 模型字节和主体锁定预览可以查看。商品检查未完成，不能选定为可用候选。
+	if job.Origin == "model_http" || job.Origin == bgreplace.OriginSubjectLock {
 		rejectUnusableCandidate(w)
 		return
 	}
@@ -613,8 +689,8 @@ func (s *Server) handleExportBgReplace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// 模型字节可以查看。主体保真未核实，不能导出为可用候选。
-	if job.Origin == "model_http" {
+	// 模型字节和主体锁定预览可以查看。商品检查未完成，不能导出为可用候选。
+	if job.Origin == "model_http" || job.Origin == bgreplace.OriginSubjectLock {
 		rejectUnusableCandidate(w)
 		return
 	}

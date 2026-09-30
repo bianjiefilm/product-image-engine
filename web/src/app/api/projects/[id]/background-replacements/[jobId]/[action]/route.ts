@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessTokenOf, callServer, toErrorResponse, UpstreamError } from "@/lib/server";
 
-const actions = new Set(["confirm", "submit", "refresh", "quality", "inspect", "select", "export"]);
+const actions = new Set(["confirm", "submit", "refresh", "quality", "inspect", "select", "export", "lock"]);
 
 type Ctx = { params: Promise<{ id: string; jobId: string; action: string }> };
 
