@@ -8,6 +8,7 @@ import {
   creativeChoice,
   quoteStale,
   showCreative,
+  modelPlatePreview,
   subjectLockPreview,
   PROTECTION_SCOPE,
   REAL_GENERATION_INCOMPLETE,
@@ -77,7 +78,9 @@ describe("背景替换诚实文案", () => {
     expect(panel).not.toContain("计费已通过");
     expect(panel).not.toContain("生产出图已经通过");
     expect(panel).toContain("锁定主体并换背景");
+    expect(panel).toContain("用模型生成背景并锁定主体");
     expect(panel).toContain("subjectLockPreview");
+    expect(panel).toContain("modelPlatePreview");
     expect(panel).toContain("/content");
     expect(panel).not.toContain("9.9");
   });
@@ -85,7 +88,15 @@ describe("背景替换诚实文案", () => {
   it("只有主体锁定结果才显示预览", () => {
     expect(subjectLockPreview(SUBJECT_LOCK_ORIGIN)).toBe(true);
     expect(subjectLockPreview("model_http")).toBe(false);
+    expect(subjectLockPreview("model_plate_lock")).toBe(false);
     expect(subjectLockPreview("")).toBe(false);
     expect(subjectLockPreview(undefined)).toBe(false);
+  });
+
+  it("只有模型背景板才显示模型预览", () => {
+    expect(modelPlatePreview("model_plate_lock")).toBe(true);
+    expect(modelPlatePreview(SUBJECT_LOCK_ORIGIN)).toBe(false);
+    expect(modelPlatePreview("model_http")).toBe(false);
+    expect(modelPlatePreview(undefined)).toBe(false);
   });
 });

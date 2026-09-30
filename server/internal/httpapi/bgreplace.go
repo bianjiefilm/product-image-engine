@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"io"
 	"net/http"
 	"strings"
@@ -480,6 +482,118 @@ func (s *Server) handleLockBgReplace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(saved, already)})
 }
 
+func (s *Server) handleModelPlate(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r.Context())
+	job, ok := s.loadBgJob(w, r)
+	if !ok {
+		return
+	}
+	if job.Origin == bgreplace.OriginModelPlate && job.OutputAssetID != "" {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
+		return
+	}
+	if job.Mode != string(bgreplace.ModeFidelity) {
+		writeErr(w, http.StatusUnprocessableEntity, "creative_cannot_model_plate", "创意模式不能走保真模型背景")
+		return
+	}
+	if job.QuoteStatus != bgreplace.QuoteConfirmed {
+		writeErr(w, http.StatusConflict, "quote_blocked", bgreplace.ErrQuoteUnconfirmed.Error())
+		return
+	}
+	if job.PlatformTaskID != "" {
+		writeErr(w, http.StatusConflict, "lock_after_submit", "已提交的任务不能再锁定")
+		return
+	}
+	if job.JobStatus == bgreplace.StatusFailed || job.JobStatus == bgreplace.StatusUnknown || job.JobStatus == bgreplace.StatusQuotaInsufficient {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
+		return
+	}
+	if job.JobStatus != bgreplace.StatusQuoted && job.JobStatus != bgreplace.StatusGenerationUnavailable {
+		writeErr(w, http.StatusConflict, "lock_after_submit", "已提交的任务不能再锁定")
+		return
+	}
+	if !s.Cfg.BgModelReady() {
+		writeErr(w, http.StatusConflict, "config_missing", "配置缺失")
+		return
+	}
+	var req struct {
+		MaskPNGBase64 string `json:"mask_png_base64"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 24<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_request", "模型背景请求只能带主体蒙版")
+		return
+	}
+	mask, err := decodeLockedPNG(req.MaskPNGBase64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_request", "主体蒙版不是 PNG")
+		return
+	}
+	original, err := s.readBgOriginal(r.Context(), p, job)
+	if err != nil {
+		writeErr(w, http.StatusConflict, "original_missing", "原图缺失")
+		return
+	}
+	if err := bgreplace.MaskReady(original, mask); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "lock_rejected", err.Error())
+		return
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(original))
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "lock_rejected", "图片不是 PNG")
+		return
+	}
+	result, err := imagemodel.Generate(r.Context(), s.ImageHTTP, imagemodel.Request{
+		Endpoint:   s.Cfg.BgModelURL,
+		Credential: s.Cfg.BgModelCredential,
+		Model:      s.Cfg.BgModelName,
+		Prompt:     bgreplace.ModelPlatePrompt(job.BackgroundIntent),
+		Size:       imagemodel.CanvasSize(cfg.Width, cfg.Height),
+	})
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, scrubModelSecret(err.Error(), s.Cfg.BgModelCredential))
+		return
+	}
+	if !result.HostLive || result.BillingPassed {
+		s.closeBgModel(w, r, job, bgreplace.StatusUnknown, "回环地址不能算供应商出图")
+		return
+	}
+	fitted, err := bgreplace.FitPlate(result.Bytes, cfg.Width, cfg.Height)
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, err.Error())
+		return
+	}
+	locked, err := bgreplace.LockSubject(original, fitted, mask)
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, err.Error())
+		return
+	}
+	checks, err := bgreplace.SubjectPixelChecks(original, locked, mask)
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, err.Error())
+		return
+	}
+	rawChecks, err := json.Marshal(checks)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", "保存商品检查失败")
+		return
+	}
+	pending := job.Pending
+	pending = bgreplace.AppendPending(pending, result.UsageNote)
+	pending = bgreplace.AppendPending(pending, bgreplace.ModelPlateNotice)
+	pending = bgreplace.AppendPending(pending, bgreplace.RealGenerationIncomplete)
+	saved, already, err := s.St.SaveBgPlateBytes(r.Context(), store.BgModelBytes{
+		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
+		MediaType: "image/png", Bytes: locked, Pending: pending,
+	}, s.Cfg.BgModelName, string(rawChecks))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(saved, already)})
+}
+
 func decodeLockedPNG(raw string) ([]byte, error) {
 	body, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil || len(body) == 0 || len(body) > 20<<20 {
@@ -495,7 +609,7 @@ func (s *Server) handleBgContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media, body, err := s.St.OpenBgResult(r.Context(), p.Tenant(), job.ProjectID, job.ID)
-	if errors.Is(err, store.ErrNotFound) || (job.Origin != "model_http" && job.Origin != bgreplace.OriginSubjectLock) {
+	if errors.Is(err, store.ErrNotFound) || (job.Origin != "model_http" && job.Origin != bgreplace.OriginSubjectLock && job.Origin != bgreplace.OriginModelPlate) {
 		writeErr(w, http.StatusNotFound, "not_found", "没有可打开的背景结果")
 		return
 	}

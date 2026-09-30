@@ -1177,6 +1177,234 @@ func TestFidelityLockKeepsSubjectWithoutModelTaskOrPrice(t *testing.T) {
 	}
 }
 
+func TestFidelityModelPlateLocksSubjectFromLiveHost(t *testing.T) {
+	const secret = "secret-model-key"
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task_id":"task_should_not_plate","status":"pending"}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	modelPNG := flatPNG(t, 4, 2, color.NRGBA{R: 200, G: 10, B: 10, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: modelPNG, imageCount: 1}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.srv.Cfg.BgCreativeEnabled = true
+	f.srv.Cfg.BgModelCredential = secret
+	f.srv.Cfg.BgModelURL = "https://images.example/v1"
+	f.srv.Cfg.BgModelName = "qwen-image-2.0-pro"
+	f.srv.Cfg.TaskBaseURL = taskSrv.URL
+	f.srv.Cfg.TaskToken = "task-tok"
+	f.srv.Cfg.UploadBaseURL = up.srv.URL
+	f.srv.Cfg.UploadToken = "up-tok"
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskSrv.URL, AppID: "product-image", Token: "task-tok"}
+	f.srv.Uploads = &platform.UploadClient{BaseURL: up.srv.URL, AppID: "product-image", Token: "up-tok"}
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements", tok, map[string]any{
+		"input_id": in, "background_intent": "户外",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开报价 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
+	st, blocked := f.do(t, "POST", path, tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusConflict || rt.n.Load() != 0 {
+		t.Fatalf("未确认报价不能出模型背景: %d n=%d %v", st, rt.n.Load(), blocked)
+	}
+	st, conf := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, nil)
+	if st != http.StatusOK {
+		t.Fatalf("确认 %d %v", st, conf)
+	}
+	st, priced := f.do(t, "POST", path, tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
+		"price":           "9.9",
+	})
+	if st != http.StatusBadRequest || rt.n.Load() != 0 {
+		t.Fatalf("报价字段不能进模型背景请求: %d n=%d %v", st, rt.n.Load(), priced)
+	}
+	empty := alphaMaskPNG(t, [][]bool{{false, false}, {false, false}})
+	st, rejected := f.do(t, "POST", path, tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(empty),
+	})
+	if st != http.StatusUnprocessableEntity || rt.n.Load() != 0 {
+		t.Fatalf("空蒙版应在调用模型前拒绝: %d n=%d %v", st, rt.n.Load(), rejected)
+	}
+	st, made := f.do(t, "POST", path, tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
+	})
+	raw, _ := json.Marshal(made)
+	job, _ := made["job"].(map[string]any)
+	if st != http.StatusOK || job["origin"] != "model_plate_lock" || job["mode"] != "fidelity" || job["job_status"] != "completed" {
+		t.Fatalf("保真模型背景应留下可打开结果: %d %#v", st, job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	if job["model_ref"] != "qwen-image-2.0-pro" || job["platform_task_id"] != "" || job["fee_ref"] != "" || tasks.Load() != 0 || rt.n.Load() != 1 {
+		t.Fatalf("应只调用一次公网模型且不建平台任务: tasks=%d n=%d %#v", tasks.Load(), rt.n.Load(), job)
+	}
+	if rt.host != "images.example" || !strings.HasSuffix(rt.path, "/images/generations") || rt.auth != "Bearer "+secret {
+		t.Fatalf("模型请求打错了: host=%s path=%s", rt.host, rt.path)
+	}
+	if !strings.Contains(rt.body, "qwen-image-2.0-pro") || !strings.Contains(rt.body, "户外") || strings.Contains(rt.body, `"image"`) {
+		t.Fatalf("请求应只带背景意图，不能把商品图交给模型重画: %s", rt.body)
+	}
+	if bytes.Contains(raw, []byte(secret)) || bytes.Contains(raw, []byte("9.9")) || bytes.Contains(raw, []byte(`"price"`)) {
+		t.Fatalf("应答不能带凭证或价格: %s", raw)
+	}
+	pending, _ := json.Marshal(job["pending"])
+	if !bytes.Contains(pending, []byte("供应商返回 1 张，不是用户报价")) || !bytes.Contains(pending, []byte(bgreplace.RealGenerationIncomplete)) || !bytes.Contains(pending, []byte("模型背景已换上，主体像素与原图一致")) {
+		t.Fatalf("说明不完整: %s", pending)
+	}
+	checks, _ := job["product_checks"].(map[string]any)
+	if checks["logo"] != "pass" || checks["packaging_text"] != "pass" || checks["spec"] != "pass" || checks["structure"] != "pass" || checks["similarity_only"] == true {
+		t.Fatalf("分项必须来自像素对照: %#v", checks)
+	}
+	cst, hdr, body := f.doBytes(t, "GET", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/content", tok, nil)
+	if cst != http.StatusOK || hdr.Get("Content-Type") != "image/png" || hdr.Get("X-Bg-Origin") != "model_plate_lock" {
+		t.Fatalf("模型背景结果打不开: %d origin=%s", cst, hdr.Get("X-Bg-Origin"))
+	}
+	got := mustPNGImage(t, body)
+	if pxAt(got, 0, 0) != (color.NRGBA{R: 10, G: 20, B: 30, A: 255}) || pxAt(got, 1, 0) != (color.NRGBA{R: 200, G: 10, B: 10, A: 255}) {
+		t.Fatalf("主体没有锁回或背景没有换上: %+v %+v", pxAt(got, 0, 0), pxAt(got, 1, 0))
+	}
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/select", tok, nil)
+	selectedJob, _ := selected["job"].(map[string]any)
+	if st != http.StatusOK || selectedJob["selection"] != "selected" {
+		t.Fatalf("像素通过的结果应能选定: %d %#v", st, selectedJob)
+	}
+	assertBgBillingAndProductionStayFalse(t, selectedJob)
+	st, exported := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/export", tok, nil)
+	exportedJob, _ := exported["job"].(map[string]any)
+	if st != http.StatusOK || exportedJob["export_count"] != float64(1) {
+		t.Fatalf("应导出同一结果: %d %#v", st, exportedJob)
+	}
+	assertBgBillingAndProductionStayFalse(t, exportedJob)
+	st, again := f.do(t, "POST", path, tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 1 || tasks.Load() != 0 {
+		t.Fatalf("重复请求不能再打模型: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+	creativeID := f.openAndConfirmCreative(t, tok, proj, in, "不要走保真模型背景")
+	st, denied := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+creativeID+"/model-plate", tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusUnprocessableEntity || rt.n.Load() != 1 {
+		t.Fatalf("创意模式不能走保真模型背景: %d n=%d %v", st, rt.n.Load(), denied)
+	}
+}
+
+func TestFidelityModelPlateDoesNotRetryAfterSupplierFailure(t *testing.T) {
+	const secret = "secret-model-key"
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{status: http.StatusBadGateway, png: original}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.srv.Cfg.BgModelCredential = secret
+	f.srv.Cfg.BgModelURL = "https://images.example/v1"
+	f.srv.Cfg.BgModelName = "qwen-image-2.0-pro"
+	f.srv.Cfg.UploadBaseURL = up.srv.URL
+	f.srv.Cfg.UploadToken = "up-tok"
+	f.srv.Uploads = &platform.UploadClient{BaseURL: up.srv.URL, AppID: "product-image", Token: "up-tok"}
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements", tok, map[string]any{
+		"input_id": in, "background_intent": "室内",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开报价 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	if st, _ := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, nil); st != http.StatusOK {
+		t.Fatalf("确认 %d", st)
+	}
+	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
+	st, failed := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
+	job, _ := failed["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["output_asset_id"] != "" || rt.n.Load() != 1 {
+		t.Fatalf("供应商拒绝应停在原任务: %d n=%d %#v", st, rt.n.Load(), job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	st, again := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
+	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 1 {
+		t.Fatalf("失败后不能再打模型: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+}
+
+func TestFidelityModelPlateRejectsLoopbackAndMissingConfig(t *testing.T) {
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: flatPNG(t, 2, 2, color.NRGBA{R: 9, G: 9, B: 9, A: 255})}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.srv.Cfg.UploadBaseURL = up.srv.URL
+	f.srv.Cfg.UploadToken = "up-tok"
+	f.srv.Uploads = &platform.UploadClient{BaseURL: up.srv.URL, AppID: "product-image", Token: "up-tok"}
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements", tok, map[string]any{
+		"input_id": in, "background_intent": "棚拍",
+	})
+	jobID := created["job"].(map[string]any)["id"].(string)
+	if st != http.StatusCreated {
+		t.Fatalf("开报价 %d", st)
+	}
+	if st, _ := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, nil); st != http.StatusOK {
+		t.Fatalf("确认 %d", st)
+	}
+	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
+	st, missing := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
+	if st != http.StatusConflict || codeOf(t, mustJSON(missing)) != "config_missing" || rt.n.Load() != 0 {
+		t.Fatalf("没凭证应是配置缺失且不打模型: %d n=%d %v", st, rt.n.Load(), missing)
+	}
+	f.srv.Cfg.BgModelCredential = "secret-model-key"
+	f.srv.Cfg.BgModelURL = "http://127.0.0.1:9/v1"
+	f.srv.Cfg.BgModelName = "qwen-image-2.0-pro"
+	f.rearm(t)
+	st, loop := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
+	job, _ := loop["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["output_asset_id"] != "" || rt.n.Load() != 1 {
+		t.Fatalf("回环不能当成供应商出图: %d n=%d %#v", st, rt.n.Load(), job)
+	}
+	if pending, _ := json.Marshal(job["pending"]); !bytes.Contains(pending, []byte("回环地址不能算供应商出图")) {
+		t.Fatalf("回环说明缺失: %s", pending)
+	}
+	st, again := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
+	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 1 {
+		t.Fatalf("回环之后不能重试: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+}
+
+func mustPNGImage(t *testing.T, raw []byte) image.Image {
+	t.Helper()
+	img, err := png.Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return img
+}
+
+func pxAt(img image.Image, x, y int) color.NRGBA {
+	r, g, b, a := img.At(x, y).RGBA()
+	return color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
+}
+
 func flatPNG(t *testing.T, w, h int, c color.NRGBA) []byte {
 	t.Helper()
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))

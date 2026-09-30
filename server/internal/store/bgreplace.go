@@ -350,11 +350,14 @@ func (s *Store) OpenBgResult(ctx context.Context, tenantID, projectID, jobID str
 }
 
 func openableBgOrigin(origin string) bool {
-	return origin == bgResultOrigin || origin == bgSubjectLockOrigin
+	return origin == bgResultOrigin || origin == bgSubjectLockOrigin || origin == bgModelPlateOrigin
 }
 
 // bgSubjectLockOrigin 是保真合成字节。不是模型出图，也不是计费通过。
 const bgSubjectLockOrigin = "subject_lock"
+
+// bgModelPlateOrigin 是模型背景板锁回主体后的字节。不是计费通过，也不是生产出图通过。
+const bgModelPlateOrigin = "model_plate_lock"
 
 // SaveBgLockedBytes 把主体锁定后的 PNG 写进原任务。已锁定的记录保持原字节。
 // 只接受尚未提交的报价或生成不可用记录，不写计费，deliverable 保持 0。
@@ -408,6 +411,80 @@ func (s *Store) SaveBgLockedBytes(ctx context.Context, in BgModelBytes) (BgJob, 
 		job_status=?, output_asset_id=?, output_version=?, deliverable=0, origin=?, pending_json=?, updated_at=?
 		WHERE id=? AND tenant_id=? AND project_id=? AND output_asset_id='' AND origin='' AND job_status IN ('quoted','generation_unavailable')`,
 		"completed", assetID, assetID, bgSubjectLockOrigin, string(pendingJSON), now,
+		current.ID, current.TenantID, current.ProjectID)
+	if err != nil {
+		return BgJob{}, false, fmt.Errorf("store: 写入背景结果失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		return BgJob{}, false, fmt.Errorf("%w: 背景结果没有写上原任务", ErrConflict)
+	}
+	if err := tx.Commit(); err != nil {
+		return BgJob{}, false, err
+	}
+	saved, err := s.GetBgJob(ctx, current.TenantID, current.ProjectID, current.ID)
+	return saved, false, err
+}
+
+// SaveBgPlateBytes 保存模型背景板锁回主体后的 PNG，并记下模型名和像素检查。
+// 已有同来源结果时保持原字节。不写费用引用，deliverable 保持 0。
+func (s *Store) SaveBgPlateBytes(ctx context.Context, in BgModelBytes, modelRef, checksJSON string) (BgJob, bool, error) {
+	if in.MediaType != "image/png" {
+		return BgJob{}, false, fmt.Errorf("%w: 图片媒体类型不受支持", ErrValidation)
+	}
+	if len(in.Bytes) == 0 {
+		return BgJob{}, false, fmt.Errorf("%w: 图片字节为空", ErrValidation)
+	}
+	modelRef = strings.TrimSpace(modelRef)
+	if modelRef == "" {
+		return BgJob{}, false, fmt.Errorf("%w: 模型名缺失", ErrValidation)
+	}
+	if strings.TrimSpace(checksJSON) == "" {
+		checksJSON = "{}"
+	}
+	current, err := s.GetBgJob(ctx, in.TenantID, in.ProjectID, in.JobID)
+	if err != nil {
+		return BgJob{}, false, err
+	}
+	if current.Origin == bgModelPlateOrigin && current.OutputAssetID != "" {
+		return current, true, nil
+	}
+	if current.JobStatus == "failed" || current.JobStatus == "quota_insufficient" || current.JobStatus == "unknown" {
+		return BgJob{}, false, fmt.Errorf("%w: 失败记录不能改成完成", ErrConflict)
+	}
+	if current.JobStatus != "quoted" && current.JobStatus != "generation_unavailable" {
+		return BgJob{}, false, fmt.Errorf("%w: 当前背景任务不能锁定", ErrConflict)
+	}
+	if current.OutputAssetID != "" || current.Origin != "" {
+		return BgJob{}, false, fmt.Errorf("%w: 当前背景任务不能锁定", ErrConflict)
+	}
+	sum := sha256.Sum256(in.Bytes)
+	shaHex := hex.EncodeToString(sum[:])
+	assetID := newID("bgimg")
+	pending := in.Pending
+	if pending == nil {
+		pending = current.Pending
+	}
+	pendingJSON, err := json.Marshal(pending)
+	if err != nil {
+		return BgJob{}, false, err
+	}
+	now := Now().Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return BgJob{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO bg_result_blobs (
+		asset_id, tenant_id, project_id, job_id, sha256, media_type, origin, content, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?)`,
+		assetID, current.TenantID, current.ProjectID, current.ID, shaHex, in.MediaType, bgModelPlateOrigin, in.Bytes, now); err != nil {
+		return BgJob{}, false, fmt.Errorf("store: 写入背景字节失败: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE bg_replace_jobs SET
+		job_status=?, output_asset_id=?, output_version=?, deliverable=0, origin=?, pending_json=?, model_ref=?, product_checks_json=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND project_id=? AND output_asset_id='' AND origin='' AND job_status IN ('quoted','generation_unavailable')`,
+		"completed", assetID, assetID, bgModelPlateOrigin, string(pendingJSON), modelRef, checksJSON, now,
 		current.ID, current.TenantID, current.ProjectID)
 	if err != nil {
 		return BgJob{}, false, fmt.Errorf("store: 写入背景结果失败: %w", err)
