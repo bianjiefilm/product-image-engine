@@ -108,7 +108,7 @@ func newPhotoUpStub(t *testing.T) *photoUpStub {
 		st.ready[assetID] = data
 		st.metaSha[assetID] = body.SHA256
 		st.metaCt[assetID] = ct
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{"AssetID": assetID, "Status": "ready"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{"asset_id": assetID, "status": "ready"}})
 	})
 	mux.HandleFunc("POST /internal/v1/upload/sessions/{sid}/abort", func(w http.ResponseWriter, r *http.Request) {
 		st.mu.Lock()
@@ -127,8 +127,8 @@ func newPhotoUpStub(t *testing.T) *photoUpStub {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{
-			"AssetID": id, "SHA256": st.metaSha[id], "SizeBytes": len(data),
-			"ContentType": st.metaCt[id], "Status": "ready",
+			"asset_id": id, "sha256": st.metaSha[id], "size_bytes": len(data),
+			"content_type": st.metaCt[id], "status": "ready",
 		}})
 	})
 	mux.HandleFunc("POST /internal/v1/upload/assets/{aid}/download-url", func(w http.ResponseWriter, r *http.Request) {
@@ -633,12 +633,33 @@ func TestPhotoContentIntegrityRecheckFails(t *testing.T) {
 	_ = json.Unmarshal(raw, &up)
 	photoID, _ := up.Photo["id"].(string)
 
-	// 平台侧资产事实与本地登记不符(模拟对象被篡改/串引用)→ integrity_failed,拒绝解析。
-	stub.mu.Lock()
-	stub.metaSha["ast_1"] = strings.Repeat("ff", 32)
-	stub.mu.Unlock()
-	code, _, raw = f.doBytes(t, "GET", "/api/v1/photos/"+photoID+"/content", tok, nil)
-	if code != http.StatusBadGateway || codeOf(t, raw) != "integrity_failed" {
-		t.Fatalf("完整性不符必须 502 integrity_failed, got %d %s", code, raw)
+	// 正式 snake_case 元数据的 hash、大小和媒体类型分别不符时，禁止读取对象。
+	for _, field := range []string{"sha256", "size_bytes", "content_type"} {
+		t.Run(field, func(t *testing.T) {
+			stub.mu.Lock()
+			stub.metaSha["ast_1"] = shaHexOf(png)
+			stub.ready["ast_1"] = png
+			stub.metaCt["ast_1"] = "image/png"
+			switch field {
+			case "sha256":
+				stub.metaSha["ast_1"] = strings.Repeat("ff", 32)
+			case "size_bytes":
+				stub.ready["ast_1"] = png[:len(png)-1]
+			case "content_type":
+				stub.metaCt["ast_1"] = "image/jpeg"
+			}
+			before := stub.dlFetches
+			stub.mu.Unlock()
+			code, _, raw := f.doBytes(t, "GET", "/api/v1/photos/"+photoID+"/content", tok, nil)
+			if code != http.StatusBadGateway || codeOf(t, raw) != "integrity_failed" {
+				t.Fatalf("完整性不符必须 502 integrity_failed, got %d %s", code, raw)
+			}
+			stub.mu.Lock()
+			fetches := stub.dlFetches
+			stub.mu.Unlock()
+			if fetches != before {
+				t.Fatal("完整性拒绝后仍下载对象")
+			}
+		})
 	}
 }

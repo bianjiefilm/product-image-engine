@@ -7,7 +7,7 @@ package platform
 //   PUT  {upload_url}                                      分片字节直传(OSS 语义,响应 ETag)
 //   POST /internal/v1/upload/sessions/{sid}/complete       完成核验(平台侧比对对象头 sha/size)
 //   POST /internal/v1/upload/sessions/{sid}/abort          失败中止
-//   GET  /internal/v1/upload/assets/{aid}                  资产元数据(Go 字段名形状)
+//   GET  /internal/v1/upload/assets/{aid}                  资产元数据(snake_case，见 public-ai internal/upload/json.go Asset.MarshalJSON)
 //   POST /internal/v1/upload/assets/{aid}/download-url     受限下载地址
 
 import (
@@ -99,7 +99,7 @@ func newPhotoStub(t *testing.T) *photoStub {
 		}
 		st.completes++
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{
-			"AssetID": "ast_1", "SHA256": "deadbeef", "SizeBytes": 42, "ContentType": "image/png", "Status": "ready",
+			"asset_id": "ast_1", "sha256": "deadbeef", "size_bytes": 42, "content_type": "image/png", "status": "ready",
 		}})
 	})
 	mux.HandleFunc("POST /internal/v1/upload/sessions/ses_1/abort", func(w http.ResponseWriter, r *http.Request) {
@@ -109,9 +109,13 @@ func newPhotoStub(t *testing.T) *photoStub {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /internal/v1/upload/assets/ast_1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-App-ID") != stubAppID || r.Header.Get(internalTokenHeader) != stubToken || r.Header.Get("X-Principal-Type") != stubUsrType || r.Header.Get("X-Principal-ID") != stubUsrID {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{
-			"AssetID": "ast_1", "AppID": stubAppID, "PrincipalType": stubUsrType, "PrincipalID": stubUsrID,
-			"SHA256": "deadbeef", "SizeBytes": 42, "ContentType": "image/png", "Status": "ready",
+			"asset_id": "ast_1", "app_id": stubAppID, "principal_type": stubUsrType, "principal_id": stubUsrID,
+			"sha256": "deadbeef", "size_bytes": 42, "content_type": "image/png", "status": "ready",
 		}})
 	})
 	mux.HandleFunc("POST /internal/v1/upload/assets/ast_1/download-url", func(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +221,7 @@ func TestPhotoAssetAndDownloadURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PhotoAsset 失败: %v", err)
 	}
-	if meta.SHA256 != "deadbeef" || meta.SizeBytes != 42 || meta.ContentType != "image/png" || meta.Status != "ready" {
+	if meta.AssetID != "ast_1" || meta.SHA256 != "deadbeef" || meta.SizeBytes != 42 || meta.ContentType != "image/png" || meta.Status != "ready" {
 		t.Fatalf("资产元数据不符: %+v", meta)
 	}
 	url, ct, size, err := c.PhotoDownloadURL(context.Background(), PhotoPrincipal{stubUsrType, stubUsrID}, "ast_1", 0)
@@ -243,5 +247,40 @@ func TestRegisterPhotoEmptyData(t *testing.T) {
 	if _, err := c.RegisterPhoto(context.Background(), PhotoPrincipal{stubUsrType, stubUsrID},
 		"x.png", "image/png", nil, "00"); err == nil {
 		t.Fatalf("空数据必须本地拒绝")
+	}
+}
+
+func TestPhotoAssetRejectsWrongOwnerAndMissingIdentity(t *testing.T) {
+	st := newPhotoStub(t)
+	for _, principal := range []PhotoPrincipal{{Type: "user", ID: "another-user"}, {Type: "org", ID: stubUsrID}} {
+		if _, err := newPhotoClient(st.srv.URL).PhotoAsset(context.Background(), principal, "ast_1"); err == nil {
+			t.Fatal("upstream owner rejection ignored")
+		}
+	}
+	c := newPhotoClient(st.srv.URL)
+	c.AppID = "another-app"
+	if _, err := c.PhotoAsset(context.Background(), PhotoPrincipal{stubUsrType, stubUsrID}, "ast_1"); err == nil {
+		t.Fatal("app scope rejection ignored")
+	}
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(http.StatusForbidden) }))
+	defer srv.Close()
+	for _, principal := range []PhotoPrincipal{{Type: "user"}, {ID: stubUsrID}} {
+		if _, err := newPhotoClient(srv.URL).PhotoAsset(context.Background(), principal, "ast_1"); err == nil {
+			t.Fatal("missing principal accepted")
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("missing identity reached Upload: %d", calls)
+	}
+}
+
+func TestPhotoAssetRejectsMissingFormalAssetID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"ok":true,"asset":{"sha256":"deadbeef","size_bytes":42,"content_type":"image/png","status":"ready"}}`)
+	}))
+	defer srv.Close()
+	if _, err := newPhotoClient(srv.URL).PhotoAsset(context.Background(), PhotoPrincipal{stubUsrType, stubUsrID}, "ast_1"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("missing asset ID accepted: %v", err)
 	}
 }
