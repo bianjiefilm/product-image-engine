@@ -284,6 +284,9 @@ func TestCredentialWithoutEndpointDoesNotDial(t *testing.T) {
 	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", secret)
 	t.Setenv("PRODUCT_BG_MODEL_CREDENTIAL", "")
 	t.Setenv("PRODUCT_LIGHT_MODEL_CREDENTIAL", "")
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_URL", "")
+	t.Setenv("PRODUCT_BG_MODEL_URL", "")
+	t.Setenv("PRODUCT_LIGHT_MODEL_URL", "")
 	tripped := false
 	prev := liveClient.Transport
 	liveClient.Transport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
@@ -312,6 +315,101 @@ func quietLiveEnv(t *testing.T) {
 	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", "")
 	t.Setenv("PRODUCT_BG_MODEL_CREDENTIAL", "")
 	t.Setenv("PRODUCT_LIGHT_MODEL_CREDENTIAL", "")
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_URL", "")
+	t.Setenv("PRODUCT_BG_MODEL_URL", "")
+	t.Setenv("PRODUCT_LIGHT_MODEL_URL", "")
+}
+
+func TestURLWithoutCredentialDoesNotDial(t *testing.T) {
+	origin := encodeContractPNG(t, true)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write(origin)
+	}))
+	t.Cleanup(srv.Close)
+	quietLiveEnv(t)
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_URL", srv.URL)
+	fact := liveAttempt(config.Load())
+	if calls != 0 {
+		t.Fatalf("dialed with a URL and no credential: %d", calls)
+	}
+	if fact.Passed || fact.ErrorClass != "配置缺失" || fact.SHA256 != "" {
+		t.Fatalf("live = %+v", fact)
+	}
+}
+
+func TestPairedURLDialsLoopbackPNG(t *testing.T) {
+	const secret = "cred-do-not-print"
+	origin := encodeContractPNG(t, true)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		calls++
+		_, _ = w.Write(origin)
+	}))
+	t.Cleanup(srv.Close)
+	quietLiveEnv(t)
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", secret)
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_URL", srv.URL)
+	fact := liveAttempt(config.Load())
+	sum := sha256.Sum256(origin)
+	want := hex.EncodeToString(sum[:])
+	if calls != 1 {
+		t.Fatalf("provider calls = %d", calls)
+	}
+	if fact.Passed || fact.ErrorClass != "loopback" || fact.StatusCode != http.StatusOK || fact.ByteLen != len(origin) || fact.SHA256 != want {
+		t.Fatalf("live = %+v", fact)
+	}
+	if commercialStatus(fact.Passed) != "真实出图未完成" {
+		t.Fatal("loopback became a live image")
+	}
+	raw, err := json.Marshal(fact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(secret)) {
+		t.Fatal("secret leaked")
+	}
+}
+
+func TestUnpairedURLIsNotDialed(t *testing.T) {
+	const secret = "cred-do-not-print"
+	origin := encodeContractPNG(t, true)
+	textCalls := 0
+	textSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		textCalls++
+		_, _ = w.Write(origin)
+	}))
+	t.Cleanup(textSrv.Close)
+	bgCalls := 0
+	bgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bgCalls++
+		_, _ = w.Write(origin)
+	}))
+	t.Cleanup(bgSrv.Close)
+	quietLiveEnv(t)
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", secret)
+	t.Setenv("PRODUCT_BG_MODEL_CREDENTIAL", secret)
+	t.Setenv("PRODUCT_BG_MODEL_URL", bgSrv.URL)
+	t.Setenv("PRODUCT_TEXT_IMAGE_MODEL_URL", "")
+	fact := liveAttempt(config.Load())
+	if textCalls != 0 || bgCalls != 1 {
+		t.Fatalf("text calls=%d bg calls=%d", textCalls, bgCalls)
+	}
+	if fact.Passed || fact.ErrorClass != "loopback" || fact.SHA256 == "" {
+		t.Fatalf("live = %+v", fact)
+	}
+	raw, err := json.Marshal(fact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(secret)) {
+		t.Fatal("secret leaked")
+	}
 }
 
 func encodeContractPNG(t *testing.T, marker bool) []byte {
