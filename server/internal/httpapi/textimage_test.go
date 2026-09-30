@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -361,6 +362,116 @@ func TestTextImageCredentialDoesNotPaintModelImage(t *testing.T) {
 	}
 	if bytes.Contains(raw, []byte("secret-model-key")) {
 		t.Fatal("凭证不能出现在应答里")
+	}
+}
+
+type modelRoundTrip struct {
+	n        atomic.Int32
+	png      []byte
+	status   int
+	lastAuth string
+	lastPath string
+	lastBody string
+}
+
+func (m *modelRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.n.Add(1)
+	m.lastAuth = r.Header.Get("Authorization")
+	m.lastPath = r.URL.Path
+	raw, _ := io.ReadAll(r.Body)
+	m.lastBody = string(raw)
+	code := m.status
+	if code == 0 {
+		code = http.StatusOK
+	}
+	payload := `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(m.png) + `"}]}`
+	if code != http.StatusOK {
+		payload = `{"error":{"message":"denied"}}`
+	}
+	return &http.Response{
+		StatusCode: code,
+		Body:       io.NopCloser(strings.NewReader(payload)),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+func TestTextImageModelPostStoresDecodedBytesWithoutBilling(t *testing.T) {
+	png := tinyPNG(t, 7, 5)
+	rt := &modelRoundTrip{png: png}
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+		c.TextImageModelURL = "https://images.example/v1"
+		c.TextImageModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "白色陶瓷杯棚拍")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "completed" || job["origin"] != "model_http" || job["show_image"] != true || job["supplier_image_decoded"] != true {
+		t.Fatalf("模型字节应可查看: %d %#v", st, job)
+	}
+	if job["real_generation_completed"] != false || job["real_generation_notice"] != "真实出图未完成" || job["billing_passed"] != false || job["production_authorized"] != false || job["charged"] != nil {
+		t.Fatalf("解码不是保真、计费或生产通过: %#v", job)
+	}
+	if job["status_label"] != "供应商图片已解码" || job["honesty"] != "图像模型已返回字节。主体保真未核实，计费未通过，生产未授权。" || job["fixture_notice"] != "" {
+		t.Fatalf("模型来源文案不对: %#v", job)
+	}
+	asset, _ := job["output_asset_id"].(string)
+	if !strings.HasPrefix(asset, "img_") || len(asset) != 24 {
+		t.Fatalf("资产编号应来自摘要: %q", asset)
+	}
+	if rt.n.Load() != 1 || rt.lastAuth != "Bearer secret-model-key" || !strings.HasSuffix(rt.lastPath, "/images/generations") || !strings.Contains(rt.lastBody, "qwen-image-2.0-pro") {
+		t.Fatalf("应只向生成端点提交一次: n=%d auth=%q path=%s body=%s", rt.n.Load(), rt.lastAuth, rt.lastPath, rt.lastBody)
+	}
+	if bytes.Contains(raw, []byte("secret-model-key")) {
+		t.Fatal("凭证不能出现在应答里")
+	}
+	st, hdr, body := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(body, png) || hdr.Get("X-Text-Image-Origin") != "model_http" || !strings.Contains(hdr.Get("Content-Disposition"), "model.png") {
+		t.Fatalf("下载应是模型字节: %d origin=%s disp=%s n=%d", st, hdr.Get("X-Text-Image-Origin"), hdr.Get("Content-Disposition"), len(body))
+	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	againJob, _ := again["job"].(map[string]any)
+	if st != http.StatusOK || againJob["id"] != jobID || againJob["output_asset_id"] != asset || rt.n.Load() != 1 {
+		t.Fatalf("再次提交不能重画: n=%d %#v", rt.n.Load(), againJob)
+	}
+}
+
+func TestTextImageLoopbackModelBytesStayUnknown(t *testing.T) {
+	png := tinyPNG(t, 4, 4)
+	rt := &modelRoundTrip{png: png}
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+		c.TextImageModelURL = "http://127.0.0.1:9/v1"
+		c.TextImageModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "回环不能算供应商")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["show_image"] != false || job["output_asset_id"] != "" || job["supplier_image_decoded"] != false {
+		t.Fatalf("回环字节不能展示: %d %#v", st, job)
+	}
+	if !bytes.Contains(pending, []byte("回环地址不能算供应商出图")) || bytes.Contains(raw, []byte("secret-model-key")) || rt.n.Load() != 1 {
+		t.Fatalf("回环应记下原因且只调用一次: n=%d %s", rt.n.Load(), pending)
+	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	if st != http.StatusOK || rt.n.Load() != 1 {
+		t.Fatalf("未知结果再次提交不能重画: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+	st, _, _ = f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusNotFound {
+		t.Fatalf("回环结果不能下载: %d", st)
 	}
 }
 

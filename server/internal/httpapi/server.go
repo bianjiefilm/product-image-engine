@@ -45,6 +45,9 @@ type Server struct {
 	// TextPaint 由服务端调用，取得要保存的文生图字节。
 	// nil 时用本地测试图。它不是平台状态，缺凭证也不能因此写成模型成功。
 	TextPaint TextImagePainter
+	// ImageHTTP 只发给已配置的图像端点。nil 时由调用方自建超时客户端。
+	// 测试用它替换传输，避免真的拨号。
+	ImageHTTP *http.Client
 
 	// batchSubmitSem 批量提交进程内信号量(HUI-1704 拍板:并发上限 4,超出排队)。
 	// 惰性初始化;semMu 仅保护初始化。

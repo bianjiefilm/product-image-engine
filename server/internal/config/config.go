@@ -87,6 +87,7 @@ type Config struct {
 	// TextImageModelCredential 只表示是否配置了图像模型凭证。值不回传、不入库。空则真实出图未完成。
 	TextImageModelCredential string // PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL,默认空
 	TextImageModelURL        string // PRODUCT_TEXT_IMAGE_MODEL_URL,默认空。只和文生图凭证成对使用。
+	TextImageModelName       string // PRODUCT_TEXT_IMAGE_MODEL,默认空。空模型名不能出图。
 
 	// --- HUI-1702 FEAT-0203:已有产品图发起展示视频 ---
 	// 默认开放入口。没有真实视频供应商时只记失败或待确认,不播放静图或假视频,不扣费。
@@ -159,6 +160,7 @@ func Load() Config {
 		TextImageFixtureRegister: getBoolEnv("TEXT_IMAGE_FIXTURE_REGISTER", false),
 		TextImageModelCredential: os.Getenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL"),
 		TextImageModelURL:        os.Getenv("PRODUCT_TEXT_IMAGE_MODEL_URL"),
+		TextImageModelName:       os.Getenv("PRODUCT_TEXT_IMAGE_MODEL"),
 
 		ShowcaseVideoEnabled: getBoolEnv("FEATURE_SHOWCASE_VIDEO", true),
 	}

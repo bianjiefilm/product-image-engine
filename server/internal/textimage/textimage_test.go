@@ -241,6 +241,26 @@ func TestLocalTestPaintIsImageNotAPlatformStatus(t *testing.T) {
 	}
 }
 
+func TestModelOriginCanBeShownWithoutPassingTheGate(t *testing.T) {
+	in := trustedFixtureAdmit()
+	in.Origin = OriginModel
+	in.AssetID = "img_model"
+	in.ResultVersion = "img_model"
+	got := Admit(in)
+	if !got.Show || got.Reason != "" {
+		t.Fatalf("模型字节哈希一致应可打开: %+v", got)
+	}
+	if !SupplierDecoded(OriginModel, in.RegisteredSHA) {
+		t.Fatal("模型来源且摘要齐全应标为已解码")
+	}
+	if SupplierDecoded("supplier", in.RegisteredSHA) || SupplierDecoded(OriginModel, "short") || SupplierDecoded(OriginServer, in.RegisteredSHA) {
+		t.Fatal("夹具词、服务端来源或短摘要不能标成模型已解码")
+	}
+	if RealGenerationCompleted(true, OriginModel) {
+		t.Fatal("模型字节已解码仍然不是保真门通过")
+	}
+}
+
 func TestRealGenerationStaysIncomplete(t *testing.T) {
 	if RealGenerationCompleted(true, OriginFixture) || RealGenerationCompleted(true, "supplier") || RealGenerationCompleted(false, "") {
 		t.Fatal("本轮不能把任何图写成真实出图完成")

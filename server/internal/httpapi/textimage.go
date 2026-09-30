@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/billconsume"
+	"github.com/bianjiefilm/product-image-engine/server/internal/imagemodel"
 	"github.com/bianjiefilm/product-image-engine/server/internal/imgprobe"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
@@ -156,6 +157,10 @@ func (s *Server) handleSubmitTextImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job.JobStatus = textimage.StatusSubmitting
+	if s.textModelReady() {
+		s.finishTextImageModel(w, r, job)
+		return
+	}
 	genSt, _ := s.Cfg.GenerationUsable()
 	if genSt != 0 {
 		job.JobStatus = textimage.StatusFailed
@@ -375,7 +380,10 @@ func (s *Server) handleDownloadTextImage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	filename := "fixture.png"
-	if job.Origin != textimage.OriginFixture {
+	switch job.Origin {
+	case textimage.OriginModel:
+		filename = "model.png"
+	case textimage.OriginServer:
 		filename = "server.png"
 	}
 	w.Header().Set("Content-Type", media)
@@ -479,13 +487,22 @@ func (s *Server) textImageView(ctx context.Context, job store.TextImageJob, idem
 		statusLabel = "待确认报价"
 	case textimage.StatusCompleted:
 		statusLabel = "夹具已登记"
-		if job.Origin == textimage.OriginServer {
+		switch job.Origin {
+		case textimage.OriginServer:
 			statusLabel = "任务已完成"
+		case textimage.OriginModel:
+			statusLabel = "供应商图片已解码"
 		}
 	}
 	subjectNotice := textimage.ConceptualNotice
 	if strings.TrimSpace(job.PhotoAssetID) != "" {
 		subjectNotice = "有实物参考，主体保真仍未在本结果中核实"
+	}
+	honesty := textimage.HonestyNotice
+	fixtureNotice := textimage.FixtureNotice
+	if job.Origin == textimage.OriginModel {
+		honesty = textimage.ModelDecodedNotice
+		fixtureNotice = ""
 	}
 	return map[string]any{
 		"id": job.ID, "project_id": job.ProjectID, "prompt": job.Prompt,
@@ -501,10 +518,85 @@ func (s *Server) textImageView(ctx context.Context, job store.TextImageJob, idem
 		"production_authorization":  textimage.ProductionNotAuthorized,
 		"real_generation_completed": textimage.RealGenerationCompleted(s.Cfg.TextImageModelConfigured(), job.Origin),
 		"real_generation_notice":    textimage.RealGenerationIncomplete,
+		"supplier_image_decoded":    decision.Show && textimage.SupplierDecoded(job.Origin, job.OutputSHA256),
 		"subject_protected":         false, "subject_notice": subjectNotice, "pending": job.Pending,
-		"delivery_readiness": textimage.ReadinessInternal, "honesty": textimage.HonestyNotice,
-		"fixture_notice": textimage.FixtureNotice, "idempotent": idempotent,
+		"delivery_readiness": textimage.ReadinessInternal, "honesty": honesty,
+		"fixture_notice": fixtureNotice, "idempotent": idempotent,
 	}
+}
+
+func (s *Server) textModelReady() bool {
+	return strings.TrimSpace(s.Cfg.TextImageModelCredential) != "" &&
+		strings.TrimSpace(s.Cfg.TextImageModelURL) != "" &&
+		strings.TrimSpace(s.Cfg.TextImageModelName) != ""
+}
+
+func (s *Server) finishTextImageModel(w http.ResponseWriter, r *http.Request, job store.TextImageJob) {
+	result, err := imagemodel.Generate(r.Context(), s.ImageHTTP, imagemodel.Request{
+		Endpoint:   s.Cfg.TextImageModelURL,
+		Credential: s.Cfg.TextImageModelCredential,
+		Model:      s.Cfg.TextImageModelName,
+		Prompt:     job.Prompt,
+	})
+	if err != nil {
+		job.JobStatus = textimage.StatusFailed
+		job.Quality = textimage.QualityUnknown
+		job.OutputAssetID = ""
+		job.Pending = appendPendingText(job.Pending, scrubModelSecret(err.Error(), s.Cfg.TextImageModelCredential))
+		if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+			writeStoreErr(w, uerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, false)})
+		return
+	}
+	if !result.HostLive || result.BillingPassed {
+		job.JobStatus = textimage.StatusUnknown
+		job.Quality = textimage.QualityUnknown
+		job.OutputAssetID = ""
+		job.Pending = appendPendingText(job.Pending, "回环地址不能算供应商出图")
+		if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+			writeStoreErr(w, uerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, false)})
+		return
+	}
+	if len(result.SHA256) < 20 || len(result.Bytes) == 0 {
+		job.JobStatus = textimage.StatusFailed
+		job.OutputAssetID = ""
+		job.Pending = appendPendingText(job.Pending, "图片无法解码")
+		if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+			writeStoreErr(w, uerr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), job, false)})
+		return
+	}
+	job.JobStatus = textimage.StatusSubmitting
+	job.Pending = appendPendingText(job.Pending, textimage.ModelDecodedNotice)
+	if uerr := s.St.UpdateTextImageJob(r.Context(), job); uerr != nil {
+		writeStoreErr(w, uerr)
+		return
+	}
+	updated, already, err := s.St.CompleteTextImageServer(r.Context(), store.TextImageServerResult{
+		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
+		AssetID: "img_" + result.SHA256[:20], MediaType: result.MediaType, Bytes: result.Bytes,
+		Origin: textimage.OriginModel,
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": s.textImageView(r.Context(), updated, already)})
+}
+
+func scrubModelSecret(message, secret string) string {
+	secret = strings.TrimSpace(secret)
+	if secret == "" || !strings.Contains(message, secret) {
+		return message
+	}
+	return strings.ReplaceAll(message, secret, "已隐藏")
 }
 
 func (s *Server) admitTextImage(ctx context.Context, job store.TextImageJob) textimage.AdmitDecision {

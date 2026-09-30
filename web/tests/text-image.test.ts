@@ -86,6 +86,33 @@ describe("文字描述入口", () => {
     expect(noAsset.showImage).toBe(false);
   });
 
+  it("模型端点返回的字节可以查看，但仍不是保真、计费或生产通过", () => {
+    const view = presentTextJob({
+      id: "txt_model",
+      job_status: "completed",
+      origin: "model_http",
+      show_image: true,
+      output_asset_id: "img_abc",
+      billing_label: "配置缺失",
+      real_generation_completed: false,
+      billing_passed: true,
+      production_authorized: true,
+    });
+    expect(view.showImage).toBe(true);
+    expect(view.billingPassed).toBe(false);
+    expect(view.productionAuthorized).toBe(false);
+    expect(view.realGeneration).toBe("真实出图未完成");
+    expect(view.headline).toContain("主体保真未核实");
+    expect(view.imageCaption).toContain("计费未通过");
+    const noAsset = presentTextJob({
+      job_status: "completed",
+      origin: "model_http",
+      show_image: true,
+      output_asset_id: "",
+    });
+    expect(noAsset.showImage).toBe(false);
+  });
+
   it("待确认刷新后仍是同一条记录", () => {
     expect(sameRecord("txt_1", "txt_1")).toBe(true);
     expect(sameRecord("txt_2", "txt_1")).toBe(false);
