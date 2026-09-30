@@ -578,6 +578,11 @@ func (s *Server) handleSelectBgReplace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 模型字节可以查看。主体保真未核实，不能选定为可用候选。
+	if job.Origin == "model_http" {
+		rejectUnusableCandidate(w)
+		return
+	}
 	mode := job.Mode
 	job, ok = s.persistBgGuard(w, r, job)
 	if !ok {
@@ -605,6 +610,11 @@ func (s *Server) handleSelectBgReplace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExportBgReplace(w http.ResponseWriter, r *http.Request) {
 	job, ok := s.loadBgJob(w, r)
 	if !ok {
+		return
+	}
+	// 模型字节可以查看。主体保真未核实，不能导出为可用候选。
+	if job.Origin == "model_http" {
+		rejectUnusableCandidate(w)
 		return
 	}
 	mode := job.Mode

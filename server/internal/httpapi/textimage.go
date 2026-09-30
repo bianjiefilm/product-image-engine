@@ -398,6 +398,11 @@ func (s *Server) handleSelectTextImage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 模型字节可以下载查看。主体保真未核实，不能选定为可用候选。
+	if job.Origin == textimage.OriginModel {
+		rejectUnusableCandidate(w)
+		return
+	}
 	selected, err := s.St.SelectTextImageVersion(r.Context(), job.TenantID, job.ProjectID, job.ID)
 	if errors.Is(err, store.ErrConflict) {
 		writeErr(w, http.StatusConflict, "selection_blocked", err.Error())

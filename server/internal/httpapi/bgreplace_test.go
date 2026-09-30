@@ -767,6 +767,89 @@ func TestBackgroundReplaceOutOfDomainCanvasKeepsDefaultSize(t *testing.T) {
 	assertBgBillingAndProductionStayFalse(t, job)
 }
 
+func TestModelBackgroundBytesStayUnusableCandidates(t *testing.T) {
+	const secret = "secret-model-key"
+	original := tinyPNG(t, 4, 3)
+	out := tinyPNG(t, 6, 5)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: out}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, "http://127.0.0.1:1", up.srv.URL, func(c *config.Config) {
+		c.GenerationEnabled = false
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "未保真背景")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["origin"] != "model_http" || job["deliverable"] != false {
+		t.Fatalf("模型字节应留下但不可交付: %d %#v", st, job)
+	}
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/select", tok, nil)
+	assertNotUsableCandidate(t, st, selected)
+	st, exported := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/export", tok, nil)
+	assertNotUsableCandidate(t, st, exported)
+	st, listed := f.do(t, "GET", "/api/v1/projects/"+proj+"/background-replacements", tok, nil)
+	kept := bgJobByID(t, listed, jobID)
+	if st != http.StatusOK || kept["selection"] != "" || kept["export_count"] != float64(0) {
+		t.Fatalf("拒绝后不能留下选定或导出: %d %#v", st, kept)
+	}
+	st, hdr, body := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/content", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(body, out) || hdr.Get("X-Bg-Origin") != "model_http" {
+		t.Fatalf("查看字节仍然允许: %d origin=%s n=%d", st, hdr.Get("X-Bg-Origin"), len(body))
+	}
+	eco := newEcoStub(t)
+	f.srv.Uploads = &platform.UploadClient{BaseURL: eco.srv.URL, AppID: "product-image", Token: "up-tok"}
+	st, registered := f.do(t, "POST", "/api/v1/projects/"+proj+"/outputs", tok, map[string]any{
+		"file_name": "model.png", "content_type": "image/png", "data_b64": b64(out),
+	})
+	assertNotUsableCandidate(t, st, registered)
+	if eco.uploads.Load() != 0 {
+		t.Fatalf("不保真字节不能登记到素材服务: uploads=%d", eco.uploads.Load())
+	}
+	st, other := f.do(t, "POST", "/api/v1/projects/"+proj+"/outputs", tok, map[string]any{
+		"file_name": "other.png", "content_type": "image/png", "data_b64": b64(tinyPNG(t, 2, 2)),
+	})
+	if st != http.StatusCreated || eco.uploads.Load() != 1 {
+		t.Fatalf("其他图片仍可登记: %d uploads=%d %#v", st, eco.uploads.Load(), other)
+	}
+	st, _ = f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	if st != http.StatusOK || rt.n.Load() != 1 {
+		t.Fatalf("挡住候选不能再次出图: n=%d %d", rt.n.Load(), st)
+	}
+	assertBgBillingAndProductionStayFalse(t, kept)
+}
+
+func bgJobByID(t *testing.T, body map[string]any, id string) map[string]any {
+	t.Helper()
+	jobs, _ := body["jobs"].([]any)
+	for _, item := range jobs {
+		job, _ := item.(map[string]any)
+		if job["id"] == id {
+			return job
+		}
+	}
+	t.Fatalf("列表里没有任务 %s: %#v", id, body)
+	return nil
+}
+
+func assertNotUsableCandidate(t *testing.T, st int, body map[string]any) {
+	t.Helper()
+	code, ok := errCodeOf(body)
+	msg := ""
+	if e, isMap := body["error"].(map[string]any); isMap {
+		msg, _ = e["message"].(string)
+	}
+	if st != http.StatusConflict || !ok || code != "not_usable_candidate" || msg != "不保真结果不能作为可用候选" {
+		t.Fatalf("不保真结果应被挡住: %d %#v", st, body)
+	}
+}
+
 func TestBackgroundReplaceLoopbackModelBytesStayHidden(t *testing.T) {
 	const secret = "secret-model-key"
 	original := tinyPNG(t, 3, 3)
