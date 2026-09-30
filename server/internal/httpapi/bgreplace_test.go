@@ -1,9 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -486,4 +491,329 @@ func TestBackgroundReplaceFidelityFailureBlocksDeliverable(t *testing.T) {
 	if posts.Load() != 1 {
 		t.Fatalf("保真拦截不得重生成, posts=%d", posts.Load())
 	}
+}
+
+func assertBgBillingAndProductionStayFalse(t *testing.T, job map[string]any) {
+	t.Helper()
+	if job["billing_passed"] != false || job["production_generation_passed"] != false || job["production_authorized"] != false {
+		t.Fatalf("计费与生产必须保持未通过: %#v", job)
+	}
+	if job["real_generation_completed"] != false || job["real_generation_notice"] != bgreplace.RealGenerationIncomplete {
+		t.Fatalf("真实出图文案必须保持未完成: %#v", job)
+	}
+	if job["deliverable"] != false || job["quality"] == "pass" {
+		t.Fatalf("解码字节不是可交付保真通过: %#v", job)
+	}
+}
+
+type bgModelRT struct {
+	n      atomic.Int32
+	png    []byte
+	status int
+	auth   string
+	path   string
+	host   string
+	body   string
+}
+
+func (m *bgModelRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.n.Add(1)
+	m.auth = r.Header.Get("Authorization")
+	m.path = r.URL.Path
+	m.host = r.URL.Host
+	raw, _ := io.ReadAll(r.Body)
+	m.body = string(raw)
+	code := m.status
+	if code == 0 {
+		code = http.StatusOK
+	}
+	payload := `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(m.png) + `"}]}`
+	if code != http.StatusOK {
+		payload = `{"error":{"message":"denied"}}`
+	}
+	return &http.Response{
+		StatusCode: code,
+		Body:       io.NopCloser(strings.NewReader(payload)),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+type denyModelSecret struct {
+	t      *testing.T
+	secret string
+	base   http.RoundTripper
+}
+
+func (d denyModelSecret) RoundTrip(r *http.Request) (*http.Response, error) {
+	if strings.Contains(r.Header.Get("Authorization"), d.secret) || strings.Contains(r.Header.Get("X-PilotSeaView-Internal-Token"), d.secret) {
+		d.t.Fatal("模型凭证不能跟到取原图的主机")
+	}
+	return d.base.RoundTrip(r)
+}
+
+func (f *fixture) armCreativeBg(t *testing.T, taskURL, uploadURL string, mutate func(*config.Config)) {
+	t.Helper()
+	f.srv.Cfg.BgReplaceEnabled = true
+	f.srv.Cfg.BgCreativeEnabled = true
+	f.srv.Cfg.GenerationEnabled = true
+	f.srv.Cfg.TaskBaseURL = taskURL
+	f.srv.Cfg.TaskToken = "task-tok"
+	f.srv.Cfg.UploadBaseURL = uploadURL
+	f.srv.Cfg.UploadToken = "up-tok"
+	if mutate != nil {
+		mutate(&f.srv.Cfg)
+	}
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskURL, AppID: "product-image", Token: "task-tok"}
+	f.srv.Uploads = &platform.UploadClient{BaseURL: uploadURL, AppID: "product-image", Token: "up-tok", HTTP: &http.Client{Transport: denyModelSecret{
+		t: t, secret: f.srv.Cfg.BgModelCredential, base: http.DefaultTransport,
+	}}}
+	f.rearm(t)
+}
+
+func (f *fixture) openAndConfirmCreative(t *testing.T, tok, proj, in, intent string) string {
+	t.Helper()
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements", tok, map[string]any{
+		"input_id": in, "mode": "creative", "background_intent": intent, "explicit_creative": true,
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开创意报价 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	st, conf := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, nil)
+	if st != http.StatusOK {
+		t.Fatalf("确认 %d %v", st, conf)
+	}
+	return jobID
+}
+
+func TestBackgroundReplaceCreativeModelStoresDecodedBytesWithoutBilling(t *testing.T) {
+	const secret = "secret-model-key"
+	original := tinyPNG(t, 4, 3)
+	out := tinyPNG(t, 6, 5)
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task_id":"task_should_not","status":"pending"}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: out}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, taskSrv.URL, up.srv.URL, func(c *config.Config) {
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "浅灰棚拍")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "completed" || job["origin"] != "model_http" || job["origin"] == "supplier" {
+		t.Fatalf("创意背景应存下解码字节: %d %#v", st, job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	if tasks.Load() != 0 || rt.n.Load() != 1 || rt.auth != "Bearer "+secret || rt.host != "images.example" || !strings.HasSuffix(rt.path, "/images/generations") {
+		t.Fatalf("应只向生成端点提交一次: tasks=%d n=%d auth=%q host=%s path=%s", tasks.Load(), rt.n.Load(), rt.auth, rt.host, rt.path)
+	}
+	if !strings.Contains(rt.body, "qwen-image-2.0-pro") || !strings.Contains(rt.body, "浅灰棚拍") || !strings.Contains(rt.body, "data:image/png;base64,") {
+		t.Fatalf("请求应带模型名、意图和原图 data URL: %s", rt.body)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(rt.body), &body); err != nil {
+		t.Fatal(err)
+	}
+	images, _ := body["image"].([]any)
+	if len(images) != 1 {
+		t.Fatalf("image 应为数组: %#v", body["image"])
+	}
+	pngURL, _ := images[0].(string)
+	gotRef, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(pngURL, "data:image/png;base64,"))
+	if err != nil || !bytes.Equal(gotRef, original) {
+		t.Fatal("参考图应是已保存的原图")
+	}
+	if bytes.Contains(raw, []byte(secret)) || bytes.Contains([]byte(rt.body), []byte(secret)) {
+		t.Fatal("凭证不能出现在应答或生成 body")
+	}
+	st, hdr, content := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/content", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(content, out) || hdr.Get("X-Bg-Origin") != "model_http" || hdr.Get("Content-Type") != "image/png" {
+		t.Fatalf("应读回模型字节: %d origin=%s ct=%s n=%d", st, hdr.Get("X-Bg-Origin"), hdr.Get("Content-Type"), len(content))
+	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	againJob, _ := again["job"].(map[string]any)
+	if st != http.StatusOK || againJob["idempotent"] != true || againJob["output_asset_id"] != job["output_asset_id"] || rt.n.Load() != 1 {
+		t.Fatalf("已完成记录不能第二次调用模型: n=%d %#v", rt.n.Load(), againJob)
+	}
+	assertBgBillingAndProductionStayFalse(t, againJob)
+}
+
+func TestBackgroundReplaceLoopbackModelBytesStayHidden(t *testing.T) {
+	const secret = "secret-model-key"
+	original := tinyPNG(t, 3, 3)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: tinyPNG(t, 2, 2)}
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		http.Error(w, "no", http.StatusBadGateway)
+	}))
+	t.Cleanup(taskSrv.Close)
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, taskSrv.URL, up.srv.URL, func(c *config.Config) {
+		c.BgModelCredential = secret
+		c.BgModelURL = "http://127.0.0.1:9/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "回环不能算供应商")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["output_asset_id"] != "" || tasks.Load() != 0 || rt.n.Load() != 1 {
+		t.Fatalf("回环字节不能当供应商出图: %d tasks=%d n=%d %#v", st, tasks.Load(), rt.n.Load(), job)
+	}
+	if !bytes.Contains(pending, []byte("回环地址不能算供应商出图")) || bytes.Contains(raw, []byte(secret)) {
+		t.Fatalf("应记下回环原因且不泄露凭证: %s", pending)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	st, _, _ = f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/content", tok, nil)
+	if st != http.StatusNotFound {
+		t.Fatalf("回环结果不能打开: %d", st)
+	}
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	if st != http.StatusOK || rt.n.Load() != 1 {
+		t.Fatalf("未知记录不能第二次调用模型: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+}
+
+func TestBackgroundReplaceModelFailureDoesNotRetryOrLeakCredential(t *testing.T) {
+	const secret = "secret-model-key"
+	original := tinyPNG(t, 3, 2)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: tinyPNG(t, 2, 2), status: http.StatusBadGateway}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, "http://127.0.0.1:9", up.srv.URL, func(c *config.Config) {
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "失败不能重试")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["output_asset_id"] != "" || rt.n.Load() != 1 {
+		t.Fatalf("模型拒绝应失败且只调用一次: %d n=%d %#v", st, rt.n.Load(), job)
+	}
+	if bytes.Contains(raw, []byte(secret)) {
+		t.Fatal("错误文案不能包含凭证")
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	if st != http.StatusOK || rt.n.Load() != 1 {
+		t.Fatalf("失败记录不能第二次调用模型: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+}
+
+func TestBackgroundReplaceWithoutModelNameKeepsPlatformTask(t *testing.T) {
+	const secret = "secret-model-key"
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task_id":"task_bg_name","status":"pending"}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	rt := &bgModelRT{png: tinyPNG(t, 2, 2)}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, taskSrv.URL, "http://127.0.0.1:1", func(c *config.Config) {
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = ""
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "空模型名走原路径")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "queued" || job["platform_task_id"] != "task_bg_name" || tasks.Load() != 1 || rt.n.Load() != 0 {
+		t.Fatalf("空模型名应保持平台任务路径: %d tasks=%d n=%d %#v", st, tasks.Load(), rt.n.Load(), job)
+	}
+	if bytes.Contains(raw, []byte(secret)) {
+		t.Fatal("凭证不能出现在应答里")
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+}
+
+func TestBackgroundReplaceFidelityIgnoresConfiguredModel(t *testing.T) {
+	const secret = "secret-model-key"
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task_id":"task_bg_fid_model","status":"pending"}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	rt := &bgModelRT{png: tinyPNG(t, 2, 2)}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, taskSrv.URL, "http://127.0.0.1:1", func(c *config.Config) {
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirm(t, tok, proj, in)
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["mode"] != "fidelity" || job["job_status"] != "queued" || job["platform_task_id"] != "task_bg_fid_model" || tasks.Load() != 1 || rt.n.Load() != 0 {
+		t.Fatalf("保真模式不能改走背景模型: %d tasks=%d n=%d %#v", st, tasks.Load(), rt.n.Load(), job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+}
+
+func TestBackgroundReplaceMissingOriginalDoesNotCallModel(t *testing.T) {
+	const secret = "secret-model-key"
+	rt := &bgModelRT{png: tinyPNG(t, 2, 2)}
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		_, _ = w.Write([]byte(`{"task_id":"task_no","status":"pending"}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, taskSrv.URL, "http://127.0.0.1:1", func(c *config.Config) {
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "没有原图")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || rt.n.Load() != 0 || tasks.Load() != 0 {
+		t.Fatalf("没有原图不能调用模型或平台任务: %d tasks=%d n=%d %#v", st, tasks.Load(), rt.n.Load(), job)
+	}
+	if bytes.Contains(raw, []byte(secret)) {
+		t.Fatal("原图错误不能带上凭证")
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
 }

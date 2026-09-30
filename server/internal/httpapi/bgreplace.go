@@ -1,14 +1,19 @@
 package httpapi
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
 	"github.com/bianjiefilm/product-image-engine/server/internal/billconsume"
 	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
+	"github.com/bianjiefilm/product-image-engine/server/internal/imagemodel"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
@@ -25,6 +30,7 @@ func (s *Server) handleBgCapabilities(w http.ResponseWriter, r *http.Request) {
 		"charged":                      nil,
 		"production_generation_passed": false,
 		"billing_passed":               false,
+		"production_authorized":        false,
 		"real_generation_completed":    false,
 		"real_generation_notice":       bgreplace.RealGenerationIncomplete,
 		"delivery_readiness":           bgreplace.ReadinessInternal,
@@ -37,6 +43,7 @@ func (s *Server) handleBgAcceptance(w http.ResponseWriter, r *http.Request) {
 		"samples":                      bgreplace.AcceptanceSamples(),
 		"production_generation_passed": false,
 		"billing_passed":               false,
+		"production_authorized":        false,
 		"real_generation_completed":    false,
 		"real_generation_notice":       bgreplace.RealGenerationIncomplete,
 	})
@@ -223,6 +230,10 @@ func (s *Server) handleSubmitBgReplace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(latest, true)})
 		return
 	}
+	if s.Cfg.BgModelReady() && job.Mode == string(bgreplace.ModeCreative) {
+		s.finishCreativeBgModel(w, r, p, job)
+		return
+	}
 	genSt, _ := s.Cfg.GenerationUsable()
 	if genSt != 0 {
 		job.JobStatus = bgreplace.StatusGenerationUnavailable
@@ -282,6 +293,128 @@ func (s *Server) handleSubmitBgReplace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, false)})
+}
+
+// finishCreativeBgModel 在已抢到提交之后，用已保存的原图调用背景模型。
+// 回环或计费标记为真时不保存字节。成功来源只记 model_http，不记供应商成功。
+func (s *Server) finishCreativeBgModel(w http.ResponseWriter, r *http.Request, p platform.Principal, job store.BgJob) {
+	original, err := s.readBgOriginal(r.Context(), p, job)
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, "原图缺失")
+		return
+	}
+	result, err := imagemodel.Generate(r.Context(), s.ImageHTTP, imagemodel.Request{
+		Endpoint:   s.Cfg.BgModelURL,
+		Credential: s.Cfg.BgModelCredential,
+		Model:      s.Cfg.BgModelName,
+		Prompt:     job.BackgroundIntent,
+		Refs:       [][]byte{original},
+	})
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, scrubModelSecret(err.Error(), s.Cfg.BgModelCredential))
+		return
+	}
+	if !result.HostLive || result.BillingPassed {
+		job.OutputAssetID = ""
+		job.OutputVersion = ""
+		job.Deliverable = false
+		s.closeBgModel(w, r, job, bgreplace.StatusUnknown, "回环地址不能算供应商出图")
+		return
+	}
+	pending := bgreplace.AppendPending(job.Pending, bgreplace.RealGenerationIncomplete)
+	saved, already, err := s.St.SaveBgModelBytes(r.Context(), store.BgModelBytes{
+		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
+		MediaType: result.MediaType, Bytes: result.Bytes, Pending: pending,
+	})
+	if err != nil {
+		s.closeBgModel(w, r, job, bgreplace.StatusFailed, scrubModelSecret(err.Error(), s.Cfg.BgModelCredential))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(saved, already)})
+}
+
+func (s *Server) closeBgModel(w http.ResponseWriter, r *http.Request, job store.BgJob, status, note string) {
+	job.JobStatus = status
+	job.OutputAssetID = ""
+	job.OutputVersion = ""
+	job.Deliverable = false
+	job.Evidence = bgreplace.EvidenceNone
+	job.Quality = keepBgFail(job.Quality)
+	job.ModelRef = ""
+	job.FeeRef = ""
+	job.PlatformTaskID = ""
+	job.Pending = bgreplace.AppendPending(job.Pending, note)
+	if err := s.St.UpdateBgJob(r.Context(), job); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, false)})
+}
+
+func (s *Server) readBgOriginal(ctx context.Context, p platform.Principal, job store.BgJob) ([]byte, error) {
+	in, err := s.St.GetInput(ctx, p.Tenant(), job.ProjectID, job.InputID)
+	if err != nil || strings.TrimSpace(in.PlatformAssetID) == "" || s.Uploads == nil {
+		return nil, errors.New("原图缺失")
+	}
+	principal := platform.PhotoPrincipal{Type: "user", ID: p.UserID}
+	meta, err := s.Uploads.PhotoAsset(ctx, principal, in.PlatformAssetID)
+	if err != nil || strings.TrimSpace(meta.AssetID) == "" {
+		return nil, errors.New("原图缺失")
+	}
+	if meta.Status != "" && !strings.EqualFold(meta.Status, "ready") {
+		return nil, errors.New("原图缺失")
+	}
+	local, lerr := s.St.GetPhotoAssetByAssetID(ctx, p.Tenant(), in.PlatformAssetID)
+	if lerr == nil {
+		if !strings.EqualFold(meta.SHA256, local.SHA256) || (meta.SizeBytes > 0 && meta.SizeBytes != local.SizeBytes) {
+			return nil, errors.New("原图缺失")
+		}
+	} else if !errors.Is(lerr, store.ErrNotFound) {
+		return nil, errors.New("原图缺失")
+	}
+	dlURL, _, _, err := s.Uploads.PhotoDownloadURL(ctx, principal, in.PlatformAssetID, 0)
+	if err != nil {
+		return nil, errors.New("原图缺失")
+	}
+	rc, _, _, err := s.Uploads.OpenPhotoContent(ctx, dlURL)
+	if err != nil {
+		return nil, errors.New("原图缺失")
+	}
+	defer rc.Close()
+	body, err := io.ReadAll(io.LimitReader(rc, (20<<20)+1))
+	if err != nil || len(body) == 0 || len(body) > 20<<20 {
+		return nil, errors.New("原图缺失")
+	}
+	sum := sha256.Sum256(body)
+	got := hex.EncodeToString(sum[:])
+	if meta.SHA256 != "" && !strings.EqualFold(meta.SHA256, got) {
+		return nil, errors.New("原图缺失")
+	}
+	if meta.SizeBytes > 0 && meta.SizeBytes != int64(len(body)) {
+		return nil, errors.New("原图缺失")
+	}
+	return body, nil
+}
+
+func (s *Server) handleBgContent(w http.ResponseWriter, r *http.Request) {
+	p, _ := principalFrom(r.Context())
+	job, ok := s.loadBgJob(w, r)
+	if !ok {
+		return
+	}
+	media, body, err := s.St.OpenBgResult(r.Context(), p.Tenant(), job.ProjectID, job.ID)
+	if errors.Is(err, store.ErrNotFound) || job.Origin != "model_http" {
+		writeErr(w, http.StatusNotFound, "not_found", "没有可打开的背景结果")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusConflict, "integrity_failed", "文件字节与登记不一致")
+		return
+	}
+	w.Header().Set("Content-Type", media)
+	w.Header().Set("X-Bg-Origin", job.Origin)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 func (s *Server) handleRefreshBgReplace(w http.ResponseWriter, r *http.Request) {
@@ -523,6 +656,8 @@ func (s *Server) bgView(job store.BgJob, idempotent bool) map[string]any {
 		"deliverable": job.Deliverable, "pending": job.Pending, "allowed_uses": job.AllowedUses,
 		"product_checks":               checks,
 		"production_generation_passed": false, "billing_passed": false,
+		"production_authorized":     false,
+		"origin":                    job.Origin,
 		"real_generation_completed": done, "real_generation_notice": notice,
 		"delivery_readiness": bgreplace.ReadinessInternal, "honesty": bgreplace.HonestyNotice,
 		"idempotent": idempotent,

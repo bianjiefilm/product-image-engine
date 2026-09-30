@@ -65,6 +65,7 @@ type Config struct {
 	// BgModelCredential 只表示是否配置了真实模型凭证。值不回传、不入库。
 	BgModelCredential string // PRODUCT_BG_MODEL_CREDENTIAL,默认空
 	BgModelURL        string // PRODUCT_BG_MODEL_URL,默认空。只和背景凭证成对使用。
+	BgModelName       string // PRODUCT_BG_MODEL,默认空。空模型名不能出图。
 
 	// --- HUI-1700 FEAT-0201:光影场景生成 ---
 	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
@@ -148,6 +149,7 @@ func Load() Config {
 		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
 		BgModelCredential: os.Getenv("PRODUCT_BG_MODEL_CREDENTIAL"),
 		BgModelURL:        os.Getenv("PRODUCT_BG_MODEL_URL"),
+		BgModelName:       os.Getenv("PRODUCT_BG_MODEL"),
 
 		LightSceneEnabled:    getBoolEnv("FEATURE_LIGHT_SCENE", false),
 		LightCreativeEnabled: getBoolEnv("FEATURE_LIGHT_CREATIVE", false),
@@ -227,6 +229,13 @@ func (c Config) PhotoUploadUsable() (int, string) {
 // 空则背景替换不得把任务受理写成真实出图完成。
 func (c Config) BgRealModelConfigured() bool {
 	return strings.TrimSpace(c.BgModelCredential) != ""
+}
+
+// BgModelReady 只在凭证、地址和模型名都非空时为真。空模型名不能出图。不返回凭证。
+func (c Config) BgModelReady() bool {
+	return strings.TrimSpace(c.BgModelCredential) != "" &&
+		strings.TrimSpace(c.BgModelURL) != "" &&
+		strings.TrimSpace(c.BgModelName) != ""
 }
 
 // TextImageModelConfigured 只回答文生图凭证是否存在，不暴露凭证内容。

@@ -23,12 +23,14 @@ import (
 )
 
 // Request 是一次图像生成。凭证只放在发往生成端点的请求头里。
+// Refs 是可选参考图。没有参考图时 JSON 不带 image；有则 image 为 data URL 数组。
 type Request struct {
 	Endpoint   string
 	Credential string
 	Model      string
 	Prompt     string
 	Size       string
+	Refs       [][]byte
 }
 
 // Result 是解码后的图片。BillingPassed 恒为 false。
@@ -67,13 +69,21 @@ func Generate(ctx context.Context, client *http.Client, req Request) (Result, er
 	if size == "" {
 		size = "1024x1024"
 	}
-	payload, err := json.Marshal(map[string]any{
+	images, err := referenceDataURLs(req.Refs)
+	if err != nil {
+		return Result{}, err
+	}
+	body := map[string]any{
 		"model":           strings.TrimSpace(req.Model),
 		"prompt":          req.Prompt,
 		"size":            size,
 		"n":               1,
 		"response_format": "b64_json",
-	})
+	}
+	if len(images) > 0 {
+		body["image"] = images
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, err
 	}
@@ -133,6 +143,21 @@ func Generate(ctx context.Context, client *http.Client, req Request) (Result, er
 		BillingPassed: false,
 		StatusCode:    resp.StatusCode,
 	}, nil
+}
+
+func referenceDataURLs(refs [][]byte) ([]string, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		media, err := sniffImage(ref)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, "data:"+media+";base64,"+base64.StdEncoding.EncodeToString(ref))
+	}
+	return out, nil
 }
 
 func generationURL(endpoint string) (string, string, error) {
