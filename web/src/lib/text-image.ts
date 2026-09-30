@@ -49,11 +49,18 @@ export function presentTextJob(job: {
 } {
   const origin = (job.origin ?? "").trim();
   const asset = (job.output_asset_id ?? "").trim();
-  const trusted =
+  const modelImage =
     job.job_status === "completed" &&
     job.show_image === true &&
     job.real_generation_completed !== true &&
-    ((origin === "fixture") || (origin === "server" && asset !== ""));
+    origin === "model_http" &&
+    asset !== "";
+  const trusted =
+    modelImage ||
+    (job.job_status === "completed" &&
+      job.show_image === true &&
+      job.real_generation_completed !== true &&
+      ((origin === "fixture") || (origin === "server" && asset !== "")));
   const failed = (job.job_status ?? "") === "failed";
   const noPhoto = !(job.photo_asset_id ?? "").trim();
   const serverImage = trusted && origin === "server";
@@ -65,14 +72,20 @@ export function presentTextJob(job: {
     productionAuthorized: false,
     realGeneration: REAL_GENERATION,
     settlementLabel: job.settlement === "作品完成待核对" ? "作品完成待核对" : "账单尚未核对",
-    headline: trusted
-      ? serverImage
-        ? "服务端任务已完成，这不是模型出图"
-        : "夹具图可以查看，这不是模型出图"
-      : failed
-        ? "未能生成，没有真实产品图"
-        : "结果待确认，没有真实产品图",
-    imageCaption: serverImage ? "服务端保存的任务结果，不是模型出图。" : "服务端登记的夹具图，不是模型出图。",
+    headline: modelImage
+      ? "图像模型已返回字节，主体保真未核实"
+      : trusted
+        ? serverImage
+          ? "服务端任务已完成，这不是模型出图"
+          : "夹具图可以查看，这不是模型出图"
+        : failed
+          ? "未能生成，没有真实产品图"
+          : "结果待确认，没有真实产品图",
+    imageCaption: modelImage
+      ? "图像模型已返回字节。主体保真未核实，计费未通过，生产未授权。"
+      : serverImage
+        ? "服务端保存的任务结果，不是模型出图。"
+        : "服务端登记的夹具图，不是模型出图。",
   };
 }
 

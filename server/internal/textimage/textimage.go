@@ -30,7 +30,9 @@ const (
 
 	OriginFixture            = "fixture"
 	OriginServer             = "server"
+	OriginModel              = "model_http"
 	RealGenerationIncomplete = "真实出图未完成"
+	ModelDecodedNotice       = "图像模型已返回字节。主体保真未核实，计费未通过，生产未授权。"
 	ConceptualNotice         = "文字描述是概念输出，没有实物参考时不宣称主体保真"
 	FixtureNotice            = "这是服务端登记的夹具图，不是模型出图"
 	ProductionNotAuthorized  = "NOT_AUTHORIZED"
@@ -215,7 +217,7 @@ func Admit(in AdmitInput) AdmitDecision {
 	if !in.Registered || strings.TrimSpace(in.AssetID) == "" || len(registeredSHA) != 64 || registeredSHA != fileSHA {
 		return AdmitDecision{Reason: "asset_hash"}
 	}
-	if in.Origin != OriginFixture && in.Origin != OriginServer {
+	if in.Origin != OriginFixture && in.Origin != OriginServer && in.Origin != OriginModel {
 		return AdmitDecision{Reason: "not_fixture"}
 	}
 	if in.SelectedVersion != "" && in.SelectedVersion != in.ResultVersion {
@@ -224,9 +226,14 @@ func Admit(in AdmitInput) AdmitDecision {
 	return AdmitDecision{Show: true}
 }
 
-// RealGenerationCompleted 恒为假。夹具和本地测试图都不是模型出图。
-// 凭证是否存在不改变这个结论。
+// RealGenerationCompleted 恒为假。夹具、本地测试图和“凭证已配置”都不是保真通过。
+// 模型字节是否已解码由 SupplierDecoded 单独回答，不能借这个函数改成完成。
 func RealGenerationCompleted(bool, string) bool { return false }
+
+// SupplierDecoded 只承认来源是模型端点且摘要长度正确。它不表示主体保真或已扣费。
+func SupplierDecoded(origin, sha string) bool {
+	return origin == OriginModel && len(strings.TrimSpace(sha)) == 64
+}
 
 // ServerTaskInput 是服务端轮询到的任务事实。客户端请求体不在这里面。
 // CredentialConfigured 只说明凭证字符串是否存在，不能单独变成成功。

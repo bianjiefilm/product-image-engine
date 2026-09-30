@@ -125,7 +125,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
     <Card
       data-text-entry="true"
       data-show-image={view.showImage ? "true" : "false"}
-      data-text-result={view.showImage ? (job?.origin === "server" ? "server" : "fixture") : "none"}
+      data-text-result={view.showImage ? (job?.origin === "server" ? "server" : job?.origin === "model_http" ? "model" : "fixture") : "none"}
       data-photo-required="false"
       data-billing-passed="false"
       data-production-authorized="false"
@@ -133,7 +133,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
       <CardHeader>
         <CardTitle>只用文字描述</CardTitle>
         <CardDescription>
-          不上传实物照片也可以开始。能查看的图只来自服务端核对过的夹具或任务结果，不是模型出图。没有真实模型结果时仍标明真实出图未完成。
+          不上传实物照片也可以开始。夹具和任务结果可以查看，那不是模型出图。图像模型返回的字节可以打开，主体保真未核实，计费未通过，生产未授权。没有真实保真结果时仍标明真实出图未完成。
         </CardDescription>
       </CardHeader>
       <p>
@@ -159,8 +159,9 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
           <img
             alt={view.imageCaption}
             src={`/api/projects/${boundProject}/text-images/${job.id}/download`}
-            data-text-image-fixture={job?.origin === "server" ? undefined : "true"}
+            data-text-image-fixture={job?.origin === "fixture" ? "true" : undefined}
             data-text-image-server={job?.origin === "server" ? "true" : undefined}
+            data-text-image-model={job?.origin === "model_http" ? "true" : undefined}
             style={{ maxWidth: "100%" }}
           />
           <figcaption>{view.imageCaption}</figcaption>

@@ -326,7 +326,7 @@ func (s *Store) OpenTextImageDownload(ctx context.Context, tenantID, projectID, 
 }
 
 func trustedTextOrigin(origin string) bool {
-	return origin == textimage.OriginFixture || origin == textimage.OriginServer
+	return origin == textimage.OriginFixture || origin == textimage.OriginServer || origin == textimage.OriginModel
 }
 
 // TextImageServerResult 是服务端自己取得并保存的任务字节。资产编号不来自客户端。
@@ -337,6 +337,8 @@ type TextImageServerResult struct {
 	AssetID   string
 	MediaType string
 	Bytes     []byte
+	// Origin 为空时仍写 server。只允许 server 与 model_http。
+	Origin string
 }
 
 // CompleteTextImageServer 把服务端字节写成完成。已有资产或已选版本时返回原任务。
@@ -353,6 +355,13 @@ func (s *Store) CompleteTextImageServer(ctx context.Context, in TextImageServerR
 	}
 	if len(in.Bytes) == 0 {
 		return TextImageJob{}, false, fmt.Errorf("%w: 服务端图片字节为空", ErrValidation)
+	}
+	origin := strings.TrimSpace(in.Origin)
+	if origin == "" {
+		origin = textimage.OriginServer
+	}
+	if origin != textimage.OriginServer && origin != textimage.OriginModel {
+		return TextImageJob{}, false, fmt.Errorf("%w: 图片来源不受支持", ErrValidation)
 	}
 	sum := sha256.Sum256(in.Bytes)
 	gotSHA := hex.EncodeToString(sum[:])
@@ -379,14 +388,14 @@ func (s *Store) CompleteTextImageServer(ctx context.Context, in TextImageServerR
 		asset_id, tenant_id, project_id, job_id, input_version, sha256, media_type, origin, content, created_at)
 		VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		assetID, current.TenantID, current.ProjectID, current.ID, current.InputVersion, gotSHA,
-		in.MediaType, textimage.OriginServer, in.Bytes, now); err != nil {
+		in.MediaType, origin, in.Bytes, now); err != nil {
 		return TextImageJob{}, false, fmt.Errorf("store: 写入服务端图片失败: %w", err)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE text_image_jobs SET
 		job_status=?, output_asset_id=?, output_sha256=?, result_version=?, origin=?, updated_at=?
 		WHERE id=? AND tenant_id=? AND project_id=? AND output_asset_id='' AND selected_version=''
 		AND job_status IN (?,?,?)`,
-		textimage.StatusCompleted, assetID, gotSHA, assetID, textimage.OriginServer, now,
+		textimage.StatusCompleted, assetID, gotSHA, assetID, origin, now,
 		current.ID, current.TenantID, current.ProjectID,
 		textimage.StatusUnknown, textimage.StatusSubmitting, textimage.StatusQueued)
 	if err != nil {
