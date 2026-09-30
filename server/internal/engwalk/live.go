@@ -43,12 +43,19 @@ func liveAttempt(cfg config.Config) LiveFact {
 	return performLive(context.Background(), endpoint)
 }
 
-// pairedModelEndpoint 读取模型凭证对应的地址。
-// Config 没有与这三枚凭证成对的 URL 字段，因此返回空，调用方不得拨号。
+// pairedModelEndpoint 返回第一组成对的模型地址。
+// 凭证和地址必须同时非空，且属于同一模式。单独的地址或单独的凭证都不返回。
 func pairedModelEndpoint(cfg config.Config) string {
-	_ = cfg.TextImageModelCredential
-	_ = cfg.BgModelCredential
-	_ = cfg.LightModelCredential
+	pairs := [][2]string{
+		{cfg.TextImageModelCredential, cfg.TextImageModelURL},
+		{cfg.BgModelCredential, cfg.BgModelURL},
+		{cfg.LightModelCredential, cfg.LightModelURL},
+	}
+	for _, pair := range pairs {
+		if strings.TrimSpace(pair[0]) != "" && strings.TrimSpace(pair[1]) != "" {
+			return strings.TrimSpace(pair[1])
+		}
+	}
 	return ""
 }
 

@@ -64,6 +64,7 @@ type Config struct {
 	BgCreativeEnabled bool // FEATURE_BG_CREATIVE,默认 off
 	// BgModelCredential 只表示是否配置了真实模型凭证。值不回传、不入库。
 	BgModelCredential string // PRODUCT_BG_MODEL_CREDENTIAL,默认空
+	BgModelURL        string // PRODUCT_BG_MODEL_URL,默认空。只和背景凭证成对使用。
 
 	// --- HUI-1700 FEAT-0201:光影场景生成 ---
 	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
@@ -72,6 +73,7 @@ type Config struct {
 	LightCreativeEnabled bool // FEATURE_LIGHT_CREATIVE,默认 off
 	// LightModelCredential 只表示是否配置了图像模型凭证。值不回传、不入库。空则真实出图未完成。
 	LightModelCredential string // PRODUCT_LIGHT_MODEL_CREDENTIAL,默认空
+	LightModelURL        string // PRODUCT_LIGHT_MODEL_URL,默认空。只和光影凭证成对使用。
 
 	// --- HUI-1698 FEAT-0199:主体保真记录(不调用生成、不扣费) ---
 	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
@@ -84,6 +86,7 @@ type Config struct {
 	TextImageFixtureRegister bool // TEXT_IMAGE_FIXTURE_REGISTER,默认 off
 	// TextImageModelCredential 只表示是否配置了图像模型凭证。值不回传、不入库。空则真实出图未完成。
 	TextImageModelCredential string // PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL,默认空
+	TextImageModelURL        string // PRODUCT_TEXT_IMAGE_MODEL_URL,默认空。只和文生图凭证成对使用。
 
 	// --- HUI-1702 FEAT-0203:已有产品图发起展示视频 ---
 	// 默认开放入口。没有真实视频供应商时只记失败或待确认,不播放静图或假视频,不扣费。
@@ -143,16 +146,19 @@ func Load() Config {
 		BgReplaceEnabled:  getBoolEnv("FEATURE_BG_REPLACE", false),
 		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
 		BgModelCredential: os.Getenv("PRODUCT_BG_MODEL_CREDENTIAL"),
+		BgModelURL:        os.Getenv("PRODUCT_BG_MODEL_URL"),
 
 		LightSceneEnabled:    getBoolEnv("FEATURE_LIGHT_SCENE", false),
 		LightCreativeEnabled: getBoolEnv("FEATURE_LIGHT_CREATIVE", false),
 		LightModelCredential: os.Getenv("PRODUCT_LIGHT_MODEL_CREDENTIAL"),
+		LightModelURL:        os.Getenv("PRODUCT_LIGHT_MODEL_URL"),
 
 		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
 
 		TextToImageEnabled:       getBoolEnv("FEATURE_TEXT_TO_IMAGE", true),
 		TextImageFixtureRegister: getBoolEnv("TEXT_IMAGE_FIXTURE_REGISTER", false),
 		TextImageModelCredential: os.Getenv("PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL"),
+		TextImageModelURL:        os.Getenv("PRODUCT_TEXT_IMAGE_MODEL_URL"),
 
 		ShowcaseVideoEnabled: getBoolEnv("FEATURE_SHOWCASE_VIDEO", true),
 	}
