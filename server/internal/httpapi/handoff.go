@@ -564,6 +564,13 @@ func (s *Server) registerOutputBytes(ctx context.Context, tenant, projID, fileNa
 	}
 	sum := sha256.Sum256(data)
 	shaHex := hex.EncodeToString(sum[:])
+	// 同一份未保真模型字节不能改登记成可回执成果。
+	if hit, err := s.St.UndeliverableModelSHA(ctx, tenant, projID, shaHex); err != nil {
+		log.Printf("store error: %v", err)
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
+	} else if hit {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusConflict, unusableCandidateCode, unusableCandidateMsg}
+	}
 	// 重复提交幂等:同工程同内容已登记 → 返回既有输出(不二次登记)。
 	if existing, err := s.St.FindOutputByContent(ctx, tenant, projID, shaHex); err == nil {
 		return existing, true, nil

@@ -700,6 +700,54 @@ func TestTextImageFixtureRouteHiddenWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestModelTextImageBytesStayUnusableCandidates(t *testing.T) {
+	png := tinyPNG(t, 7, 5)
+	rt := &modelRoundTrip{png: png}
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		c.TextImageModelCredential = "secret-model-key"
+		c.TextImageModelURL = "https://images.example/v1"
+		c.TextImageModelName = "qwen-image-2.0-pro"
+		c.UploadBaseURL = "http://127.0.0.1:1"
+		c.UploadToken = "up-tok"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj := f.standaloneProject(t, tok)
+	jobID := f.openAndConfirmText(t, tok, proj, "未保真文字图")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["origin"] != "model_http" || job["show_image"] != true || job["real_generation_completed"] != false {
+		t.Fatalf("模型字节应可查看但未保真: %d %#v", st, job)
+	}
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/select", tok, nil)
+	assertNotUsableCandidate(t, st, selected)
+	st, got := f.do(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID, tok, nil)
+	gotJob, _ := got["job"].(map[string]any)
+	if st != http.StatusOK || gotJob["selected_version"] != "" {
+		t.Fatalf("拒绝后不能留下选定版本: %d %#v", st, gotJob)
+	}
+	st, hdr, body := f.doRaw(t, "GET", "/api/v1/projects/"+proj+"/text-images/"+jobID+"/download", tok, nil)
+	if st != http.StatusOK || !bytes.Equal(body, png) || hdr.Get("X-Text-Image-Origin") != "model_http" {
+		t.Fatalf("下载查看仍然允许: %d origin=%s n=%d", st, hdr.Get("X-Text-Image-Origin"), len(body))
+	}
+	eco := newEcoStub(t)
+	f.srv.Uploads = &platform.UploadClient{BaseURL: eco.srv.URL, AppID: "product-image", Token: "up-tok"}
+	st, registered := f.do(t, "POST", "/api/v1/projects/"+proj+"/outputs", tok, map[string]any{
+		"file_name": "model.png", "content_type": "image/png", "data_b64": b64(png),
+	})
+	assertNotUsableCandidate(t, st, registered)
+	if eco.uploads.Load() != 0 || rt.n.Load() != 1 {
+		t.Fatalf("挡住候选不能登记或重画: uploads=%d n=%d", eco.uploads.Load(), rt.n.Load())
+	}
+	st, other := f.do(t, "POST", "/api/v1/projects/"+proj+"/outputs", tok, map[string]any{
+		"file_name": "other.png", "content_type": "image/png", "data_b64": b64(tinyPNG(t, 3, 3)),
+	})
+	if st != http.StatusCreated || eco.uploads.Load() != 1 {
+		t.Fatalf("其他图片仍可登记: %d uploads=%d %#v", st, eco.uploads.Load(), other)
+	}
+}
+
 func trustedFixtureJob(t *testing.T, job map[string]any) bool {
 	t.Helper()
 	return job["show_image"] == true && job["origin"] == "fixture" && job["job_status"] == "completed" &&
