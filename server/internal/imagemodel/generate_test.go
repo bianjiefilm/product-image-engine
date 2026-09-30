@@ -252,6 +252,58 @@ func TestGenerateLoopbackHostsStayUnlive(t *testing.T) {
 	}
 }
 
+func TestCanvasSizeStaysInsideModelDomain(t *testing.T) {
+	if CanvasSize(800, 800) != "800x800" || CanvasSize(1024, 1024) != "1024x1024" {
+		t.Fatal("域内电商尺寸应原样送出")
+	}
+	if CanvasSize(0, 800) != "" || CanvasSize(100, 100) != "" || CanvasSize(4096, 4096) != "" {
+		t.Fatal("缺尺寸或域外尺寸不能伪装成已请求")
+	}
+	if notes := SizeNotes(0, 0, 2, 2); notes != nil {
+		t.Fatalf("没写项目尺寸时不应出说明: %#v", notes)
+	}
+	if notes := SizeNotes(100, 100, 100, 100); len(notes) != 1 || notes[0] != SizeOutOfDomainNote {
+		t.Fatalf("域外尺寸应说明未按该尺寸请求: %#v", notes)
+	}
+	if notes := SizeNotes(800, 800, 5, 4); len(notes) != 1 || notes[0] != SizeMismatchNote {
+		t.Fatalf("像素不一致应说明: %#v", notes)
+	}
+	if notes := SizeNotes(800, 800, 800, 800); notes != nil {
+		t.Fatalf("尺寸一致不是通过标记: %#v", notes)
+	}
+}
+
+func TestGenerateSendsRequestedSizeAndPixelSize(t *testing.T) {
+	pngBytes := solidPNG(t, color.NRGBA{R: 1, G: 2, B: 3, A: 255})
+	var seenSize string
+	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		seenSize, _ = body["size"].(string)
+		raw, _ := json.Marshal(map[string]any{
+			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytes)}},
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(string(raw))),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+	got, err := Generate(context.Background(), client, Request{
+		Endpoint:   "https://images.example/v1",
+		Credential: "secret-model-key",
+		Model:      "qwen-image-2.0-pro",
+		Prompt:     "杯子",
+		Size:       "800x800",
+	})
+	if err != nil || seenSize != "800x800" || got.WidthPx != 2 || got.HeightPx != 2 || got.BillingPassed {
+		t.Fatalf("应送出请求尺寸并读回像素: size=%s err=%v %+v", seenSize, err, got)
+	}
+}
+
 func TestGenerateRejectsUndecodableBody(t *testing.T) {
 	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		raw := `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString([]byte("not-an-image")) + `"}]}`

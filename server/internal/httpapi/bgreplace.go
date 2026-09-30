@@ -295,6 +295,15 @@ func (s *Server) handleSubmitBgReplace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, false)})
 }
 
+// projectCanvas 返回可送进模型的尺寸，以及项目上记录的宽高。查不到工程时三者都是空。
+func (s *Server) projectCanvas(ctx context.Context, tenant, projectID string) (string, int, int) {
+	proj, err := s.St.GetProject(ctx, tenant, projectID)
+	if err != nil {
+		return "", 0, 0
+	}
+	return imagemodel.CanvasSize(proj.WidthPx, proj.HeightPx), proj.WidthPx, proj.HeightPx
+}
+
 // finishCreativeBgModel 在已抢到提交之后，用已保存的原图调用背景模型。
 // 回环或计费标记为真时不保存字节。成功来源只记 model_http，不记供应商成功。
 func (s *Server) finishCreativeBgModel(w http.ResponseWriter, r *http.Request, p platform.Principal, job store.BgJob) {
@@ -303,11 +312,13 @@ func (s *Server) finishCreativeBgModel(w http.ResponseWriter, r *http.Request, p
 		s.closeBgModel(w, r, job, bgreplace.StatusFailed, "原图缺失")
 		return
 	}
+	size, projectW, projectH := s.projectCanvas(r.Context(), job.TenantID, job.ProjectID)
 	result, err := imagemodel.Generate(r.Context(), s.ImageHTTP, imagemodel.Request{
 		Endpoint:   s.Cfg.BgModelURL,
 		Credential: s.Cfg.BgModelCredential,
 		Model:      s.Cfg.BgModelName,
 		Prompt:     job.BackgroundIntent,
+		Size:       size,
 		Refs:       [][]byte{original},
 	})
 	if err != nil {
@@ -321,7 +332,11 @@ func (s *Server) finishCreativeBgModel(w http.ResponseWriter, r *http.Request, p
 		s.closeBgModel(w, r, job, bgreplace.StatusUnknown, "回环地址不能算供应商出图")
 		return
 	}
-	pending := bgreplace.AppendPending(job.Pending, bgreplace.RealGenerationIncomplete)
+	pending := job.Pending
+	for _, note := range imagemodel.SizeNotes(projectW, projectH, result.WidthPx, result.HeightPx) {
+		pending = bgreplace.AppendPending(pending, note)
+	}
+	pending = bgreplace.AppendPending(pending, bgreplace.RealGenerationIncomplete)
 	saved, already, err := s.St.SaveBgModelBytes(r.Context(), store.BgModelBytes{
 		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
 		MediaType: result.MediaType, Bytes: result.Bytes, Pending: pending,
