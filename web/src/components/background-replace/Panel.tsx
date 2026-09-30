@@ -11,6 +11,7 @@ import {
   REAL_GENERATION_INCOMPLETE,
   billingLine,
   quoteStale,
+  modelPlatePreview,
   showCreative,
   subjectLockPreview,
 } from "@/lib/bg-replace";
@@ -271,6 +272,17 @@ export function BackgroundReplacePanel({
     if (data?.job) setActive(data.job as Job);
   }
 
+  async function modelPlate() {
+    if (!active || !maskFile) return;
+    const mask = await fileBase64(maskFile);
+    const data = await send(
+      `/api/projects/${projectId}/background-replacements/${active.id}/model-plate`,
+      "POST",
+      { mask_png_base64: mask }
+    );
+    if (data?.job) setActive(data.job as Job);
+  }
+
   async function inspect() {
     const body: Record<string, unknown> = { ...axes, similarity_only: similarityOnly };
     if (similarity.trim() !== "") {
@@ -297,7 +309,7 @@ export function BackgroundReplacePanel({
           上传后默认保真,只改背景。Logo、包装文字、规格和结构不能被背景生成改写。{caps?.honesty ?? HONESTY}
         </CardDescription>
       </CardHeader>
-      <p className="muted">上传 → 确认报价 → 生成，或用背景图和蒙版锁定主体。锁定只换蒙版以外的像素。</p>
+      <p className="muted">上传 → 确认报价 → 生成，或用背景图和蒙版锁定主体。也可以只上传蒙版，让模型生成背景后再锁回主体像素。</p>
       <p>
         <Badge variant="warn">{bill || BILLING_PENDING}</Badge>{" "}
         <Badge>质量 {active?.quality ?? "unknown"}</Badge>{" "}
@@ -404,6 +416,22 @@ export function BackgroundReplacePanel({
             >
               锁定主体并换背景
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="bg-model-plate"
+              disabled={
+                busy ||
+                !active ||
+                stale ||
+                active.quote_status !== "confirmed" ||
+                (active.job_status !== "quoted" && active.job_status !== "generation_unavailable") ||
+                !maskFile
+              }
+              onClick={() => void modelPlate()}
+            >
+              用模型生成背景并锁定主体
+            </Button>
           </>
         ) : null}
       </div>
@@ -431,6 +459,15 @@ export function BackgroundReplacePanel({
                 src={`/api/projects/${projectId}/background-replacements/${active.id}/content`}
               />
               <p>主体像素已锁回。这不是模型出图。{REAL_GENERATION_INCOMPLETE}。不能作为可用候选。</p>
+            </div>
+          ) : null}
+          {active && modelPlatePreview(active.origin) ? (
+            <div data-testid="bg-model-plate-preview">
+              <img
+                alt="模型背景锁定后的预览"
+                src={`/api/projects/${projectId}/background-replacements/${active.id}/content`}
+              />
+              <p>模型只提供了背景。主体像素与原图一致。{REAL_GENERATION_INCOMPLETE}。计费未通过。</p>
             </div>
           ) : null}
           <div className="row" data-testid="bg-inspect">

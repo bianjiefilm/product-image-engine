@@ -4,10 +4,16 @@ export const PROTECTION_SCOPE = "logo,packaging_text,spec,structure";
 export const REAL_GENERATION_INCOMPLETE = "真实出图未完成";
 export const SUBJECT_LOCK_ORIGIN = "subject_lock";
 export const SUBJECT_LOCK_NOTICE = "主体像素已锁回，商品检查未完成";
+export const MODEL_PLATE_ORIGIN = "model_plate_lock";
 
 // subjectLockPreview 只在保真合成结果上显示预览。模型整图不是这个来源。
 export function subjectLockPreview(origin?: string | null): boolean {
   return origin === SUBJECT_LOCK_ORIGIN;
+}
+
+// modelPlatePreview 只显示模型背景板锁回主体后的预览。整图模型字节不是这个来源。
+export function modelPlatePreview(origin?: string | null): boolean {
+  return origin === MODEL_PLATE_ORIGIN;
 }
 
 const HONEST_BILLING = new Set(["配置缺失", "未实现", "作品完成待核对", "已包含额度", "待确认"]);
