@@ -16,7 +16,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"ECO_BILLING_ENABLED", "FEATURE_GENERATION_ENABLED",
 		"FEATURE_PHOTO_UPLOAD", "PRODUCT_PHOTO_MAX_BYTES",
 		"FEATURE_SIZE_ADAPT", "FEATURE_TEMPLATES", "FEATURE_SUBJECT_FIDELITY",
-		"FEATURE_BG_REPLACE", "FEATURE_BG_CREATIVE", "PRODUCT_BG_MODEL_CREDENTIAL", "PRODUCT_BG_MODEL_URL",
+		"FEATURE_BG_REPLACE", "FEATURE_BG_CREATIVE", "PRODUCT_BG_MODEL_CREDENTIAL", "PRODUCT_BG_MODEL_URL", "PRODUCT_BG_MODEL",
 		"TEXT_IMAGE_FIXTURE_REGISTER", "PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", "PRODUCT_TEXT_IMAGE_MODEL_URL", "PRODUCT_TEXT_IMAGE_MODEL",
 		"FEATURE_LIGHT_SCENE", "FEATURE_LIGHT_CREATIVE", "PRODUCT_LIGHT_MODEL_CREDENTIAL", "PRODUCT_LIGHT_MODEL_URL",
 	} {
@@ -53,7 +53,7 @@ func TestDefaultsAreSafe(t *testing.T) {
 	}
 	if c.BillingEnabled || c.GenerationEnabled || c.SizeAdaptEnabled ||
 		c.PhotoUploadEnabled || c.TemplatesEnabled || c.SubjectFidelityEnabled ||
-		c.BgReplaceEnabled || c.BgCreativeEnabled || c.BgRealModelConfigured() ||
+		c.BgReplaceEnabled || c.BgCreativeEnabled || c.BgRealModelConfigured() || c.BgModelName != "" || c.BgModelReady() ||
 		c.TextImageFixtureRegister || c.TextImageModelConfigured() || c.TextImageModelName != "" ||
 		c.LightSceneEnabled || c.LightCreativeEnabled || c.LightRealModelConfigured() {
 		t.Fatal("全部登记制/能力开关默认必须全 off")
@@ -182,5 +182,34 @@ func TestPhotoUploadGateMatrix(t *testing.T) {
 	c = Load()
 	if c.PhotoMaxBytes != 1024 {
 		t.Fatalf("PRODUCT_PHOTO_MAX_BYTES 应可配置, got %d", c.PhotoMaxBytes)
+	}
+}
+
+func TestBgModelNameEmptyCannotGenerate(t *testing.T) {
+	const secret = "secret-bg-key"
+	setEnvs(t, fullEnv())
+	t.Setenv("PRODUCT_BG_MODEL_CREDENTIAL", secret)
+	t.Setenv("PRODUCT_BG_MODEL_URL", "https://images.example/v1")
+	t.Setenv("PRODUCT_BG_MODEL", "")
+	c := Load()
+	if c.BgModelName != "" || c.BgModelReady() {
+		t.Fatal("空模型名不能出图")
+	}
+	for _, problem := range c.FatalProblems() {
+		if strings.Contains(problem, secret) {
+			t.Fatal("致命问题不能带上凭证")
+		}
+	}
+	if _, msg := c.GenerationUsable(); strings.Contains(msg, secret) {
+		t.Fatal("生成门不能带上凭证")
+	}
+	t.Setenv("PRODUCT_BG_MODEL", "qwen-image-2.0-pro")
+	c = Load()
+	if c.BgModelName != "qwen-image-2.0-pro" || !c.BgModelReady() {
+		t.Fatal("凭证、地址和模型名都有才可调用背景模型")
+	}
+	t.Setenv("PRODUCT_BG_MODEL_URL", "")
+	if Load().BgModelReady() {
+		t.Fatal("缺地址不能出图")
 	}
 }

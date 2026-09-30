@@ -65,6 +65,7 @@ type Config struct {
 	// BgModelCredential 只表示是否配置了真实模型凭证。值不回传、不入库。
 	BgModelCredential string // PRODUCT_BG_MODEL_CREDENTIAL,默认空
 	BgModelURL        string // PRODUCT_BG_MODEL_URL,默认空。只和背景凭证成对使用。
+	BgModelName       string // PRODUCT_BG_MODEL,默认空。空模型名不能出图。
 
 	// --- HUI-1700 FEAT-0201:光影场景生成 ---
 	// off 时路由不注册=404。创意路径另需生成开关与任务服务可用。
@@ -148,6 +149,7 @@ func Load() Config {
 		BgCreativeEnabled: getBoolEnv("FEATURE_BG_CREATIVE", false),
 		BgModelCredential: os.Getenv("PRODUCT_BG_MODEL_CREDENTIAL"),
 		BgModelURL:        os.Getenv("PRODUCT_BG_MODEL_URL"),
+		BgModelName:       os.Getenv("PRODUCT_BG_MODEL"),
 
 		LightSceneEnabled:    getBoolEnv("FEATURE_LIGHT_SCENE", false),
 		LightCreativeEnabled: getBoolEnv("FEATURE_LIGHT_CREATIVE", false),
@@ -229,6 +231,13 @@ func (c Config) BgRealModelConfigured() bool {
 	return strings.TrimSpace(c.BgModelCredential) != ""
 }
 
+// BgModelReady 只在凭证、地址和模型名都非空时为真。空模型名不能出图。不返回凭证。
+func (c Config) BgModelReady() bool {
+	return strings.TrimSpace(c.BgModelCredential) != "" &&
+		strings.TrimSpace(c.BgModelURL) != "" &&
+		strings.TrimSpace(c.BgModelName) != ""
+}
+
 // TextImageModelConfigured 只回答文生图凭证是否存在，不暴露凭证内容。
 func (c Config) TextImageModelConfigured() bool {
 	return strings.TrimSpace(c.TextImageModelCredential) != ""
@@ -240,10 +249,14 @@ func (c Config) LightRealModelConfigured() bool {
 	return strings.TrimSpace(c.LightModelCredential) != ""
 }
 
-// CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。
+// CreativePathAvailable 在创意开关打开，且背景模型或平台生成任务可用时为真。
+// 只配好图像模型时不必再等平台任务地址。
 func (c Config) CreativePathAvailable() bool {
 	if !c.BgCreativeEnabled {
 		return false
+	}
+	if c.BgModelReady() {
+		return true
 	}
 	st, _ := c.GenerationUsable()
 	return st == 0

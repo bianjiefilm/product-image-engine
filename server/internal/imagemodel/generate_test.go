@@ -1,11 +1,13 @@
 package imagemodel
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
@@ -26,6 +28,9 @@ func TestGenerateDecodesPNGAndKeepsLoopbackUnlive(t *testing.T) {
 		}
 		seenPrompt, _ = body["prompt"].(string)
 		seenModel, _ = body["model"].(string)
+		if _, ok := body["image"]; ok {
+			t.Fatal("没有参考图时 JSON 不带 image")
+		}
 		raw, _ := json.Marshal(map[string]any{
 			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytes)}},
 		})
@@ -106,8 +111,144 @@ func TestGenerateMissingCredentialDoesNotCall(t *testing.T) {
 		Model:    "qwen-image-2.0-pro",
 		Prompt:   "杯子",
 	})
-	if err == nil || !strings.Contains(err.Error(), "配置缺失") {
+	if err == nil || err.Error() != "配置缺失" {
 		t.Fatalf("缺凭证应是配置缺失, got %v", err)
+	}
+}
+
+func TestGenerateReferenceDataURLAndStripsCredentialOnOtherHost(t *testing.T) {
+	ref := solidPNG(t, color.NRGBA{R: 9, G: 8, B: 7, A: 255})
+	jpegRef := solidJPEG(t)
+	out := solidPNG(t, color.NRGBA{R: 1, G: 2, B: 3, A: 255})
+	var posts int
+	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost {
+			posts++
+			if r.URL.Host != "images.example" || !strings.HasSuffix(r.URL.Path, "/images/generations") {
+				t.Fatalf("应 POST 生成端点, got %s", r.URL)
+			}
+			if r.Header.Get("Authorization") != "Bearer secret-model-key" {
+				t.Fatal("生成端点应带 Bearer 凭证")
+			}
+			raw, _ := io.ReadAll(r.Body)
+			if bytes.Contains(raw, []byte("secret-model-key")) {
+				t.Fatal("凭证不能出现在 body")
+			}
+			var body map[string]any
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Fatal(err)
+			}
+			images, _ := body["image"].([]any)
+			if len(images) != 2 {
+				t.Fatalf("image 应为 data URL 数组: %#v", body["image"])
+			}
+			pngURL, _ := images[0].(string)
+			jpegURL, _ := images[1].(string)
+			if !strings.HasPrefix(pngURL, "data:image/png;base64,") || !strings.HasPrefix(jpegURL, "data:image/jpeg;base64,") {
+				t.Fatalf("媒体类型应沿用 sniff: %s %s", pngURL, jpegURL)
+			}
+			gotPNG, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(pngURL, "data:image/png;base64,"))
+			if err != nil || !bytes.Equal(gotPNG, ref) {
+				t.Fatal("png 参考图不一致")
+			}
+			gotJPEG, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(jpegURL, "data:image/jpeg;base64,"))
+			if err != nil || !bytes.Equal(gotJPEG, jpegRef) {
+				t.Fatal("jpeg 参考图不一致")
+			}
+			payload := `{"data":[{"url":"https://cdn.example/out.png"}],"billing_passed":true}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(payload)),
+				Header:     make(http.Header),
+				Request:    r,
+			}, nil
+		}
+		if r.URL.String() != "https://cdn.example/out.png" {
+			t.Fatalf("只应回捞响应里的地址, got %s", r.URL)
+		}
+		if r.Header.Get("Authorization") != "" {
+			t.Fatal("跟到另一个主机取 url 时不能带凭证")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(out)),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+	got, err := Generate(context.Background(), client, Request{
+		Endpoint:   "https://images.example/v1",
+		Credential: "secret-model-key",
+		Model:      "qwen-image-2.0-pro",
+		Prompt:     "浅灰棚拍",
+		Refs:       [][]byte{ref, jpegRef},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posts != 1 || !got.HostLive || got.BillingPassed || got.MediaType != "image/png" || !bytes.Equal(got.Bytes, out) {
+		t.Fatalf("参考图生成应可解码且未扣费: %+v posts=%d", got, posts)
+	}
+}
+
+func TestGenerateBadReferenceDoesNotCall(t *testing.T) {
+	var calls int
+	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		calls++
+		t.Fatal("参考图无法解码时不应拨号")
+		return nil, nil
+	})}
+	_, err := Generate(context.Background(), client, Request{
+		Endpoint:   "https://images.example/v1/images/generations",
+		Credential: "secret-model-key",
+		Model:      "qwen-image-2.0-pro",
+		Prompt:     "杯子",
+		Refs:       [][]byte{[]byte("not-an-image")},
+	})
+	if calls != 0 || err == nil || !strings.Contains(err.Error(), "图片无法解码") || strings.Contains(err.Error(), "secret-model-key") {
+		t.Fatalf("坏参考图应拒绝且不拨号, calls=%d err=%v", calls, err)
+	}
+}
+
+func TestGenerateEmptyModelDoesNotCall(t *testing.T) {
+	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("空模型名不应拨号")
+		return nil, nil
+	})}
+	_, err := Generate(context.Background(), client, Request{
+		Endpoint:   "https://images.example/v1/images/generations",
+		Credential: "secret-model-key",
+		Prompt:     "杯子",
+	})
+	if err == nil || err.Error() != "模型名缺失" {
+		t.Fatalf("空模型名不能出图, got %v", err)
+	}
+}
+
+func TestGenerateLoopbackHostsStayUnlive(t *testing.T) {
+	pngBytes := solidPNG(t, color.NRGBA{R: 3, G: 3, B: 3, A: 255})
+	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		raw, _ := json.Marshal(map[string]any{
+			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytes)}},
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(string(raw))),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+	for _, endpoint := range []string{
+		"http://127.0.0.1:9/v1/images/generations",
+		"http://localhost:9/v1/images/generations",
+		"http://[::1]:9/v1/images/generations",
+	} {
+		got, err := Generate(context.Background(), client, Request{
+			Endpoint: endpoint, Credential: "secret-model-key", Model: "qwen-image-2.0-pro", Prompt: "杯子",
+		})
+		if err != nil || got.HostLive || got.BillingPassed || len(got.Bytes) == 0 {
+			t.Fatalf("%s 回环不能算供应商出图: err=%v hostLive=%v billing=%v n=%d", endpoint, err, got.HostLive, got.BillingPassed, len(got.Bytes))
+		}
 	}
 }
 
@@ -154,4 +295,15 @@ func solidPNG(t *testing.T, c color.NRGBA) []byte {
 		t.Fatal(err)
 	}
 	return []byte(buf.String())
+}
+
+func solidJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 200, G: 10, B: 10, A: 255})
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
