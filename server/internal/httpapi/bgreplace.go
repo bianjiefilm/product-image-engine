@@ -336,6 +336,7 @@ func (s *Server) finishCreativeBgModel(w http.ResponseWriter, r *http.Request, p
 	for _, note := range imagemodel.SizeNotes(projectW, projectH, result.WidthPx, result.HeightPx) {
 		pending = bgreplace.AppendPending(pending, note)
 	}
+	pending = bgreplace.AppendPending(pending, result.UsageNote)
 	pending = bgreplace.AppendPending(pending, bgreplace.RealGenerationIncomplete)
 	saved, already, err := s.St.SaveBgModelBytes(r.Context(), store.BgModelBytes{
 		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,

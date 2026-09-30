@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -507,13 +508,14 @@ func assertBgBillingAndProductionStayFalse(t *testing.T, job map[string]any) {
 }
 
 type bgModelRT struct {
-	n      atomic.Int32
-	png    []byte
-	status int
-	auth   string
-	path   string
-	host   string
-	body   string
+	n          atomic.Int32
+	png        []byte
+	status     int
+	imageCount int
+	auth       string
+	path       string
+	host       string
+	body       string
 }
 
 func (m *bgModelRT) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -528,6 +530,9 @@ func (m *bgModelRT) RoundTrip(r *http.Request) (*http.Response, error) {
 		code = http.StatusOK
 	}
 	payload := `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(m.png) + `"}]}`
+	if m.imageCount > 0 {
+		payload = `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(m.png) + `"}],"usage":{"image_count":` + strconv.Itoa(m.imageCount) + `,"price":9.9}}`
+	}
 	if code != http.StatusOK {
 		payload = `{"error":{"message":"denied"}}`
 	}
@@ -681,6 +686,10 @@ func TestBackgroundReplaceModelReadyDoesNotNeedPlatformGeneration(t *testing.T) 
 	if st != http.StatusOK || job["job_status"] != "completed" || job["origin"] != "model_http" || tasks.Load() != 0 || rt.n.Load() != 1 {
 		t.Fatalf("配齐背景模型后不应再等平台生成开关: %d tasks=%d n=%d %#v", st, tasks.Load(), rt.n.Load(), job)
 	}
+	pending, _ := json.Marshal(job["pending"])
+	if !bytes.Contains(pending, []byte("供应商用量未返回")) {
+		t.Fatalf("没有用量时应说明未返回: %s", pending)
+	}
 	assertBgBillingAndProductionStayFalse(t, job)
 }
 
@@ -823,6 +832,38 @@ func TestModelBackgroundBytesStayUnusableCandidates(t *testing.T) {
 		t.Fatalf("挡住候选不能再次出图: n=%d %d", rt.n.Load(), st)
 	}
 	assertBgBillingAndProductionStayFalse(t, kept)
+}
+
+func TestBackgroundUsageCountIsNotAUserPrice(t *testing.T) {
+	original := tinyPNG(t, 4, 3)
+	out := tinyPNG(t, 6, 5)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: out, imageCount: 1}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, "http://127.0.0.1:1", up.srv.URL, func(c *config.Config) {
+		c.GenerationEnabled = false
+		c.BgModelCredential = "secret-model-key"
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "用量不是报价")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	raw, _ := json.Marshal(submitted)
+	job, _ := submitted["job"].(map[string]any)
+	pending, _ := json.Marshal(job["pending"])
+	if st != http.StatusOK || job["origin"] != "model_http" || !bytes.Contains(pending, []byte("供应商返回 1 张，不是用户报价")) || bytes.Contains(raw, []byte("9.9")) || bytes.Contains(raw, []byte("secret-model-key")) {
+		t.Fatalf("张数不能变成报价或泄露凭证: %d %s", st, raw)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	st, selected := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/select", tok, nil)
+	assertNotUsableCandidate(t, st, selected)
+	if rt.n.Load() != 1 {
+		t.Fatalf("记下用量不能再次出图: n=%d", rt.n.Load())
+	}
 }
 
 func bgJobByID(t *testing.T, body map[string]any, id string) map[string]any {

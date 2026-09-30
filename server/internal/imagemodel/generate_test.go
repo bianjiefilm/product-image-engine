@@ -325,6 +325,54 @@ func TestGenerateRejectsUndecodableBody(t *testing.T) {
 	}
 }
 
+func TestGenerateKeepsImageCountOutOfTheUserPrice(t *testing.T) {
+	pngBytes := solidPNG(t, color.NRGBA{R: 1, G: 2, B: 3, A: 255})
+	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		raw, _ := json.Marshal(map[string]any{
+			"data":  []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytes)}},
+			"usage": map[string]any{"image_count": 1, "price": 9.9},
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(raw)),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+	got, err := Generate(context.Background(), client, Request{
+		Endpoint:   "https://images.example/v1/images/generations",
+		Credential: "secret-model-key",
+		Model:      "qwen-image-2.0-pro",
+		Prompt:     "杯子",
+	})
+	if err != nil || got.ImageCount != 1 || got.UsageNote != "供应商返回 1 张，不是用户报价" || got.BillingPassed {
+		t.Fatalf("张数不能变成报价: err=%v %+v", err, got)
+	}
+	if strings.Contains(got.UsageNote, "9.9") {
+		t.Fatalf("用量说明不能带上回价: %s", got.UsageNote)
+	}
+	plain := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		raw, _ := json.Marshal(map[string]any{
+			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytes)}},
+		})
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(raw)),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+	missing, err := Generate(context.Background(), plain, Request{
+		Endpoint:   "https://images.example/v1/images/generations",
+		Credential: "secret-model-key",
+		Model:      "qwen-image-2.0-pro",
+		Prompt:     "杯子",
+	})
+	if err != nil || missing.ImageCount != 0 || missing.UsageNote != "供应商用量未返回" || missing.BillingPassed {
+		t.Fatalf("没有用量时应明确未返回: err=%v %+v", err, missing)
+	}
+}
+
 type roundFunc func(*http.Request) (*http.Response, error)
 
 func (f roundFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

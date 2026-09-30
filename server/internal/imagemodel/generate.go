@@ -31,6 +31,8 @@ const (
 	SizeMismatchNote = "输出尺寸与项目不一致"
 	// SizeOutOfDomainNote 说明项目尺寸不在模型像素域，请求没有改用这个尺寸。
 	SizeOutOfDomainNote = "项目尺寸不在模型像素域"
+	// UsageMissingNote 说明供应商没有返回可解释的张数。
+	UsageMissingNote = "供应商用量未返回"
 )
 
 // CanvasSize 只在宽高都为正，且像素数落在模型自由像素域时返回 WxH。
@@ -81,6 +83,28 @@ type Result struct {
 	StatusCode    int
 	WidthPx       int
 	HeightPx      int
+	ImageCount    int
+	UsageNote     string
+}
+
+// ExplainUsage 只读取 image_count。供应商回传的价格不会进入说明，也不能当成用户报价。
+func ExplainUsage(raw json.RawMessage) (int, string) {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return 0, UsageMissingNote
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return 0, UsageMissingNote
+	}
+	countRaw, ok := fields["image_count"]
+	if !ok {
+		return 0, UsageMissingNote
+	}
+	var count int
+	if err := json.Unmarshal(countRaw, &count); err != nil || count < 1 {
+		return 0, UsageMissingNote
+	}
+	return count, fmt.Sprintf("供应商返回 %d 张，不是用户报价", count)
 }
 
 // Generate 向端点 POST 一次。端点路径不是 /images/generations 时补上这一段。
@@ -150,10 +174,12 @@ func Generate(ctx context.Context, client *http.Client, req Request) (Result, er
 			URL     string `json:"url"`
 			B64JSON string `json:"b64_json"`
 		} `json:"data"`
+		Usage json.RawMessage `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil || len(parsed.Data) == 0 {
 		return Result{}, errors.New("供应商没有返回图片")
 	}
+	imageCount, usageNote := ExplainUsage(parsed.Usage)
 	item := parsed.Data[0]
 	var picture []byte
 	switch {
@@ -188,6 +214,8 @@ func Generate(ctx context.Context, client *http.Client, req Request) (Result, er
 		StatusCode:    resp.StatusCode,
 		WidthPx:       width,
 		HeightPx:      height,
+		ImageCount:    imageCount,
+		UsageNote:     usageNote,
 	}, nil
 }
 
