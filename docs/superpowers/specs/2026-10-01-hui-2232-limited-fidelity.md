@@ -15,8 +15,8 @@
 ## 消费端契约
 
 1. 新的限定图像调用使用 SDK v0.1.0 `task.submit`：POST `/internal/v1/tasks`，`app_id/account_id/project_id/capability=image.generate/idempotency_key/params/provider/billing`。付款人仅来自 `serverPayer` 已验证 principal；模型和 provider 来自服务端已核实配置；费用只来自 Bills.Quote 平台事实。
-2. 状态读取使用 `task.get` 并显式 app_id。解析平台真实 `result_json`（JSON string）、大写状态和 hold_id；拒绝响应 task_id 不匹配。旧 `result` 只作历史测试兼容，不代替真实资产解析。
-3. 先将原图 hash、mask hash、sample evidence hash、model/provider/size、payer、背景意图、quote ID/amount/version 与 Task 幂等键持久化，再确认、提交。任何字段改变需要重新报价；提交之后不可覆盖。
+2. 状态读取使用 `task.get` 并显式 app_id。解析平台真实 `result_json`（JSON string）、大写状态和 hold_id；拒绝响应 task_id 不匹配。只有 `result_json` 缺席时才使用旧 `result`。正式字段存在时始终独立解码并替换：外层 null、空/空白字符串、字符串中的 null 表示无成果；字符串中的 `{}` 表示空对象；非对象、坏 JSON、外层非字符串且非 null 均报错。不得合并旧资产或字节字段；这些空值不能作为成果证明。
+3. 先将原图 hash、mask hash、sample evidence hash、model/provider/size、payer、背景意图、本地报价引用/amount、平台 `QuoteUsageResult.pricing_version` 与实际 Task 幂等键持久化，再确认、提交。`PlateRequest.TaskIdempotencyKey` 与 `PricingVersion` 必须非空且纳入指纹；确认后换键或换版本均冲突。重开存储保留原键；缺少两字段的旧快照不得确认或 claim，不自动补值。后续 HTTP 只能从同一已持久化 Request 组装 SubmitImage（包括原 TaskIdempotencyKey），不能另收一个任意提交键。`QuoteID` 是现有本地引用字段，不声称平台定义了 quote_id/expiry。当前字段值仅测试 fixture；权威报价装配和实际 SubmitImage 绑定要在 Task 4 接口确认后验证。任何字段改变需要重新报价；提交之后不可覆盖。
 4. 数据库 CAS 从 confirmed→submitting，只有唯一获胜者调用平台。失败/超时记录 UNKNOWN；已知 task_id 只能 GET 恢复。无 task_id 的未知提交必须使用正式平台幂等键查询；如果平台尚无该操作，保持 UNKNOWN 并报告缺少契约，不盲目新提交。
 5. 平台成功后只打开该 Task 声明的真实 asset，经 Upload 元数据、下载和 SHA256 核对。保留 background-task asset 与确定性 composite asset 的区别，上传 composite 不能反向证明 Task 成功。无可信资产结果时不通过、不重生成。
 

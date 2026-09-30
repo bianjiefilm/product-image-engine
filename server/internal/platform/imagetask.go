@@ -42,20 +42,31 @@ func (c *TaskClient) SubmitImage(ctx context.Context, in ImageTaskRequest) (Task
 
 func decodeTaskStatus(body []byte, expectedID string) (TaskStatusResult, error) {
 	var raw struct {
-		TaskID     string         `json:"task_id"`
-		Status     string         `json:"status"`
-		HoldID     string         `json:"hold_id"`
-		Capability string         `json:"capability"`
-		Result     map[string]any `json:"result"`
-		ResultJSON string         `json:"result_json"`
+		TaskID     string          `json:"task_id"`
+		Status     string          `json:"status"`
+		HoldID     string          `json:"hold_id"`
+		Capability string          `json:"capability"`
+		Result     json.RawMessage `json:"result"`
+		ResultJSON json.RawMessage `json:"result_json"`
 	}
 	if json.Unmarshal(body, &raw) != nil || strings.TrimSpace(raw.TaskID) == "" || (expectedID != "" && raw.TaskID != expectedID) {
 		return TaskStatusResult{}, fmt.Errorf("task status: invalid task identity")
 	}
-	if raw.ResultJSON != "" {
-		if err := json.Unmarshal([]byte(raw.ResultJSON), &raw.Result); err != nil {
+	resultBody := raw.Result
+	if raw.ResultJSON != nil {
+		// Presence is authoritative, including an empty or null result. Never
+		// merge legacy asset/byte fields into the platform's current result.
+		var encoded string
+		if err := json.Unmarshal(raw.ResultJSON, &encoded); err != nil {
 			return TaskStatusResult{}, fmt.Errorf("task status: invalid result_json")
 		}
+		resultBody = []byte(strings.TrimSpace(encoded))
 	}
-	return TaskStatusResult{TaskID: raw.TaskID, Status: strings.ToLower(raw.Status), HoldID: raw.HoldID, Capability: raw.Capability, Result: raw.Result}, nil
+	var result map[string]any
+	if len(resultBody) > 0 {
+		if err := json.Unmarshal(resultBody, &result); err != nil {
+			return TaskStatusResult{}, fmt.Errorf("task status: invalid result object")
+		}
+	}
+	return TaskStatusResult{TaskID: raw.TaskID, Status: strings.ToLower(raw.Status), HoldID: raw.HoldID, Capability: raw.Capability, Result: result}, nil
 }

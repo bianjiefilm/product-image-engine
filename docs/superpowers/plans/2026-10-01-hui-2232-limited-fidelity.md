@@ -35,7 +35,7 @@
 **Interfaces:** `PreparePlateExecution`, `GetPlateExecution`, `ConfirmPlateExecution`, `ClaimPlateExecution`, `UpdatePlateTask` operate with tenant/project/job scope and immutable fingerprint; state transition confirmed→submitting occurs once.
 
 - [x] Red test two concurrent claims: sum of winners equals 1; repeated prepare returns same snapshot, changed mask/payer/model after confirmation conflicts; different tenant cannot read.
-- [x] Persist original/mask/evidence hashes, immutable params, quote ID/amount/payer, task idempotency key, task/hold IDs and recovery state before network effects.
+- [x] Persist original/mask/evidence hashes, immutable params, local quote reference/amount/payer, pricing version, task idempotency key, task/hold IDs and recovery state before network effects.
 - [x] UNKNOWN keeps same fingerprint; no expired-lease regeneration. TaskID lookup remains read-only.
 - [x] Run `GOWORK=off go test ./internal/store`.
 
@@ -45,7 +45,7 @@
 
 **Interfaces:** `VerifyCoverage(original,mask []byte,sample CoverageSample) (CoverageEvidence,error)` binds hashes, authorization provenance and all four axes to protected pixels.
 
-- [x] Red tests missing source/license/approval, wrong original hash, mask mismatch, omitted axis, out-of-bounds/empty region, uncovered text region, fully protected canvas all reject.
+- [x] Tests reject missing source/license/approval, wrong original hash, mask mismatch, omitted axis, out-of-bounds/empty region, uncovered text, fully protected/empty canvas and oversized/mismatched PNG dimensions. Initial red only covered the original cases; source/approval/canvas cases were added already-green during Fix1 review remediation.
 - [x] Positive authorized synthetic test establishes only deterministic contract success; no Provider PASS label.
 - [x] Keep coverage evidence tied to the same sample and canvas; pixel-equality checks cannot promote uncovered text. Runtime composite verification belongs to the deferred HTTP integration.
 - [x] Run `GOWORK=off go test ./internal/bgreplace`.
@@ -111,7 +111,8 @@ This payload is explicitly a transport fixture; it is not evidence of a producti
 
 ```go
 type PlateRequest struct {
-    PayerID, QuoteID string
+    PayerID, QuoteID string // QuoteID is a local reference, not an upstream quote_id assertion
+    TaskIdempotencyKey, PricingVersion string
     AmountMinor int64
     OriginalHash, MaskHash, CoverageHash string
     Model, Provider, Size, ParamsJSON string
@@ -189,10 +190,58 @@ if _, err := VerifyCoverage(original, mask, sample); err == nil {
 }
 ```
 
-Here the frozen packaging-text region is `[1,0,2,1]` while only `[0,0,1,1]` is protected. Equal pixels in the left area do not certify the unprotected text. Other fixtures cover missing license, wrong original/mask hash, omitted axis, uncovered region, and invalid region bounds.
+Here the frozen packaging-text region is `[1,0,2,1]` while only `[0,0,1,1]` is protected. Equal pixels in the left area do not certify the unprotected text. Fixtures now also cover missing source/license/approval, wrong original/mask hash, omitted axis, uncovered region, invalid bounds, full/empty masks, mismatched original/mask dimensions, and a 4097-wide PNG rejected by the frozen canvas limit.
 
 Red command: `GOWORK=off go test ./internal/bgreplace -run TestCoverage`; observed undefined CoverageSample/VerifyCoverage. Green command: `GOWORK=off go test ./internal/bgreplace ./internal/store`; expected/observed `ok`.
 
 ## Checkpoint verification and integration
 
 Run `cd server && GOWORK=off go test ./...` after final source changes; expected all 25 tested packages `ok`. Frontend is unchanged; its refreshed baseline is 20 files / 128 tests PASS, so a second identical run is unnecessary. Run `git diff --check` before explicit-file staging. Record actual SHA and incomplete HTTP/UI/true-service gates in the root report. Root owns spec/quality review and final branch decision; preserve both branches and the worktree.
+
+
+## Fix1 review remediation: exact component scope
+
+Review base: `87dad47f07b16165ed376d5beb689d598e8ea546`. Only `platform/imagetask.go`, its tests, `store/plateexecution.go`, its tests, and `bgreplace/coverage_test.go` change at runtime/test level; no HTTP/UI binding changes. Billing `QuoteUsageResult.PricingVersion` (`pricing_version`) exists in public-ai `internal/billing/unified_usage.go`; the actual quote adapter is still a prerequisite. Local `QuoteID` does not assert upstream quote_id/expiry. All prices/keys used below are fixtures.
+
+### I1 authoritative result replacement
+
+`decodeTaskStatus` reads `result` and `result_json` as `json.RawMessage` so absence is distinct from null. When `result_json` is present, legacy `result` is never decoded or merged. Outer null, empty/whitespace string and inner null yield nil Result. Inner `{}` yields an empty map. Malformed JSON, nonobject inner values and nonstring/non-null outer values fail without returning legacy evidence.
+
+Critical table assertion in `TestTaskFormalResultReplacesLegacyEvidence`:
+
+```go
+body := []byte(`{"task_id":"t","status":"SUCCEEDED","result":{"asset_id":"legacy","data_b64":"old"},"result_json":"{}"}`)
+got, err := decodeTaskStatus(body, "t")
+if err != nil || !reflect.DeepEqual(got.Result, map[string]any{}) {
+    t.Fatalf("legacy evidence retained: %#v %v", got.Result, err)
+}
+```
+
+Red command from `server`: `GOWORK=off go test ./internal/platform -run TestTaskFormalResultReplacesLegacyEvidence -count=1`. Observed FAIL for new-fields replacement, empty-object clearing, conflicting asset/bytes, outer-null/empty/whitespace behavior. After implementing fresh-map parsing the focused command below passed.
+
+### I2 durable submit identity and pricing version
+
+The two new strings are required by `PreparePlateExecution`, retained as request_json, and automatically included in the complete request fingerprint. `GetPlateExecution` rejects legacy snapshots missing either nonblank value; Confirm/Claim validate the saved request before their existing atomic mutations. No generation of fallback keys or guessed pricing versions is permitted.
+
+Critical test assertions in `TestPlateExecutionRequiresFrozenTaskKeyAndPricingVersion`:
+
+```go
+changed := in
+changed.Request.TaskIdempotencyKey = "another-key"
+if _, err := s.PreparePlateExecution(ctx, changed); !errors.Is(err, ErrConflict) {
+    t.Fatalf("confirmed key replaced: %v", err)
+}
+if err := s.ConfirmPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID, PlateFingerprint(changed)); !errors.Is(err, ErrConflict) {
+    t.Fatalf("changed key inherited confirmation: %v", err)
+}
+```
+
+The same assertion covers PricingVersion changes; blank/whitespace inputs reject before persistence. The existing SQLite close/reopen test now asserts identical TaskIdempotencyKey and PricingVersion after UNKNOWN. A legacy snapshot test rejects read/confirm/claim with missing identity. A separate recovery assertion uses the same TaskID with a different HoldID and requires ErrConflict.
+
+Red command from `server`: `GOWORK=off go test ./internal/store -run 'TestPlateExecutionRequiresFrozen|TestPlateFingerprint' -count=1`. Observed compile FAIL for undefined TaskIdempotencyKey/PricingVersion before implementation. A prior attempt from the repository root failed solely because that directory contains no Go module; it is not counted as the red test.
+
+Green command from `server`: `GOWORK=off go test ./internal/platform ./internal/store -run 'TestTaskFormalResultReplacesLegacyEvidence|TestPlateExecution|TestPlateFingerprint' -count=1` → both packages ok.
+
+Final scoped command: `GOWORK=off go test ./internal/platform ./internal/store ./internal/bgreplace ./internal/httpapi -count=1` → four packages ok. Required race check: `GOWORK=off go test -race ./internal/store ./internal/platform ./internal/bgreplace -count=1` → all three packages ok (store 13.235s, platform 2.134s, bgreplace 1.701s). The oversized PNG fixture was then strengthened with a matching 4097-wide mask to isolate the size limit; `GOWORK=off go test ./internal/bgreplace -run TestCoverage -count=1` passed after that test-only adjustment. Existing unchanged full-suite/frontend evidence is not rerun.
+
+Task 4 must assemble `ImageTaskRequest.IdempotencyKey` from `saved.Request.TaskIdempotencyKey`, alongside that same frozen payer/project/provider/params/amount. No separate caller-provided key is allowed. Persisting the fields is the scope of this fix; authoritative quote provenance and the actual HTTP→SubmitImage binding remain untested and incomplete until approved platform contracts arrive.

@@ -18,7 +18,7 @@ func TestPlateExecutionClaimsOnceAndFreezesQuote(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	job := insertSubmittingBg(t, s)
-	in := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Fingerprint: "immutable", Request: PlateRequest{PayerID: "payer", QuoteID: "quote", AmountMinor: 125, OriginalHash: "original", MaskHash: "mask", CoverageHash: "coverage", Model: "model", Provider: "xingmo", Size: "1024x1024", ParamsJSON: `{"prompt":"studio"}`, Mask: []byte("mask")}}
+	in := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Fingerprint: "immutable", Request: PlateRequest{PayerID: "payer", QuoteID: "quote", TaskIdempotencyKey: "task-key-fixture", PricingVersion: "pricing-fixture-v1", AmountMinor: 125, OriginalHash: "original", MaskHash: "mask", CoverageHash: "coverage", Model: "model", Provider: "xingmo", Size: "1024x1024", ParamsJSON: `{"prompt":"studio"}`, Mask: []byte("mask")}}
 	in.Fingerprint = PlateFingerprint(in)
 	got, err := s.PreparePlateExecution(ctx, in)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestPlateExecutionClaimsOnceAndFreezesQuote(t *testing.T) {
 		t.Fatal(err)
 	}
 	reopened, err := s.GetPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID)
-	if err != nil || reopened.Request.QuoteID != "quote" || reopened.Fingerprint != in.Fingerprint {
+	if err != nil || reopened.Request.QuoteID != "quote" || reopened.Request.TaskIdempotencyKey != "task-key-fixture" || reopened.Request.PricingVersion != "pricing-fixture-v1" || reopened.Fingerprint != in.Fingerprint {
 		t.Fatalf("lost snapshot %+v %v", reopened, err)
 	}
 	if _, err = s.GetPlateExecution(ctx, "other", in.ProjectID, in.JobID); !errors.Is(err, ErrNotFound) {
@@ -82,9 +82,9 @@ func TestPlateExecutionClaimsOnceAndFreezesQuote(t *testing.T) {
 }
 
 func TestPlateFingerprintBindsAuthorizationAndInputTuple(t *testing.T) {
-	base := PlateExecution{TenantID: "tenant", ProjectID: "project", JobID: "job", Request: PlateRequest{PayerID: "payer", QuoteID: "quote", MaskHash: "mask", OriginalHash: "original", AmountMinor: 123}}
+	base := PlateExecution{TenantID: "tenant", ProjectID: "project", JobID: "job", Request: PlateRequest{PayerID: "payer", QuoteID: "quote", TaskIdempotencyKey: "task-key-fixture", PricingVersion: "pricing-fixture-v1", MaskHash: "mask", OriginalHash: "original", AmountMinor: 123}}
 	want := PlateFingerprint(base)
-	for _, field := range []string{"tenant", "project", "payer", "quote", "mask", "original", "amount"} {
+	for _, field := range []string{"tenant", "project", "payer", "quote", "mask", "original", "amount", "task_key", "pricing_version"} {
 		changed := base
 		switch field {
 		case "tenant":
@@ -99,6 +99,10 @@ func TestPlateFingerprintBindsAuthorizationAndInputTuple(t *testing.T) {
 			changed.Request.MaskHash = "other"
 		case "original":
 			changed.Request.OriginalHash = "other"
+		case "task_key":
+			changed.Request.TaskIdempotencyKey = "other"
+		case "pricing_version":
+			changed.Request.PricingVersion = "other"
 		case "amount":
 			changed.Request.AmountMinor++
 		}
@@ -112,7 +116,7 @@ func TestPlateExecutionCannotSwapTaskOnRecovery(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	job := insertSubmittingBg(t, s)
-	in := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Fingerprint: "immutable", Request: PlateRequest{PayerID: "payer", QuoteID: "quote", AmountMinor: 1, OriginalHash: "a", MaskHash: "m", CoverageHash: "c", Model: "m", Provider: "p", Size: "s", ParamsJSON: `{}`, Mask: []byte("m")}}
+	in := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Fingerprint: "immutable", Request: PlateRequest{PayerID: "payer", QuoteID: "quote", TaskIdempotencyKey: "task-key-fixture", PricingVersion: "pricing-fixture-v1", AmountMinor: 1, OriginalHash: "a", MaskHash: "m", CoverageHash: "c", Model: "m", Provider: "p", Size: "s", ParamsJSON: `{}`, Mask: []byte("m")}}
 	in.Fingerprint = PlateFingerprint(in)
 	if _, err := s.PreparePlateExecution(ctx, in); err != nil {
 		t.Fatal(err)
@@ -122,7 +126,75 @@ func TestPlateExecutionCannotSwapTaskOnRecovery(t *testing.T) {
 	if err := s.UpdatePlateTask(ctx, in.TenantID, in.ProjectID, in.JobID, "running", "task-one", "hold-one"); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.UpdatePlateTask(ctx, in.TenantID, in.ProjectID, in.JobID, "completed", "task-one", "hold-other"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("hold substitution %v", err)
+	}
 	if err := s.UpdatePlateTask(ctx, in.TenantID, in.ProjectID, in.JobID, "completed", "task-other", "hold-other"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("task substitution %v", err)
+	}
+}
+
+func TestPlateExecutionRequiresFrozenTaskKeyAndPricingVersion(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	job := insertSubmittingBg(t, s)
+	in := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Request: PlateRequest{PayerID: "payer", QuoteID: "local-fixture", TaskIdempotencyKey: "persisted-key", PricingVersion: "fixture-v1", AmountMinor: 1, OriginalHash: "o", MaskHash: "m", CoverageHash: "c", Model: "m", Provider: "p", Size: "s", ParamsJSON: `{}`, Mask: []byte("m")}}
+	for _, field := range []string{"key", "pricing"} {
+		for _, value := range []string{"", "  "} {
+			bad := in
+			if field == "key" {
+				bad.Request.TaskIdempotencyKey = value
+			} else {
+				bad.Request.PricingVersion = value
+			}
+			if _, err := s.PreparePlateExecution(ctx, bad); !errors.Is(err, ErrValidation) {
+				t.Fatalf("missing %s accepted: %v", field, err)
+			}
+		}
+	}
+	prepared, err := s.PreparePlateExecution(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID, prepared.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"key", "pricing"} {
+		changed := in
+		if field == "key" {
+			changed.Request.TaskIdempotencyKey = "another-key"
+		} else {
+			changed.Request.PricingVersion = "fixture-v2"
+		}
+		if _, err := s.PreparePlateExecution(ctx, changed); !errors.Is(err, ErrConflict) {
+			t.Fatalf("confirmed %s replaced: %v", field, err)
+		}
+		if err := s.ConfirmPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID, PlateFingerprint(changed)); !errors.Is(err, ErrConflict) {
+			t.Fatalf("changed %s inherited confirmation: %v", field, err)
+		}
+	}
+	got, err := s.GetPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID)
+	if err != nil || got.State != "confirmed" || got.Request.TaskIdempotencyKey != "persisted-key" || got.Request.PricingVersion != "fixture-v1" {
+		t.Fatalf("snapshot changed: %+v %v", got, err)
+	}
+}
+
+func TestPlateExecutionLegacySnapshotCannotConfirmOrClaim(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	job := insertSubmittingBg(t, s)
+	// An old confirmed snapshot cannot acquire a new key or pricing version by default.
+	_, err := s.db.ExecContext(ctx, `INSERT INTO bg_plate_executions (tenant_id,project_id,job_id,fingerprint,request_json,state,updated_at) VALUES (?,?,?,'old','{}','confirmed','old')`, job.TenantID, job.ProjectID, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetPlateExecution(ctx, job.TenantID, job.ProjectID, job.ID); !errors.Is(err, ErrValidation) {
+		t.Fatalf("old snapshot read: %v", err)
+	}
+	if err := s.ConfirmPlateExecution(ctx, job.TenantID, job.ProjectID, job.ID, "old"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("old snapshot confirmed: %v", err)
+	}
+	if won, err := s.ClaimPlateExecution(ctx, job.TenantID, job.ProjectID, job.ID); won || !errors.Is(err, ErrValidation) {
+		t.Fatalf("old snapshot claimed: %v %v", won, err)
 	}
 }

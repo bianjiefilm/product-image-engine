@@ -6,9 +6,51 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestTaskFormalResultReplacesLegacyEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		formal  json.RawMessage
+		want    map[string]any
+		wantErr bool
+	}{
+		{name: "absent uses legacy", want: map[string]any{"asset_id": "legacy", "data_b64": "old-bytes"}},
+		{name: "new fields replace", formal: json.RawMessage(`"{\"model\":\"actual\"}"`), want: map[string]any{"model": "actual"}},
+		{name: "empty object clears", formal: json.RawMessage(`"{}"`), want: map[string]any{}},
+		{name: "conflicting asset", formal: json.RawMessage(`"{\"asset_id\":\"actual\"}"`), want: map[string]any{"asset_id": "actual"}},
+		{name: "conflicting bytes", formal: json.RawMessage(`"{\"data_b64\":\"new-bytes\"}"`), want: map[string]any{"data_b64": "new-bytes"}},
+		{name: "outer null clears", formal: json.RawMessage(`null`)},
+		{name: "inner null clears", formal: json.RawMessage(`"null"`)},
+		{name: "empty string clears", formal: json.RawMessage(`""`)},
+		{name: "whitespace clears", formal: json.RawMessage(`"  "`)},
+		{name: "array rejected", formal: json.RawMessage(`"[]"`), wantErr: true},
+		{name: "scalar rejected", formal: json.RawMessage(`"42"`), wantErr: true},
+		{name: "malformed rejected", formal: json.RawMessage(`"{"`), wantErr: true},
+		{name: "outer object rejected", formal: json.RawMessage(`{}`), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]any{"task_id": "t", "status": "SUCCEEDED", "result": map[string]any{"asset_id": "legacy", "data_b64": "old-bytes"}}
+			if tc.formal != nil {
+				body["result_json"] = tc.formal
+			}
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := decodeTaskStatus(raw, "t")
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, tc.wantErr)
+			}
+			if !tc.wantErr && !reflect.DeepEqual(got.Result, tc.want) {
+				t.Fatalf("result=%#v want=%#v", got.Result, tc.want)
+			}
+		})
+	}
+}
 
 func TestImageTaskUsesCanonicalPlatformContract(t *testing.T) {
 	calls := 0

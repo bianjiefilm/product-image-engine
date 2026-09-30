@@ -7,12 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
 // PlateRequest is frozen before confirmation. Mask bytes are never returned in UI views.
 type PlateRequest struct {
 	PayerID, QuoteID                     string
+	TaskIdempotencyKey, PricingVersion   string
 	AmountMinor                          int64
 	OriginalHash, MaskHash, CoverageHash string
 	Model, Provider, Size, ParamsJSON    string
@@ -39,7 +41,7 @@ func PlateFingerprint(in PlateExecution) string {
 
 func (s *Store) PreparePlateExecution(ctx context.Context, in PlateExecution) (PlateExecution, error) {
 	r := in.Request
-	if in.TenantID == "" || in.ProjectID == "" || in.JobID == "" || r.PayerID == "" || r.QuoteID == "" || r.AmountMinor <= 0 || r.OriginalHash == "" || r.MaskHash == "" || r.CoverageHash == "" || r.Model == "" || r.Provider == "" || r.Size == "" || len(r.Mask) == 0 || !json.Valid([]byte(r.ParamsJSON)) {
+	if in.TenantID == "" || in.ProjectID == "" || in.JobID == "" || r.PayerID == "" || r.QuoteID == "" || !r.hasSubmissionIdentity() || r.AmountMinor <= 0 || r.OriginalHash == "" || r.MaskHash == "" || r.CoverageHash == "" || r.Model == "" || r.Provider == "" || r.Size == "" || len(r.Mask) == 0 || !json.Valid([]byte(r.ParamsJSON)) {
 		return PlateExecution{}, ErrValidation
 	}
 	fingerprint := PlateFingerprint(in)
@@ -85,15 +87,28 @@ func (s *Store) GetPlateExecution(ctx context.Context, tenant, project, job stri
 	if err = json.Unmarshal([]byte(raw), &out.Request); err != nil {
 		return PlateExecution{}, err
 	}
+	if !out.Request.hasSubmissionIdentity() {
+		return PlateExecution{}, ErrValidation
+	}
 	return out, nil
 }
 
+func (r PlateRequest) hasSubmissionIdentity() bool {
+	return strings.TrimSpace(r.TaskIdempotencyKey) != "" && strings.TrimSpace(r.PricingVersion) != ""
+}
+
 func (s *Store) ConfirmPlateExecution(ctx context.Context, tenant, project, job, fingerprint string) error {
+	if _, err := s.GetPlateExecution(ctx, tenant, project, job); err != nil {
+		return err
+	}
 	res, err := s.db.ExecContext(ctx, `UPDATE bg_plate_executions SET state='confirmed',updated_at=? WHERE tenant_id=? AND project_id=? AND job_id=? AND fingerprint=? AND state IN ('quoted','confirmed')`, Now().Format(time.RFC3339Nano), tenant, project, job, fingerprint)
 	return requirePlateChange(res, err)
 }
 
 func (s *Store) ClaimPlateExecution(ctx context.Context, tenant, project, job string) (bool, error) {
+	if _, err := s.GetPlateExecution(ctx, tenant, project, job); err != nil {
+		return false, err
+	}
 	res, err := s.db.ExecContext(ctx, `UPDATE bg_plate_executions SET state='submitting',updated_at=? WHERE tenant_id=? AND project_id=? AND job_id=? AND state='confirmed' AND task_id=''`, Now().Format(time.RFC3339Nano), tenant, project, job)
 	if err != nil {
 		return false, err

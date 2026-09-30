@@ -15,7 +15,7 @@ func TestCoverageRequiresFrozenAuthorizationAndEveryAxis(t *testing.T) {
 	if err != nil || got.SampleID != good.ID || got.CoverageSHA256 == "" {
 		t.Fatalf("%+v %v", got, err)
 	}
-	for _, which := range []string{"license", "original", "mask", "axis", "uncovered", "bounds", "empty"} {
+	for _, which := range []string{"source", "approval", "license", "original", "mask", "axis", "uncovered", "bounds", "empty"} {
 		t.Run(which, func(t *testing.T) {
 			bad := good
 			bad.Regions = map[string][]CoverageRegion{}
@@ -23,6 +23,10 @@ func TestCoverageRequiresFrozenAuthorizationAndEveryAxis(t *testing.T) {
 				bad.Regions[k] = append([]CoverageRegion(nil), v...)
 			}
 			switch which {
+			case "source":
+				bad.Source = "  "
+			case "approval":
+				bad.ApprovalRef = ""
 			case "license":
 				bad.License = ""
 			case "original":
@@ -54,5 +58,35 @@ func TestCoverageCannotUsePixelEqualityToExcuseMissingText(t *testing.T) {
 	}
 	if _, err := VerifyCoverage(original, mask, sample); err == nil {
 		t.Fatal("equal protected pixels cannot prove unprotected text")
+	}
+}
+
+func TestCoverageRejectsEmptyFullOrMismatchedCanvas(t *testing.T) {
+	for _, name := range []string{"empty_mask", "full_mask", "original_dimensions", "mask_dimensions", "oversized_png"} {
+		t.Run(name, func(t *testing.T) {
+			original := solidPNG(t, 2, 1, color.NRGBA{R: 40, A: 255})
+			mask := maskPNG(t, [][]bool{{true, false}})
+			width := 2
+			switch name {
+			case "empty_mask":
+				mask = maskPNG(t, [][]bool{{false, false}})
+			case "full_mask":
+				mask = maskPNG(t, [][]bool{{true, true}})
+			case "original_dimensions":
+				original = solidPNG(t, 3, 1, color.NRGBA{R: 40, A: 255})
+			case "mask_dimensions":
+				mask = maskPNG(t, [][]bool{{true, false, false}})
+			case "oversized_png":
+				original = solidPNG(t, 4097, 1, color.NRGBA{R: 40, A: 255})
+				width = 4097
+				protected := make([]bool, width)
+				protected[0] = true
+				mask = maskPNG(t, [][]bool{protected})
+			}
+			sample := CoverageSample{ID: "fixture", Source: "test", License: "test", ApprovalRef: "test", Scope: "test", OriginalSHA256: ImageSHA(original), MaskSHA256: ImageSHA(mask), Width: width, Height: 1, Regions: map[string][]CoverageRegion{AxisLogo: {{0, 0, 1, 1}}, AxisPackagingText: {{0, 0, 1, 1}}, AxisSpec: {{0, 0, 1, 1}}, AxisStructure: {{0, 0, 1, 1}}}}
+			if _, err := VerifyCoverage(original, mask, sample); err == nil {
+				t.Fatal("invalid canvas accepted")
+			}
+		})
 	}
 }
