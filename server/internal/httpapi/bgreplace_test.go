@@ -652,6 +652,38 @@ func TestBackgroundReplaceCreativeModelStoresDecodedBytesWithoutBilling(t *testi
 	assertBgBillingAndProductionStayFalse(t, againJob)
 }
 
+func TestBackgroundReplaceModelReadyDoesNotNeedPlatformGeneration(t *testing.T) {
+	const secret = "secret-model-key"
+	original := tinyPNG(t, 4, 3)
+	out := tinyPNG(t, 5, 4)
+	var tasks atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tasks.Add(1)
+		http.Error(w, "platform task must not run", http.StatusBadGateway)
+	}))
+	t.Cleanup(taskSrv.Close)
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: out}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armCreativeBg(t, taskSrv.URL, up.srv.URL, func(c *config.Config) {
+		c.GenerationEnabled = false
+		c.BgModelCredential = secret
+		c.BgModelURL = "https://images.example/v1"
+		c.BgModelName = "qwen-image-2.0-pro"
+	})
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmCreative(t, tok, proj, in, "不靠平台任务")
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "completed" || job["origin"] != "model_http" || tasks.Load() != 0 || rt.n.Load() != 1 {
+		t.Fatalf("配齐背景模型后不应再等平台生成开关: %d tasks=%d n=%d %#v", st, tasks.Load(), rt.n.Load(), job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+}
+
 func TestBackgroundReplaceLoopbackModelBytesStayHidden(t *testing.T) {
 	const secret = "secret-model-key"
 	original := tinyPNG(t, 3, 3)

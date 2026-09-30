@@ -249,10 +249,14 @@ func (c Config) LightRealModelConfigured() bool {
 	return strings.TrimSpace(c.LightModelCredential) != ""
 }
 
-// CreativePathAvailable 只有创意开关与真实生成任务配置同时可用时才为真。
+// CreativePathAvailable 在创意开关打开，且背景模型或平台生成任务可用时为真。
+// 只配好图像模型时不必再等平台任务地址。
 func (c Config) CreativePathAvailable() bool {
 	if !c.BgCreativeEnabled {
 		return false
+	}
+	if c.BgModelReady() {
+		return true
 	}
 	st, _ := c.GenerationUsable()
 	return st == 0
