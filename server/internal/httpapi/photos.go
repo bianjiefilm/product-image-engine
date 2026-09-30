@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -195,7 +196,7 @@ func (s *Server) streamPhotoAsset(w http.ResponseWriter, r *http.Request, assetI
 			return
 		}
 	}
-	dlURL, dlCT, _, err := s.Uploads.PhotoDownloadURL(ctx, principal, assetID, 0)
+	dlURL, _, _, err := s.Uploads.PhotoDownloadURL(ctx, principal, assetID, 0)
 	if err != nil {
 		s.mapPlatformErr(w, "素材上传", err)
 		return
@@ -206,17 +207,28 @@ func (s *Server) streamPhotoAsset(w http.ResponseWriter, r *http.Request, assetI
 		return
 	}
 	defer rc.Close()
-	if ct == "" {
-		ct = dlCT
+	// 对象可能只有通用 MIME；回退只依据授权元数据或已真解码的本地照片。
+	// download-url 的声明不替代这些事实；显式冲突/不安全类型不作图片展示。
+	verifiedCT := meta.ContentType
+	if pa != nil {
+		verifiedCT = pa.MediaType
 	}
-	if ct == "" {
-		ct = meta.ContentType
+	if parsed, _, err := mime.ParseMediaType(ct); err == nil {
+		ct = parsed
 	}
-	// 只以图片类型回传(显示语义),其余一律 octet-stream;绝不当作可执行输入。
-	if !strings.HasPrefix(ct, "image/") {
+	switch verifiedCT {
+	case "image/jpeg", "image/png", "image/webp":
+		switch ct {
+		case "", "application/octet-stream", verifiedCT:
+			ct = verifiedCT
+		default:
+			ct = "application/octet-stream"
+		}
+	default:
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if clen > 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(clen))
 	} else if meta.SizeBytes > 0 {
