@@ -8,8 +8,10 @@ import {
   creativeChoice,
   quoteStale,
   showCreative,
+  subjectLockPreview,
   PROTECTION_SCOPE,
   REAL_GENERATION_INCOMPLETE,
+  SUBJECT_LOCK_ORIGIN,
 } from "@/lib/bg-replace";
 
 describe("背景替换诚实文案", () => {
@@ -74,5 +76,16 @@ describe("背景替换诚实文案", () => {
     expect(panel).toContain("@/components/ui/button");
     expect(panel).not.toContain("计费已通过");
     expect(panel).not.toContain("生产出图已经通过");
+    expect(panel).toContain("锁定主体并换背景");
+    expect(panel).toContain("subjectLockPreview");
+    expect(panel).toContain("/content");
+    expect(panel).not.toContain("9.9");
+  });
+
+  it("只有主体锁定结果才显示预览", () => {
+    expect(subjectLockPreview(SUBJECT_LOCK_ORIGIN)).toBe(true);
+    expect(subjectLockPreview("model_http")).toBe(false);
+    expect(subjectLockPreview("")).toBe(false);
+    expect(subjectLockPreview(undefined)).toBe(false);
   });
 });

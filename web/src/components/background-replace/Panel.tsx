@@ -12,6 +12,7 @@ import {
   billingLine,
   quoteStale,
   showCreative,
+  subjectLockPreview,
 } from "@/lib/bg-replace";
 
 interface InputOpt {
@@ -61,6 +62,7 @@ interface Job {
   real_generation_notice?: string;
   product_checks?: Checks;
   export_count?: number;
+  origin?: string;
 }
 
 interface Sample {
@@ -100,6 +102,8 @@ export function BackgroundReplacePanel({
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [plateFile, setPlateFile] = useState<File | null>(null);
+  const [maskFile, setMaskFile] = useState<File | null>(null);
   const [axes, setAxes] = useState<Record<AxisKey, string>>({
     logo: "unknown",
     packaging_text: "unknown",
@@ -242,6 +246,31 @@ export function BackgroundReplacePanel({
     if (data?.job) setActive(data.job as Job);
   }
 
+  function fileBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result ?? "");
+        const comma = text.indexOf(",");
+        resolve(comma >= 0 ? text.slice(comma + 1) : text);
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function lockSubject() {
+    if (!active || !plateFile || !maskFile) return;
+    const plate = await fileBase64(plateFile);
+    const mask = await fileBase64(maskFile);
+    const data = await send(
+      `/api/projects/${projectId}/background-replacements/${active.id}/lock`,
+      "POST",
+      { plate_png_base64: plate, mask_png_base64: mask }
+    );
+    if (data?.job) setActive(data.job as Job);
+  }
+
   async function inspect() {
     const body: Record<string, unknown> = { ...axes, similarity_only: similarityOnly };
     if (similarity.trim() !== "") {
@@ -268,7 +297,7 @@ export function BackgroundReplacePanel({
           上传后默认保真,只改背景。Logo、包装文字、规格和结构不能被背景生成改写。{caps?.honesty ?? HONESTY}
         </CardDescription>
       </CardHeader>
-      <p className="muted">上传 → 选择保真模式 → 确认报价 → 生成 → 检查 → 选择/导出</p>
+      <p className="muted">上传 → 确认报价 → 生成，或用背景图和蒙版锁定主体。锁定只换蒙版以外的像素。</p>
       <p>
         <Badge variant="warn">{bill || BILLING_PENDING}</Badge>{" "}
         <Badge>质量 {active?.quality ?? "unknown"}</Badge>{" "}
@@ -339,6 +368,44 @@ export function BackgroundReplacePanel({
         >
           生成背景
         </Button>
+        {mode === "fidelity" ? (
+          <>
+            <label>
+              背景图 PNG
+              <input
+                data-testid="bg-plate"
+                type="file"
+                accept="image/png"
+                onChange={(e) => setPlateFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label>
+              主体蒙版 PNG
+              <input
+                data-testid="bg-mask"
+                type="file"
+                accept="image/png"
+                onChange={(e) => setMaskFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={
+                busy ||
+                !active ||
+                stale ||
+                active.quote_status !== "confirmed" ||
+                (active.job_status !== "quoted" && active.job_status !== "generation_unavailable") ||
+                !plateFile ||
+                !maskFile
+              }
+              onClick={() => void lockSubject()}
+            >
+              锁定主体并换背景
+            </Button>
+          </>
+        ) : null}
       </div>
       {active ? (
         <div style={{ marginTop: 16 }}>
@@ -357,6 +424,15 @@ export function BackgroundReplacePanel({
           <p>待确认:{(active.pending ?? []).join("；") || "无"}</p>
           <p className="muted">{active.honesty || HONESTY}</p>
           <p className="muted">{realNotice || REAL_GENERATION_INCOMPLETE}</p>
+          {active && subjectLockPreview(active.origin) ? (
+            <div data-testid="bg-lock-preview">
+              <img
+                alt="主体锁定后的预览"
+                src={`/api/projects/${projectId}/background-replacements/${active.id}/content`}
+              />
+              <p>主体像素已锁回。这不是模型出图。{REAL_GENERATION_INCOMPLETE}。不能作为可用候选。</p>
+            </div>
+          ) : null}
           <div className="row" data-testid="bg-inspect">
             {(Object.keys(axisLabel) as AxisKey[]).map((key) => (
               <div key={key}>

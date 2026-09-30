@@ -327,7 +327,7 @@ func (s *Store) OpenBgResult(ctx context.Context, tenantID, projectID, jobID str
 	if err != nil {
 		return "", nil, err
 	}
-	if job.JobStatus != "completed" || job.OutputAssetID == "" || job.Origin != bgResultOrigin {
+	if job.JobStatus != "completed" || job.OutputAssetID == "" || !openableBgOrigin(job.Origin) {
 		return "", nil, ErrNotFound
 	}
 	var blobTenant, blobProject, blobJob, blobSHA, media, origin string
@@ -343,10 +343,84 @@ func (s *Store) OpenBgResult(ctx context.Context, tenantID, projectID, jobID str
 	}
 	sum := sha256.Sum256(content)
 	fileSHA := hex.EncodeToString(sum[:])
-	if blobTenant != tenantID || blobProject != projectID || blobJob != job.ID || origin != bgResultOrigin || fileSHA != blobSHA {
+	if blobTenant != tenantID || blobProject != projectID || blobJob != job.ID || origin != job.Origin || fileSHA != blobSHA {
 		return "", nil, fmt.Errorf("%w: 文件字节与登记不一致", ErrConflict)
 	}
 	return media, content, nil
+}
+
+func openableBgOrigin(origin string) bool {
+	return origin == bgResultOrigin || origin == bgSubjectLockOrigin
+}
+
+// bgSubjectLockOrigin 是保真合成字节。不是模型出图，也不是计费通过。
+const bgSubjectLockOrigin = "subject_lock"
+
+// SaveBgLockedBytes 把主体锁定后的 PNG 写进原任务。已锁定的记录保持原字节。
+// 只接受尚未提交的报价或生成不可用记录，不写计费，deliverable 保持 0。
+func (s *Store) SaveBgLockedBytes(ctx context.Context, in BgModelBytes) (BgJob, bool, error) {
+	if in.MediaType != "image/png" {
+		return BgJob{}, false, fmt.Errorf("%w: 图片媒体类型不受支持", ErrValidation)
+	}
+	if len(in.Bytes) == 0 {
+		return BgJob{}, false, fmt.Errorf("%w: 图片字节为空", ErrValidation)
+	}
+	current, err := s.GetBgJob(ctx, in.TenantID, in.ProjectID, in.JobID)
+	if err != nil {
+		return BgJob{}, false, err
+	}
+	if current.Origin == bgSubjectLockOrigin && current.OutputAssetID != "" {
+		return current, true, nil
+	}
+	if current.JobStatus == "failed" || current.JobStatus == "quota_insufficient" {
+		return BgJob{}, false, fmt.Errorf("%w: 失败记录不能改成完成", ErrConflict)
+	}
+	if current.JobStatus != "quoted" && current.JobStatus != "generation_unavailable" {
+		return BgJob{}, false, fmt.Errorf("%w: 当前背景任务不能锁定", ErrConflict)
+	}
+	if current.OutputAssetID != "" || current.Origin != "" {
+		return BgJob{}, false, fmt.Errorf("%w: 当前背景任务不能锁定", ErrConflict)
+	}
+	sum := sha256.Sum256(in.Bytes)
+	shaHex := hex.EncodeToString(sum[:])
+	assetID := newID("bgimg")
+	pending := in.Pending
+	if pending == nil {
+		pending = current.Pending
+	}
+	pendingJSON, err := json.Marshal(pending)
+	if err != nil {
+		return BgJob{}, false, err
+	}
+	now := Now().Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return BgJob{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO bg_result_blobs (
+		asset_id, tenant_id, project_id, job_id, sha256, media_type, origin, content, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?)`,
+		assetID, current.TenantID, current.ProjectID, current.ID, shaHex, in.MediaType, bgSubjectLockOrigin, in.Bytes, now); err != nil {
+		return BgJob{}, false, fmt.Errorf("store: 写入背景字节失败: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE bg_replace_jobs SET
+		job_status=?, output_asset_id=?, output_version=?, deliverable=0, origin=?, pending_json=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND project_id=? AND output_asset_id='' AND origin='' AND job_status IN ('quoted','generation_unavailable')`,
+		"completed", assetID, assetID, bgSubjectLockOrigin, string(pendingJSON), now,
+		current.ID, current.TenantID, current.ProjectID)
+	if err != nil {
+		return BgJob{}, false, fmt.Errorf("store: 写入背景结果失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		return BgJob{}, false, fmt.Errorf("%w: 背景结果没有写上原任务", ErrConflict)
+	}
+	if err := tx.Commit(); err != nil {
+		return BgJob{}, false, err
+	}
+	saved, err := s.GetBgJob(ctx, current.TenantID, current.ProjectID, current.ID)
+	return saved, false, err
 }
 
 func boolInt(v bool) int {
