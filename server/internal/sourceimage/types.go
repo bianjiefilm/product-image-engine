@@ -66,3 +66,12 @@ type Outbox struct {
 	State, Reason, LastError                  string
 	Attempts, RetryAt, LeaseEpoch, LeaseUntil int64
 }
+
+type ContextFact struct {
+	Resolved, PayerKnown                                                           bool
+	AppID, UserID, TenantID, Role, PayerAccountID, PayerSource, MemberRole, Reason string
+}
+type ContextQuery struct {
+	AppID, UserID, TenantID, SourceRef string
+	ReadOnly                           bool
+}
