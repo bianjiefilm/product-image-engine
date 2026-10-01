@@ -16,8 +16,11 @@ Checkout does not persist its token. The repository's `PUBLIC_AI_SDK_READ_KEY`
 secret must be a dedicated **readonly deploy key registered only on public-ai**.
 Only the locked dependency-download step writes it to a private temporary
 directory, uses strict pinned GitHub host verification over SSH443, and removes
-the directory on shell exit. The environment-only URL rewrite matches only the
-public-ai repository. No client OAuth credential or global Git configuration is
+the directory on shell exit. Git's environment-only URL rewrite matches the
+public-ai URL prefix; a similarly prefixed repository name can also be routed to
+the same pinned GitHub SSH host. Actual repository access is limited by the
+public-ai-only readonly deploy key and locked module/checksum, not by prefix
+matching. No client OAuth credential or global Git configuration is
 reused. Go module version and go.sum remain authoritative; missing credentials
 fail the step. The key is not passed to Web tests.
 Private-module authentication does not grant product IAM or billing authority.
