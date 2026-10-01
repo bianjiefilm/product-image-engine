@@ -107,6 +107,11 @@ func (s *Store) CancelSourceRun(ctx context.Context, scope si.Scope, id string) 
 		if e = sourceProjectWritable(ctx, c, r); e != nil {
 			return e
 		}
+		if r.Phase == "succeeded" || r.Phase == "failed" || r.Phase == "canceled" || r.Phase == "not_dispatched" ||
+			r.Task != nil && (r.Task.Status == "succeeded" || r.Task.Status == "failed" || r.Task.Status == "canceled") {
+			out = r
+			return si.ErrConflict
+		}
 		if r.CancelRequested {
 			out = r
 			return nil

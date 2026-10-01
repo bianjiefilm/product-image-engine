@@ -18,6 +18,19 @@ func sourceDelay(id string, attempts int64) int64 {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", id, attempts)))
 	return d + int64(sum[0])%(d/10+1)
 }
+
+func sourceLocalTerminal(phase string) bool {
+	return phase == "succeeded" || phase == "failed" || phase == "canceled" || phase == "not_dispatched"
+}
+func sourceTaskTerminalPhase(status string) string {
+	switch status {
+	case "succeeded":
+		return "asset_pending"
+	case "failed", "canceled":
+		return "review_required"
+	}
+	return ""
+}
 func (s *Service) taskError(ctx context.Context, r si.Run, cause error) (si.Run, error) {
 	in := r
 	in.LastError = "platform_unknown"
@@ -31,10 +44,18 @@ func (s *Service) taskError(ctx context.Context, r si.Run, cause error) (si.Run,
 	case errors.Is(cause, si.ErrNotFound) || errors.Is(cause, si.ErrForbidden):
 		in.LastError = "authorization_changed"
 	}
-	if r.CancelRequested && r.SubmitAttempted {
-		in.Phase = "cancel_pending"
-	} else if r.Task == nil && r.SubmitAttempted && (errors.Is(cause, si.ErrUnavailable) || errors.Is(cause, si.ErrInvariant)) {
-		in.Phase = "provider_unknown"
+	if !sourceLocalTerminal(r.Phase) {
+		terminal := ""
+		if r.Task != nil {
+			terminal = sourceTaskTerminalPhase(r.Task.Status)
+		}
+		if terminal != "" {
+			in.Phase = terminal
+		} else if r.CancelRequested && r.SubmitAttempted {
+			in.Phase = "cancel_pending"
+		} else if r.Task == nil && r.SubmitAttempted && (errors.Is(cause, si.ErrUnavailable) || errors.Is(cause, si.ErrInvariant)) {
+			in.Phase = "provider_unknown"
+		}
 	}
 	delay := sourceDelay(r.ID, r.Attempts)
 	now := s.now().Unix()
@@ -65,22 +86,15 @@ func (s *Service) observeTask(ctx context.Context, r si.Run, f si.TaskFact, fini
 	in.LastError = ""
 	in.Phase = "task_linked"
 	switch {
+	case sourceTaskTerminalPhase(f.Status) != "":
+		in.Phase = sourceTaskTerminalPhase(f.Status)
 	case r.CancelRequested:
-		in.Phase = "cancel_pending"
-	case f.Status == "succeeded":
-		in.Phase = "asset_pending"
-	case f.Status == "failed":
-		in.Phase = "review_required"
-	case f.Status == "canceled":
 		in.Phase = "cancel_pending"
 	case f.Phase == "provider_unknown":
 		in.Phase = "provider_unknown"
 		in.LastError = "provider_unknown"
 	}
-	if f.Status == "canceled" && !r.CancelRequested { // observed platform cancellation, not a user flag
-		in.Phase = "review_required"
-	}
-	if r.Phase == "succeeded" || r.Phase == "failed" || r.Phase == "canceled" {
+	if sourceLocalTerminal(r.Phase) {
 		in.Phase = r.Phase
 	}
 	delay := sourceDelay(r.ID, r.Attempts)

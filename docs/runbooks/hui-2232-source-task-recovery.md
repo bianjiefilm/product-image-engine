@@ -95,3 +95,44 @@ HUI-2232 is not deployed or closed, and structured fidelity is not claimed.
 Final checkpoint: fresh scoped race PASS flow29.332s/image1.877s/store18.846s/
 platform1.561s. Final all-server normal PASS (flow6.657s; unchanged packages cached),
 all-server vet exit0, module verification all modules verified, diff check exit0.
+
+## Independent Task5 terminal-cancellation correction
+
+The independent review of e620095 returned CHANGES for P2 terminal cancellation.
+Its original six-case RED (flow0.640s) and expanded nine-case RED (flow0.903s)
+remain in the orchestration archive. This narrow correction does not advance
+Task6 or change financial/output authority. The archived independent HTTP cases
+are now permanent author-tree regression tests, renamed to the Source test suite;
+the reviewer worktree was read only and subsequently cleaned by its owner.
+
+Author actual pre-fix RED reproduced all nine cases (flow0.981s): already known
+succeeded/failed/canceled Task could be canceled locally into false pending; a
+terminal result arriving after cancellation intent was hidden; and a failed
+original GET reprojected historical cancellation intent over verified terminal
+facts. Additional actual RED tests exposed the same projection on local terminal
+rows with SQL NULL Task and terminal cancellation mutating local terminal rows.
+These are preserved failures, not superseded by the earlier normal/race checks.
+
+Cancel now checks complete original scope and current project owner/archive/delete
+first, in its existing transaction. An already stored terminal Task or local
+terminal phase returns original run with stable conflict and changes no flag,
+revision, event or other fact. Task observation prioritizes succeeded as
+asset_pending and failed/canceled as review_required, ahead of cancellation
+intent. Existing local terminal phase stays unchanged. Error recording follows
+the same priority and cannot project known terminal facts into cancel_pending.
+Historical cancel_requested is never cleared. Task6 must verify original Task,
+Bill and output facts before local finalization; cancellation intent is not a
+release/refund or failure authority.
+
+The nine published-SDK HTTP cases pass with no terminal Task POST/Cancel, no Bill
+GET/write, unchanged original Bill facts, no usable local output and unchanged
+known terminal run on a rejected Cancel. Additional regression tests cover four
+local terminal phases with SQL NULL Task, preservation under unknown errors,
+foreign full scope, archive/deletion and changed owner before the terminal guard.
+Initial targeted GREEN: sourceflow0.726s/store0.995s. Final fresh full-server normal,
+sourceflow/store race, vet and diff checks are recorded at the fix checkpoint.
+
+Fix final checks: fresh full-server `go test ./... -count=1` PASS
+(flow5.447s/store5.294s/httpapi8.502s/platform4.117s). Fresh Source race PASS
+flow28.933s/store18.011s; all-server vet exit0; diff check exit0. No SDK pin,
+configuration, server/provider, money operation, migration or Task6 changes.
