@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
+	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
 	"github.com/bianjiefilm/product-image-engine/server/internal/billassemble"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
@@ -48,6 +49,9 @@ type Server struct {
 	// ImageHTTP 只发给已配置的图像端点。nil 时由调用方自建超时客户端。
 	// 测试用它替换传输，避免真的拨号。
 	ImageHTTP *http.Client
+	// PlateCoverage 是服务端冻结的主体覆盖样本，不从浏览器读取。
+	// 为空表示没有已授权样本，模型背景不会出图。
+	PlateCoverage *bgreplace.CoverageSample
 
 	// batchSubmitSem 批量提交进程内信号量(HUI-1704 拍板:并发上限 4,超出排队)。
 	// 惰性初始化;semMu 仅保护初始化。
