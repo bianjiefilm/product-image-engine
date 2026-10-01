@@ -35,18 +35,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-          cache-dependency-path: server/go.sum
+          cache: false
       - name: Download locked private SDK and dependencies
         working-directory: server
         env:
-          MODULE_AUTH_BASIC: ${{ secrets.MODULE_AUTH_BASIC }}
-          GIT_CONFIG_COUNT: '1'
-          GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
-          GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic ${{ secrets.MODULE_AUTH_BASIC }}'
+          SDK_DEPLOY_KEY: ${{ secrets.PUBLIC_AI_SDK_READ_KEY }}
           GIT_TERMINAL_PROMPT: '0'
         run: |
           set -euo pipefail
-          test -n "$MODULE_AUTH_BASIC" || { echo 'MODULE_AUTH_BASIC must grant public-ai module access'; exit 1; }
+          test -n "$SDK_DEPLOY_KEY" || { echo 'PUBLIC_AI_SDK_READ_KEY must be configured'; exit 1; }
+          auth_dir=$(mktemp -d "$RUNNER_TEMP/product-image-sdk-auth.XXXXXX")
+          trap 'rm -rf "$auth_dir"' EXIT
+          printf '%s\n' "$SDK_DEPLOY_KEY" > "$auth_dir/key"
+          chmod 600 "$auth_dir/key"
+          # Public host key verified against GitHub's HTTPS /meta endpoint.
+          printf '%s\n' '[ssh.github.com]:443 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$auth_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -F /dev/null -i '$auth_dir/key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$auth_dir/known_hosts' -p 443"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=url.ssh://git@ssh.github.com:443/bianjiefilm/public-ai.insteadOf
+          export GIT_CONFIG_VALUE_0=https://github.com/bianjiefilm/public-ai
           go mod download
           go mod verify
       - name: Vet, build and test server
@@ -62,8 +69,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.23.2
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Install locked Web dependencies
         working-directory: web
         run: npm ci --no-audit --no-fund
