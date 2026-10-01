@@ -24,13 +24,14 @@ jobs:
       GOWORK: 'off'
       GOPROXY: https://goproxy.cn,direct
       GOPRIVATE: github.com/bianjiefilm/*
-      GOMODCACHE: ${{ runner.temp }}/../go-mod-cache
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
           persist-credentials: false
+      - name: Set runner-local module cache
+        run: printf 'GOMODCACHE=%s/../go-mod-cache\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
