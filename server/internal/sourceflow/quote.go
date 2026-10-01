@@ -28,7 +28,7 @@ func (s *Service) Create(ctx context.Context, actor Actor, project string, in Ne
 		return si.Run{}, si.ErrUnconfigured
 	}
 	intent := si.Intent{Scope: auth.Scope, RequestKey: in.RequestKey, Mode: in.Mode, Prompt: in.Prompt, Size: in.Size, Provider: s.Profile.Provider, Model: s.Profile.Model, Capability: s.Profile.Capability, PricingVersion: s.Profile.PricingVersion, Quantity: s.Profile.Quantity}
-	r, _, e := s.Store.CreateSourceRun(ctx, intent)
+	r, _, e := s.Store.CreateSourceRunForProject(ctx, intent)
 	if e != nil {
 		return r, e
 	}

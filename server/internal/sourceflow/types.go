@@ -39,14 +39,15 @@ type AssetPort interface {
 	Download(context.Context, si.Run) (io.ReadCloser, error)
 }
 type Service struct {
-	recoveryRunning atomic.Bool
-	Store           *store.Store
-	Auth            *Authorizer
-	Bill            BillPort
-	Tasks           TaskPort
-	Assets          AssetPort
-	Profile         Profile
-	Now             func() time.Time
+	recoveryRunning     atomic.Bool
+	OutputRecoveryReady bool // Set only by the actual joined runtime assembly; default false.
+	Store               *store.Store
+	Auth                *Authorizer
+	Bill                BillPort
+	Tasks               TaskPort
+	Assets              AssetPort
+	Profile             Profile
+	Now                 func() time.Time
 }
 type Profile struct {
 	Enabled, OrgEnabled                               bool
@@ -75,4 +76,16 @@ func NewProfile(c config.Config) Profile {
 		seen[token] = true
 	}
 	return p
+}
+
+// CreationCapabilities separates quote/confirmation from complete product
+// readiness. Merely injecting ports cannot grant the joined output lifecycle.
+func (s *Service) CreationCapabilities(payerSource string) (quote, confirm, ready bool) {
+	if s == nil || s.Store == nil || s.Auth == nil || !s.Profile.CanCreate(payerSource) {
+		return
+	}
+	quote = !nilPort(s.Bill)
+	confirm = quote && !nilPort(s.Tasks)
+	ready = confirm && !nilPort(s.Assets) && s.OutputRecoveryReady
+	return
 }

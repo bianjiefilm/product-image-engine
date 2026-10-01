@@ -114,12 +114,20 @@ func sourceOnConn(ctx context.Context, c *sql.Conn, scope si.Scope, id string) (
 	args := append([]any{id}, sourceScopeArgs(scope)...)
 	return scanSource(c.QueryRowContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE id=? AND `+sourceScopeSQL, args...))
 }
-func (s *Store) CreateSourceRun(ctx context.Context, in si.Intent) (out si.Run, duplicate bool, err error) {
+func (s *Store) CreateSourceRun(ctx context.Context, in si.Intent) (si.Run, bool, error) {
+	return s.createSourceRun(ctx, in, false)
+}
+func (s *Store) createSourceRun(ctx context.Context, in si.Intent, projectCheck bool) (out si.Run, duplicate bool, err error) {
 	fp, err := si.Fingerprint(in)
 	if err != nil {
 		return out, false, err
 	}
 	err = s.withSourceWrite(ctx, func(c *sql.Conn) error {
+		if projectCheck {
+			if e := sourceProjectActive(ctx, c, in.Scope); e != nil {
+				return e
+			}
+		}
 		existing, e := scanSource(c.QueryRowContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE app_id=? AND user_id=? AND project_id=? AND request_key=?`, in.Scope.AppID, in.Scope.UserID, in.Scope.ProjectID, in.RequestKey))
 		if e == nil {
 			if existing.Fingerprint != fp {

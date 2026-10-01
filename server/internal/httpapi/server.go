@@ -19,11 +19,13 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/sizeadapt"
+	"github.com/bianjiefilm/product-image-engine/server/internal/sourceflow"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
 // Server 汇聚依赖;字段全部由 main(或测试)装配。
 type Server struct {
+	Source  *sourceflow.Service
 	Cfg     config.Config
 	St      *store.Store
 	Ident   *platform.IdentityClient
@@ -100,6 +102,11 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/projects/{id}/first-image", s.guard(true, s.handleSubmitFirstImage))
 	mux.Handle("GET /api/v1/projects/{id}/first-image", s.guard(true, s.handleGetFirstImage))
 	mux.Handle("POST /api/v1/projects/{id}/first-image/refresh", s.guard(true, s.handleRefreshFirstImage))
+
+	// Source ownership is independent of legacy creation flags.
+	for _, path := range []string{"source-image-capabilities", "source-image-runs", "source-image-runs/by-request", "source-image-runs/{runId}", "source-image-runs/{runId}/confirm", "source-image-runs/{runId}/reconcile", "source-image-runs/{runId}/cancel", "source-image-runs/{runId}/select", "source-image-runs/{runId}/output", "source-image-runs/{runId}/content", "source-image-runs/{runId}/export"} {
+		mux.Handle("/api/v1/projects/{id}/"+path, s.guard(true, s.handleSourceResource))
+	}
 
 	// 跨应用续接与成果回流(HUI-1745 I1)。
 	mux.Handle("POST /api/v1/handoffs/accept", s.guard(true, s.handleAcceptHandoff))
@@ -231,7 +238,7 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("GET /api/v1/projects/{id}/fidelity-reports/{reportId}", s.guard(true, s.handleGetFidelityReport))
 	}
 
-	return logRequests(mux)
+	return logRequests(sourcePathGuard(mux))
 }
 
 func logRequests(next http.Handler) http.Handler {
