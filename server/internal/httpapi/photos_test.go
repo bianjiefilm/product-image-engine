@@ -44,12 +44,13 @@ type photoUpStub struct {
 	completes    int
 	failComplete bool
 	dlFetches    int
+	objectCT     string
 }
 
 func newPhotoUpStub(t *testing.T) *photoUpStub {
 	t.Helper()
 	st := &photoUpStub{chunks: map[int][]byte{}, ready: map[string][]byte{},
-		metaSha: map[string]string{}, metaCt: map[string]string{}}
+		metaSha: map[string]string{}, metaCt: map[string]string{}, objectCT: "image/png"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /internal/v1/upload/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -108,7 +109,7 @@ func newPhotoUpStub(t *testing.T) *photoUpStub {
 		st.ready[assetID] = data
 		st.metaSha[assetID] = body.SHA256
 		st.metaCt[assetID] = ct
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{"AssetID": assetID, "Status": "ready"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{"asset_id": assetID, "status": "ready"}})
 	})
 	mux.HandleFunc("POST /internal/v1/upload/sessions/{sid}/abort", func(w http.ResponseWriter, r *http.Request) {
 		st.mu.Lock()
@@ -127,8 +128,8 @@ func newPhotoUpStub(t *testing.T) *photoUpStub {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "asset": map[string]any{
-			"AssetID": id, "SHA256": st.metaSha[id], "SizeBytes": len(data),
-			"ContentType": st.metaCt[id], "Status": "ready",
+			"asset_id": id, "sha256": st.metaSha[id], "size_bytes": len(data),
+			"content_type": st.metaCt[id], "status": "ready",
 		}})
 	})
 	mux.HandleFunc("POST /internal/v1/upload/assets/{aid}/download-url", func(w http.ResponseWriter, r *http.Request) {
@@ -149,12 +150,17 @@ func newPhotoUpStub(t *testing.T) *photoUpStub {
 		st.mu.Lock()
 		st.dlFetches++
 		data, ok := st.ready[r.PathValue("aid")]
+		ct := st.objectCT
 		st.mu.Unlock()
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		w.Header().Set("Content-Type", "image/png")
+		if ct == "" {
+			w.Header()["Content-Type"] = nil // suppress net/http automatic sniffing
+		} else {
+			w.Header().Set("Content-Type", ct)
+		}
 		_, _ = w.Write(data)
 	})
 	st.srv = httptest.NewServer(mux)
@@ -633,12 +639,104 @@ func TestPhotoContentIntegrityRecheckFails(t *testing.T) {
 	_ = json.Unmarshal(raw, &up)
 	photoID, _ := up.Photo["id"].(string)
 
-	// 平台侧资产事实与本地登记不符(模拟对象被篡改/串引用)→ integrity_failed,拒绝解析。
-	stub.mu.Lock()
-	stub.metaSha["ast_1"] = strings.Repeat("ff", 32)
-	stub.mu.Unlock()
-	code, _, raw = f.doBytes(t, "GET", "/api/v1/photos/"+photoID+"/content", tok, nil)
-	if code != http.StatusBadGateway || codeOf(t, raw) != "integrity_failed" {
-		t.Fatalf("完整性不符必须 502 integrity_failed, got %d %s", code, raw)
+	// 正式 snake_case 元数据的 hash、大小和媒体类型分别不符时，禁止读取对象。
+	for _, field := range []string{"sha256", "size_bytes", "content_type", "svg_type", "html_type"} {
+		t.Run(field, func(t *testing.T) {
+			stub.mu.Lock()
+			stub.metaSha["ast_1"] = shaHexOf(png)
+			stub.ready["ast_1"] = png
+			stub.metaCt["ast_1"] = "image/png"
+			switch field {
+			case "sha256":
+				stub.metaSha["ast_1"] = strings.Repeat("ff", 32)
+			case "size_bytes":
+				stub.ready["ast_1"] = png[:len(png)-1]
+			case "content_type":
+				stub.metaCt["ast_1"] = "image/jpeg"
+			case "svg_type":
+				stub.metaCt["ast_1"] = "image/svg+xml"
+			case "html_type":
+				stub.metaCt["ast_1"] = "text/html"
+			}
+			before := stub.dlFetches
+			stub.mu.Unlock()
+			code, _, raw := f.doBytes(t, "GET", "/api/v1/photos/"+photoID+"/content", tok, nil)
+			if code != http.StatusBadGateway || codeOf(t, raw) != "integrity_failed" {
+				t.Fatalf("完整性不符必须 502 integrity_failed, got %d %s", code, raw)
+			}
+			stub.mu.Lock()
+			fetches := stub.dlFetches
+			stub.mu.Unlock()
+			if fetches != before {
+				t.Fatal("完整性拒绝后仍下载对象")
+			}
+		})
+	}
+}
+
+func TestPhotoContentRestoresOnlyVerifiedRasterMIME(t *testing.T) {
+	for _, tc := range []struct {
+		name, objectType, metadataType, wantType string
+		external                                 bool
+		format                                   string
+	}{
+		{name: "local png generic", objectType: "application/octet-stream", metadataType: "image/png", wantType: "image/png"},
+		{name: "local jpeg generic", objectType: "application/octet-stream", metadataType: "image/jpeg", wantType: "image/jpeg", format: "jpeg"},
+		{name: "local webp generic", objectType: "application/octet-stream", metadataType: "image/webp", wantType: "image/webp", format: "webp"},
+		{name: "local png missing object type", metadataType: "image/png", wantType: "image/png"},
+		{name: "local decoded type with missing metadata", objectType: "application/octet-stream", wantType: "image/png"},
+		{name: "external png generic", objectType: "application/octet-stream", metadataType: "image/png", wantType: "image/png", external: true},
+		{name: "external object alone cannot supply declaration", objectType: "image/png", wantType: "application/octet-stream", external: true},
+		{name: "external missing declaration", objectType: "application/octet-stream", wantType: "application/octet-stream", external: true},
+		{name: "external svg declaration", objectType: "application/octet-stream", metadataType: "image/svg+xml", wantType: "application/octet-stream", external: true, format: "svg"},
+		{name: "external html declaration", objectType: "application/octet-stream", metadataType: "text/html", wantType: "application/octet-stream", external: true, format: "html"},
+		{name: "explicit svg object", objectType: "image/svg+xml", metadataType: "image/png", wantType: "application/octet-stream"},
+		{name: "explicit html object", objectType: "text/html", metadataType: "image/png", wantType: "application/octet-stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, stub := photoFixture(t, nil)
+			_, pair := f.login(t, "jia@x.com", "right-pass")
+			tok, _ := pair["access_token"].(string)
+			data := encodeTinyPNG(t)
+			if tc.format == "jpeg" {
+				data = encodeTinyJPEG(t)
+			}
+			if tc.format == "webp" {
+				data = minWebP
+			}
+			if tc.format == "svg" {
+				data = []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
+			}
+			if tc.format == "html" {
+				data = []byte(`<html><script>alert(1)</script></html>`)
+			}
+			assetID := "ast_1"
+			if tc.external {
+				stub.Preload(assetID, data, tc.metadataType)
+			} else {
+				code, _, raw := f.doBytes(t, "POST", "/api/v1/photos?purpose=project_photo", tok, data)
+				if code != http.StatusCreated {
+					t.Fatalf("upload: %d %s", code, raw)
+				}
+			}
+			stub.mu.Lock()
+			stub.objectCT = tc.objectType
+			stub.metaCt[assetID] = tc.metadataType
+			stub.mu.Unlock()
+			_, created := f.do(t, "POST", "/api/v1/projects", tok, map[string]any{"name": "MIME content", "source_type": "standalone"})
+			project := created["project"].(map[string]any)["id"].(string)
+			code, attached := f.do(t, "POST", "/api/v1/projects/"+project+"/inputs", tok, map[string]any{"platform_asset_id": assetID})
+			if code != http.StatusCreated {
+				t.Fatalf("attach: %d %v", code, attached)
+			}
+			input := attached["input"].(map[string]any)["id"].(string)
+			code, hdr, body := f.doBytes(t, "GET", "/api/v1/projects/"+project+"/inputs/"+input+"/content", tok, nil)
+			if code != http.StatusOK || hdr.Get("Content-Type") != tc.wantType || !bytes.Equal(body, data) {
+				t.Fatalf("content: status=%d type=%q want=%q sameBytes=%v", code, hdr.Get("Content-Type"), tc.wantType, bytes.Equal(body, data))
+			}
+			if hdr.Get("X-Content-Type-Options") != "nosniff" {
+				t.Fatal("content must prohibit MIME sniffing")
+			}
+		})
 	}
 }

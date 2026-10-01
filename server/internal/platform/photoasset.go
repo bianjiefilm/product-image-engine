@@ -45,13 +45,13 @@ type UploadPart struct {
 	SHA256     string `json:"sha256"`
 }
 
-// PhotoAssetMeta 资产元数据(平台以 Go 字段名返回)。
+// PhotoAssetMeta 对应正式 Upload Asset.MarshalJSON 的 snake_case 元数据。
 type PhotoAssetMeta struct {
-	AssetID     string
-	SHA256      string
-	SizeBytes   int64
-	ContentType string
-	Status      string
+	AssetID     string `json:"asset_id"`
+	SHA256      string `json:"sha256"`
+	SizeBytes   int64  `json:"size_bytes"`
+	ContentType string `json:"content_type"`
+	Status      string `json:"status"`
 }
 
 func (c *UploadClient) photoHTTP() *http.Client {
