@@ -3,8 +3,11 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -15,11 +18,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
+	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
 func TestBackgroundReplaceHiddenWhenDisabled(t *testing.T) {
@@ -519,15 +524,27 @@ type bgModelRT struct {
 	path       string
 	host       string
 	body       string
+	err        error
+	started    chan struct{}
+	hold       <-chan struct{}
 }
 
 func (m *bgModelRT) RoundTrip(r *http.Request) (*http.Response, error) {
-	m.n.Add(1)
+	n := m.n.Add(1)
+	if n == 1 && m.started != nil {
+		close(m.started)
+	}
+	if n == 1 && m.hold != nil {
+		<-m.hold
+	}
 	m.auth = r.Header.Get("Authorization")
 	m.path = r.URL.Path
 	m.host = r.URL.Host
 	raw, _ := io.ReadAll(r.Body)
 	m.body = string(raw)
+	if m.err != nil {
+		return nil, m.err
+	}
 	code := m.status
 	if code == 0 {
 		code = http.StatusOK
@@ -1239,6 +1256,8 @@ func TestFidelityModelPlateLocksSubjectFromLiveHost(t *testing.T) {
 	if st != http.StatusUnprocessableEntity || rt.n.Load() != 0 {
 		t.Fatalf("空蒙版应在调用模型前拒绝: %d n=%d %v", st, rt.n.Load(), rejected)
 	}
+	sample := coverProtectedColumn(t, original, mask)
+	f.srv.PlateCoverage = &sample
 	st, made := f.do(t, "POST", path, tok, map[string]any{
 		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
 	})
@@ -1303,7 +1322,7 @@ func TestFidelityModelPlateLocksSubjectFromLiveHost(t *testing.T) {
 	}
 }
 
-func TestFidelityModelPlateDoesNotRetryAfterSupplierFailure(t *testing.T) {
+func TestFidelityModelPlateSupplierHTTPErrorReleasesClaim(t *testing.T) {
 	const secret = "secret-model-key"
 	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
 	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
@@ -1331,6 +1350,8 @@ func TestFidelityModelPlateDoesNotRetryAfterSupplierFailure(t *testing.T) {
 	if st, _ := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/confirm", tok, nil); st != http.StatusOK {
 		t.Fatalf("确认 %d", st)
 	}
+	sample := coverProtectedColumn(t, original, mask)
+	f.srv.PlateCoverage = &sample
 	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
 	st, failed := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
 	job, _ := failed["job"].(map[string]any)
@@ -1338,9 +1359,13 @@ func TestFidelityModelPlateDoesNotRetryAfterSupplierFailure(t *testing.T) {
 		t.Fatalf("供应商拒绝应停在原任务: %d n=%d %#v", st, rt.n.Load(), job)
 	}
 	assertBgBillingAndProductionStayFalse(t, job)
+	exec, err := f.st.GetPlateExecution(context.Background(), fixtureTenant("a@x.com"), proj, jobID)
+	if err != nil || exec.State != "confirmed" || exec.Request.AmountMinor != 0 {
+		t.Fatalf("明确的 HTTP 错误应把认领还回 confirmed，且金额不是价格: %+v %v", exec, err)
+	}
 	st, again := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
-	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 1 {
-		t.Fatalf("失败后不能再打模型: %d n=%d %#v", st, rt.n.Load(), again)
+	if st != http.StatusOK || again["job"].(map[string]any)["job_status"] != "failed" || rt.n.Load() != 2 {
+		t.Fatalf("明确的供应商 HTTP 错误应允许再调用一次: %d n=%d %#v", st, rt.n.Load(), again)
 	}
 }
 
@@ -1376,6 +1401,8 @@ func TestFidelityModelPlateRejectsLoopbackAndMissingConfig(t *testing.T) {
 	f.srv.Cfg.BgModelCredential = "secret-model-key"
 	f.srv.Cfg.BgModelURL = "http://127.0.0.1:9/v1"
 	f.srv.Cfg.BgModelName = "qwen-image-2.0-pro"
+	sample := coverProtectedColumn(t, original, mask)
+	f.srv.PlateCoverage = &sample
 	f.rearm(t)
 	st, loop := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
 	job, _ := loop["job"].(map[string]any)
@@ -1388,6 +1415,218 @@ func TestFidelityModelPlateRejectsLoopbackAndMissingConfig(t *testing.T) {
 	st, again := f.do(t, "POST", path, tok, map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)})
 	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 1 {
 		t.Fatalf("回环之后不能重试: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+}
+
+func TestFidelityModelPlateCoverageFailureDoesNotCallOrClaim(t *testing.T) {
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	if _, err := bgreplace.SubjectPixelChecks(original, original, mask); err != nil {
+		t.Fatal(err)
+	}
+	sample := coverProtectedColumn(t, original, mask)
+	sample.Regions[bgreplace.AxisPackagingText] = []bgreplace.CoverageRegion{{1, 0, 2, 1}}
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: flatPNG(t, 2, 2, color.NRGBA{R: 200, G: 10, B: 10, A: 255})}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armModelPlate(t, up.srv.URL, rt)
+	f.srv.PlateCoverage = &sample
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirm(t, tok, proj, in)
+	st, denied := f.do(t, "POST", "/api/v1/projects/"+proj+"/background-replacements/"+jobID+"/model-plate", tok, map[string]any{
+		"mask_png_base64": base64.StdEncoding.EncodeToString(mask),
+	})
+	if st != http.StatusUnprocessableEntity || codeOf(t, mustJSON(denied)) != "coverage_rejected" || !strings.Contains(errMsg(denied), "packaging_text") || rt.n.Load() != 0 {
+		t.Fatalf("覆盖失败不能出图: %d n=%d %v", st, rt.n.Load(), denied)
+	}
+	_, err := f.st.GetPlateExecution(context.Background(), fixtureTenant("a@x.com"), proj, jobID)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("覆盖失败不能留下提交行: %v", err)
+	}
+}
+
+func TestFidelityModelPlateSecondRequestDoesNotCallAgain(t *testing.T) {
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	modelPNG := flatPNG(t, 4, 2, color.NRGBA{R: 200, G: 10, B: 10, A: 255})
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	release := make(chan struct{})
+	released := false
+	releaseHold := func() {
+		if !released {
+			released = true
+			close(release)
+		}
+	}
+	t.Cleanup(releaseHold)
+	rt := &bgModelRT{png: modelPNG, started: make(chan struct{}), hold: release}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armModelPlate(t, up.srv.URL, rt)
+	sample := coverProtectedColumn(t, original, mask)
+	f.srv.PlateCoverage = &sample
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirm(t, tok, proj, in)
+	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
+	body := map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)}
+	type plateCall struct {
+		st   int
+		body map[string]any
+	}
+	firstDone := make(chan plateCall, 1)
+	go func() {
+		st, got := f.do(t, "POST", path, tok, body)
+		firstDone <- plateCall{st, got}
+	}()
+	select {
+	case <-rt.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("模型调用没有开始")
+	}
+	exec, err := f.st.GetPlateExecution(context.Background(), fixtureTenant("a@x.com"), proj, jobID)
+	if err != nil || exec.State != "submitting" || exec.Request.AmountMinor != 0 || exec.Request.BillingPassed {
+		t.Fatalf("第一次应占住认领且不是价格: %+v %v", exec, err)
+	}
+	st, second := f.do(t, "POST", path, tok, body)
+	if st != http.StatusConflict || codeOf(t, mustJSON(second)) != "plate_in_flight" || rt.n.Load() != 1 {
+		t.Fatalf("认领未完成时第二次不能再打模型: %d n=%d %v", st, rt.n.Load(), second)
+	}
+	releaseHold()
+	var first plateCall
+	select {
+	case first = <-firstDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("第一次请求没有返回")
+	}
+	raw, _ := json.Marshal(first.body)
+	job, _ := first.body["job"].(map[string]any)
+	if first.st != http.StatusOK || job["origin"] != bgreplace.OriginModelPlate || job["quality"] != "unknown" || rt.n.Load() != 1 {
+		t.Fatalf("第一次应保存结果且只调用一次: %d n=%d %#v", first.st, rt.n.Load(), job)
+	}
+	assertNoQuotedPrice(t, raw)
+	assertBgBillingAndProductionStayFalse(t, job)
+	saved, err := f.st.GetPlateExecution(context.Background(), fixtureTenant("a@x.com"), proj, jobID)
+	if err != nil || saved.State != "completed" || saved.Request.AmountMinor != 0 {
+		t.Fatalf("成功后不能再认领，金额仍不是价格: %+v %v", saved, err)
+	}
+	st, third := f.do(t, "POST", path, tok, body)
+	thirdJob, _ := third["job"].(map[string]any)
+	if st != http.StatusOK || thirdJob["idempotent"] != true || rt.n.Load() != 1 {
+		t.Fatalf("已保存的任务不能再打模型: %d n=%d %#v", st, rt.n.Load(), thirdJob)
+	}
+}
+
+func TestFidelityModelPlateSupplierHTTPErrorAllowsOneRetry(t *testing.T) {
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	modelPNG := flatPNG(t, 4, 2, color.NRGBA{R: 200, G: 10, B: 10, A: 255})
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{status: http.StatusBadGateway, png: modelPNG}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armModelPlate(t, up.srv.URL, rt)
+	sample := coverProtectedColumn(t, original, mask)
+	f.srv.PlateCoverage = &sample
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirm(t, tok, proj, in)
+	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
+	body := map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)}
+	st, failed := f.do(t, "POST", path, tok, body)
+	job, _ := failed["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["output_asset_id"] != "" || rt.n.Load() != 1 {
+		t.Fatalf("供应商 HTTP 错误应失败且只调用一次: %d n=%d %#v", st, rt.n.Load(), job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	rt.status = 0
+	st, retried := f.do(t, "POST", path, tok, body)
+	raw, _ := json.Marshal(retried)
+	job, _ = retried["job"].(map[string]any)
+	if st != http.StatusOK || job["origin"] != bgreplace.OriginModelPlate || job["quality"] != "unknown" || rt.n.Load() != 2 {
+		t.Fatalf("明确的 HTTP 错误之后应正好再调用一次: %d n=%d %#v", st, rt.n.Load(), job)
+	}
+	assertNoQuotedPrice(t, raw)
+	assertBgBillingAndProductionStayFalse(t, job)
+	st, third := f.do(t, "POST", path, tok, body)
+	if st != http.StatusOK || third["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 2 {
+		t.Fatalf("保存之后不能再认领: %d n=%d %#v", st, rt.n.Load(), third)
+	}
+}
+
+func TestFidelityModelPlateUncertainFailureDoesNotRetry(t *testing.T) {
+	original := flatPNG(t, 2, 2, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	mask := alphaMaskPNG(t, [][]bool{{true, false}, {true, false}})
+	up := newPhotoUpStub(t)
+	up.Preload("asset_in", original, "image/png")
+	rt := &bgModelRT{png: original, err: errors.New("timeout")}
+	f := newFixture(t, func(c *config.Config) { c.BgReplaceEnabled = true })
+	f.armModelPlate(t, up.srv.URL, rt)
+	sample := coverProtectedColumn(t, original, mask)
+	f.srv.PlateCoverage = &sample
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirm(t, tok, proj, in)
+	path := "/api/v1/projects/" + proj + "/background-replacements/" + jobID + "/model-plate"
+	body := map[string]any{"mask_png_base64": base64.StdEncoding.EncodeToString(mask)}
+	st, failed := f.do(t, "POST", path, tok, body)
+	job, _ := failed["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "unknown" || job["output_asset_id"] != "" || rt.n.Load() != 1 {
+		t.Fatalf("不确定的失败应停在未知: %d n=%d %#v", st, rt.n.Load(), job)
+	}
+	assertBgBillingAndProductionStayFalse(t, job)
+	exec, err := f.st.GetPlateExecution(context.Background(), fixtureTenant("a@x.com"), proj, jobID)
+	if err != nil || exec.State != "unknown" || exec.Request.AmountMinor != 0 {
+		t.Fatalf("不确定的失败应留下认领: %+v %v", exec, err)
+	}
+	st, again := f.do(t, "POST", path, tok, body)
+	if st != http.StatusOK || again["job"].(map[string]any)["idempotent"] != true || rt.n.Load() != 1 {
+		t.Fatalf("不确定的失败不能再打模型: %d n=%d %#v", st, rt.n.Load(), again)
+	}
+}
+
+func (f *fixture) armModelPlate(t *testing.T, upURL string, rt http.RoundTripper) {
+	t.Helper()
+	f.srv.Cfg.BgModelCredential = "secret-model-key"
+	f.srv.Cfg.BgModelURL = "https://images.example/v1"
+	f.srv.Cfg.BgModelName = "qwen-image-2.0-pro"
+	f.srv.Cfg.UploadBaseURL = upURL
+	f.srv.Cfg.UploadToken = "up-tok"
+	f.srv.Uploads = &platform.UploadClient{BaseURL: upURL, AppID: "product-image", Token: "up-tok"}
+	f.srv.ImageHTTP = &http.Client{Transport: rt}
+	f.rearm(t)
+}
+
+func coverProtectedColumn(t *testing.T, original, mask []byte) bgreplace.CoverageSample {
+	t.Helper()
+	cfg, err := png.DecodeConfig(bytes.NewReader(original))
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := bgreplace.CoverageRegion{0, 0, 1, cfg.Height}
+	return bgreplace.CoverageSample{
+		ID: "synthetic-fixture", Source: "test generated pixels", License: "test-only",
+		ApprovalRef: "contract-test", Scope: "synthetic test only",
+		OriginalSHA256: bgreplace.ImageSHA(original), MaskSHA256: bgreplace.ImageSHA(mask),
+		Width: cfg.Width, Height: cfg.Height,
+		Regions: map[string][]bgreplace.CoverageRegion{
+			bgreplace.AxisLogo: {box}, bgreplace.AxisPackagingText: {box},
+			bgreplace.AxisSpec: {box}, bgreplace.AxisStructure: {box},
+		},
+	}
+}
+
+func fixtureTenant(email string) string {
+	sum := sha256.Sum256([]byte("account:" + strings.ToLower(strings.TrimSpace(email))))
+	return "acct_" + hex.EncodeToString(sum[:])[:16]
+}
+
+func assertNoQuotedPrice(t *testing.T, raw []byte) {
+	t.Helper()
+	if bytes.Contains(raw, []byte(`"amount"`)) || bytes.Contains(raw, []byte(`"price"`)) || bytes.Contains(raw, []byte("9.9")) || bytes.Contains(raw, []byte("secret-model-key")) {
+		t.Fatalf("应答不能带金额或凭证: %s", raw)
 	}
 }
 

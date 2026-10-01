@@ -179,6 +179,76 @@ func TestPlateExecutionRequiresFrozenTaskKeyAndPricingVersion(t *testing.T) {
 	}
 }
 
+func TestPlateExecutionUnbilledZeroIsNotAPrice(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	job := insertSubmittingBg(t, s)
+	base := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Request: PlateRequest{
+		PayerID: "payer", QuoteID: "quote", TaskIdempotencyKey: "task-key-fixture", PricingVersion: "pricing-fixture-v1",
+		AmountMinor: 0, OriginalHash: "original", MaskHash: "mask", CoverageHash: "coverage",
+		Model: "model", Provider: "xingmo", Size: "1024x1024", ParamsJSON: `{"prompt":"studio"}`, Mask: []byte("mask"),
+	}}
+	for _, name := range []string{"billing_passed", "stored_amount"} {
+		bad := base
+		if name == "billing_passed" {
+			bad.Request.BillingPassed = true
+		} else {
+			bad.Request.StoredAmountKnown = true
+		}
+		if _, err := s.PreparePlateExecution(ctx, bad); !errors.Is(err, ErrValidation) {
+			t.Fatalf("%s accepted zero: %v", name, err)
+		}
+	}
+	got, err := s.PreparePlateExecution(ctx, base)
+	if err != nil || got.Request.AmountMinor != 0 || got.Request.BillingPassed || got.Request.StoredAmountKnown {
+		t.Fatalf("unbilled zero: %+v %v", got, err)
+	}
+	positive := base
+	positive.Request.AmountMinor = 125
+	positive.Request.StoredAmountKnown = true
+	got, err = s.PreparePlateExecution(ctx, positive)
+	if err != nil || got.Request.AmountMinor != 125 || !got.Request.StoredAmountKnown {
+		t.Fatalf("positive quote must still store: %+v %v", got, err)
+	}
+}
+
+func TestReleasePlateClaimReturnsToConfirmed(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	job := insertSubmittingBg(t, s)
+	in := PlateExecution{TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID, Request: PlateRequest{
+		PayerID: "payer", QuoteID: "quote", TaskIdempotencyKey: "task-key-fixture", PricingVersion: "pricing-fixture-v1",
+		AmountMinor: 0, OriginalHash: "a", MaskHash: "m", CoverageHash: "c",
+		Model: "m", Provider: "xingmo", Size: "1024x1024", ParamsJSON: `{}`, Mask: []byte("m"),
+	}}
+	prepared, err := s.PreparePlateExecution(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ConfirmPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID, prepared.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if won, err := s.ClaimPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID); err != nil || !won {
+		t.Fatal(err, won)
+	}
+	if err = s.ReleasePlateClaim(ctx, in.TenantID, in.ProjectID, in.JobID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID)
+	if err != nil || got.State != "confirmed" || got.Request.AmountMinor != 0 {
+		t.Fatalf("released: %+v %v", got, err)
+	}
+	if won, err := s.ClaimPlateExecution(ctx, in.TenantID, in.ProjectID, in.JobID); err != nil || !won {
+		t.Fatal("released claim was not reusable", won, err)
+	}
+	if err = s.UpdatePlateTask(ctx, in.TenantID, in.ProjectID, in.JobID, "unknown", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReleasePlateClaim(ctx, in.TenantID, in.ProjectID, in.JobID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("unknown release: %v", err)
+	}
+}
+
 func TestPlateExecutionLegacySnapshotCannotConfirmOrClaim(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

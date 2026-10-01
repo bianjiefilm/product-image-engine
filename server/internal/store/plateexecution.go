@@ -13,9 +13,12 @@ import (
 
 // PlateRequest is frozen before confirmation. Mask bytes are never returned in UI views.
 type PlateRequest struct {
-	PayerID, QuoteID                     string
-	TaskIdempotencyKey, PricingVersion   string
-	AmountMinor                          int64
+	PayerID, QuoteID                   string
+	TaskIdempotencyKey, PricingVersion string
+	AmountMinor                        int64
+	// BillingPassed and StoredAmountKnown describe the confirmed job quote.
+	// AmountMinor 0 is allowed only when both are false. That 0 means no hold, not a price of zero yuan.
+	BillingPassed, StoredAmountKnown     bool
 	OriginalHash, MaskHash, CoverageHash string
 	Model, Provider, Size, ParamsJSON    string
 	SampleID                             string
@@ -41,7 +44,7 @@ func PlateFingerprint(in PlateExecution) string {
 
 func (s *Store) PreparePlateExecution(ctx context.Context, in PlateExecution) (PlateExecution, error) {
 	r := in.Request
-	if in.TenantID == "" || in.ProjectID == "" || in.JobID == "" || r.PayerID == "" || r.QuoteID == "" || !r.hasSubmissionIdentity() || r.AmountMinor <= 0 || r.OriginalHash == "" || r.MaskHash == "" || r.CoverageHash == "" || r.Model == "" || r.Provider == "" || r.Size == "" || len(r.Mask) == 0 || !json.Valid([]byte(r.ParamsJSON)) {
+	if in.TenantID == "" || in.ProjectID == "" || in.JobID == "" || r.PayerID == "" || r.QuoteID == "" || !r.hasSubmissionIdentity() || !r.amountAllowed() || r.OriginalHash == "" || r.MaskHash == "" || r.CoverageHash == "" || r.Model == "" || r.Provider == "" || r.Size == "" || len(r.Mask) == 0 || !json.Valid([]byte(r.ParamsJSON)) {
 		return PlateExecution{}, ErrValidation
 	}
 	fingerprint := PlateFingerprint(in)
@@ -97,6 +100,15 @@ func (r PlateRequest) hasSubmissionIdentity() bool {
 	return strings.TrimSpace(r.TaskIdempotencyKey) != "" && strings.TrimSpace(r.PricingVersion) != ""
 }
 
+// amountAllowed accepts a positive minor quote, or 0 when billing has not passed and no quote amount is stored.
+// Zero means no hold. It is not a price of zero yuan.
+func (r PlateRequest) amountAllowed() bool {
+	if r.AmountMinor > 0 {
+		return true
+	}
+	return r.AmountMinor == 0 && !r.BillingPassed && !r.StoredAmountKnown
+}
+
 func (s *Store) ConfirmPlateExecution(ctx context.Context, tenant, project, job, fingerprint string) error {
 	if _, err := s.GetPlateExecution(ctx, tenant, project, job); err != nil {
 		return err
@@ -115,6 +127,16 @@ func (s *Store) ClaimPlateExecution(ctx context.Context, tenant, project, job st
 	}
 	n, err := res.RowsAffected()
 	return n == 1, err
+}
+
+// ReleasePlateClaim returns a submitting execution to confirmed when no task or hold was recorded.
+// Unknown, failed, and completed executions stay closed.
+func (s *Store) ReleasePlateClaim(ctx context.Context, tenant, project, job string) error {
+	if _, err := s.GetPlateExecution(ctx, tenant, project, job); err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE bg_plate_executions SET state='confirmed',updated_at=? WHERE tenant_id=? AND project_id=? AND job_id=? AND state='submitting' AND task_id='' AND hold_id=''`, Now().Format(time.RFC3339Nano), tenant, project, job)
+	return requirePlateChange(res, err)
 }
 
 // UpdatePlateTask never changes a known task/hold identity or reopens a terminal execution.
