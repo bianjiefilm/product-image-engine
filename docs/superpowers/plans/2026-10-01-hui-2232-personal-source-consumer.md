@@ -196,11 +196,30 @@ narrow correction is independently reviewed before Task4 production begins.
 
 **Files:** Create sourceflow/quote.go, quote_test.go, testfixture_test.go. Extend store/source_runs.go tests only with requiredCAS. No hold/capture methods in productports.
 
+Root-approved typed CAS extension (Task4 only):
+`SaveSourceBillObservation(ctx,run,fact,revision,epoch)` binds original Usage and
+complete scope/key/capability/quantity/pricing/business fields before any quote.
+The nullable unique usage index may be filled with Quote nil only with an exact
+self-consistent Bill observation; scan rejects foreign persisted Bill facts.
+`SaveSourceQuoteUnderLease(ctx,run,q,revision,epoch)` freezes exact original quote
+under current revision/epoch; both stale fences fail. Existing Task1 methods
+retain their contracts. `ConfirmSourceRunForProject(ctx,run,hash,now,revision,epoch)`
+checks the same run and original project in one transaction. Personal requires
+original account storage + CreatedBy; org collaborators require fresh real
+Context before entering, same frozen payer, exact project tenant and active state,
+but not creator equality. Success clears lease/retry; unknown keeps original key,
+known facts and lease and writes bounded error/retry metadata. No money writes.
+
+Actual SDK recovery gap fixed within root-approved Task4 scope: scoped Usage GET
+may use complete validated persisted Bill.UsageID before local Quote exists.
+If both Quote/Bill exist their IDs and any observed quote must match before wire;
+wrong server UsageID is rejected without durable overwrite. No absent usage GET.
+
 **Interfaces:** `NewRunRequest{RequestKey,Mode,Prompt,Size string}`, Service `Create(ctx context.Context,actor Actor,projectID string,in NewRunRequest)(sourceimage.Run,error)`, `RecoverQuote(ctx context.Context,run sourceimage.Run)(sourceimage.Run,error)`, `Confirm(ctx context.Context,actor Actor,projectID,runID,quoteID,quoteHash string)(sourceimage.Run,error)`. `Confirm` recordsconfirmationonly then Task5 drivesoriginalsubmit. `sourceimage.QuoteHash(Quote) string` hashes canonical exacttuple, notdisplaytext.
 
 Testfixture defined here: `flowFixture(t)` returns realfileStore+Service+recorded fake Context/Bill/Task/Assets and safeclock; fakeBill map keyed fullscope+usagekey, fakeTaskmap keyedfullscope+taskkey, fakes mutateonlyonportcalls and countattempts/commits separately. `billFault.AfterCommit` returnsnetworkerror aftersaving remote fact. FakeTask has dispatch counter increment only on first new key; fakeAssets represent the published ready reference. Fixture methods `reopen(t *testing.T)` reopen the same file and rebuild Service while retaining fake remote stores; `confirmed(t *testing.T) sourceimage.Run` calls Create with request-a then Confirm with its exact QuoteHash, returning the persisted confirmed Run; no test injects confirmation by raw SQL. These are testports, never runtimefallback/service.
 
-- [ ] Write failuretests beforecode:
+- [x] Write failuretests beforecode:
 ```go
 func TestSourceUsageLostResponseKeepsOriginalRun(t *testing.T) {
  f:=flowFixture(t); f.bill.AfterCommit="usage"
@@ -211,9 +230,9 @@ func TestSourceUsageLostResponseKeepsOriginalRun(t *testing.T) {
  if e!=nil||a.ID!=b.ID||a.UsageKey!=b.UsageKey||f.bill.UsageCommits!=1||f.task.Submits!=0 { t.Fatal(b,e) }
 }
 ```
-- [ ] RED `GOWORK=off go test ./internal/sourceflow -run 'TestSource(Usage|Quote|Confirm)' -count=1`. Saveintent beforeanyremote call. Underlease GETscopedlookup; absence→Usageonecall→GETproof; quoteabsent→source_quoteonecall→GETproof; persistquoteonlyafterfullmatch. Never derivequoteID/price/minorlocally. AlwaysreturndurableRun alongwith error toHTTP so lostresponsecanrecoverhistory.
-- [ ] Confirm freshauthorization andGEToriginalfacts; quotehash/ID exact, notexpired, noalternatehold/charge/cancel/deletion; transactionCAS writesconfirmation. Do notcallquoteagain onconfirm, changeexpiry, silentlynewusage, orreprice. Ifnetworkunknown storelast_error/retry; publishamount string onlywhenquotevalidated. Repeatconfirm identicalreturnsoriginal; differenthash409. Maxintoverflow/null/negative/noncanonicalquote rejects beforeTask.
-- [ ] Add quotePOSTloss+reopen, five-minuteexpiryimmutable, explicitfreshrequestafterexpiredknownnothold, modifiedprompt/newpricingconfig originalrun replayconflict ratherthanupgrade, rejectedquote leaves0Task, membershiprevokedbeforeconfirm, andconfirm+delete/archiverace tests. GREEN same command; commit quote.go/testfixture/test and any exactstore/sourceimagechanges.
+- [x] RED `GOWORK=off go test ./internal/sourceflow -run 'TestSource(Usage|Quote|Confirm)' -count=1`. Saveintent beforeanyremote call. Underlease GETscopedlookup; absence→Usageonecall→GETproof; quoteabsent→source_quoteonecall→GETproof; persistquoteonlyafterfullmatch. Never derivequoteID/price/minorlocally. AlwaysreturndurableRun alongwith error toHTTP so lostresponsecanrecoverhistory.
+- [x] Confirm freshauthorization andGEToriginalfacts; quotehash/ID exact, notexpired, noalternatehold/charge/cancel/deletion; transactionCAS writesconfirmation. Do notcallquoteagain onconfirm, changeexpiry, silentlynewusage, orreprice. Ifnetworkunknown storelast_error/retry; publishamount string onlywhenquotevalidated. Repeatconfirm identicalreturnsoriginal; differenthash409. Maxintoverflow/null/negative/noncanonicalquote rejects beforeTask.
+- [x] Add quotePOSTloss+reopen, five-minuteexpiryimmutable, explicitfreshrequestafterexpiredknownnothold, modifiedprompt/newpricingconfig originalrun replayconflict ratherthanupgrade, rejectedquote leaves0Task, membershiprevokedbeforeconfirm, andconfirm+delete/archiverace tests. GREEN same command; commit quote.go/testfixture/test and any exactstore/sourceimagechanges.
 
 ## Task 5: Original Task binding, cancellation, observations and bounded recovery
 

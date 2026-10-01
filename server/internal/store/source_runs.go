@@ -48,22 +48,33 @@ func scanSource(row interface{ Scan(...any) error }) (si.Run, error) {
 	if err != nil || fp != r.Fingerprint || r.UsageKey == "" || r.TaskKey == "" || r.BusinessRef != "product-image:run:"+r.ID {
 		return si.Run{}, si.ErrInvariant
 	}
+	var obs sourceObservation
+	if json.Unmarshal([]byte(observationRaw), &obs) != nil {
+		return si.Run{}, si.ErrInvariant
+	}
+	r.LastError, r.Bill, r.Task, r.Output = obs.LastError, obs.Bill, obs.Task, obs.Output
 	if quote.Valid {
 		r.Quote = &si.Quote{}
 		if json.Unmarshal([]byte(quote.String), r.Quote) != nil || si.ValidateQuote(r, *r.Quote) != nil || !usage.Valid || usage.String != r.Quote.UsageID {
 			return si.Run{}, si.ErrInvariant
 		}
 	} else if usage.Valid {
-		return si.Run{}, si.ErrInvariant
+		if r.Bill == nil || r.Bill.UsageID != usage.String || si.ValidateQuoteBill(r, *r.Bill) != nil {
+			return si.Run{}, si.ErrInvariant
+		}
+	}
+	if r.Bill != nil {
+		b := r.Bill
+		if !usage.Valid || b.UsageID != usage.String || b.Scope != r.Intent.Scope || b.UsageKey != r.UsageKey || b.Capability != r.Intent.Capability || b.PricingVersion != r.Intent.PricingVersion || b.Quantity != r.Intent.Quantity || b.BusinessRef != r.BusinessRef {
+			return si.Run{}, si.ErrInvariant
+		}
+		if b.Quote != nil && (si.ValidateQuote(r, *b.Quote) != nil || b.Quote.UsageID != usage.String || r.Quote != nil && *r.Quote != *b.Quote) {
+			return si.Run{}, si.ErrInvariant
+		}
 	}
 	if r.ConfirmationHash != "" && (r.Quote == nil || r.ConfirmationHash != si.QuoteHash(*r.Quote) || r.ConfirmedAt <= 0) {
 		return si.Run{}, si.ErrInvariant
 	}
-	var obs sourceObservation
-	if json.Unmarshal([]byte(observationRaw), &obs) != nil {
-		return si.Run{}, si.ErrInvariant
-	}
-	r.LastError, r.Bill, r.Task, r.Output = obs.LastError, obs.Bill, obs.Task, obs.Output
 	r.TaskID = task.String
 	return r, nil
 }

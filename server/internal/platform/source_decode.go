@@ -214,6 +214,9 @@ func sourceUsage(raw []byte, r si.Run) (si.BillFact, error) {
 	if r.Quote != nil && f.UsageID != r.Quote.UsageID {
 		return si.BillFact{}, si.ErrInvariant
 	}
+	if r.Bill != nil && f.UsageID != r.Bill.UsageID {
+		return si.BillFact{}, si.ErrInvariant
+	}
 	quoteID := sourceString(m, "quote_id")
 	if quoteID != "" {
 		q := si.Quote{UsageID: f.UsageID, UsageKey: f.UsageKey, QuoteID: quoteID, PricingVersion: f.PricingVersion, BusinessRef: f.BusinessRef, Currency: "CNY", Quantity: quantity}
@@ -234,10 +237,13 @@ func sourceUsage(raw []byte, r si.Run) (si.BillFact, error) {
 		if err != nil {
 			return f, err
 		}
-		if si.ValidateQuote(r, q) != nil || r.Quote != nil && *r.Quote != q {
+		if si.ValidateQuote(r, q) != nil || r.Quote != nil && *r.Quote != q || r.Bill != nil && r.Bill.Quote != nil && *r.Bill.Quote != q {
 			return f, si.ErrInvariant
 		}
 		f.Quote = &q
+	}
+	if f.Quote == nil && (r.Quote != nil || r.Bill != nil && r.Bill.Quote != nil) {
+		return f, si.ErrInvariant
 	}
 	return f, nil
 }

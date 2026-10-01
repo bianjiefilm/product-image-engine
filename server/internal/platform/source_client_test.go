@@ -474,3 +474,76 @@ func TestSourceDecodeChargeAmountAndStatusBound(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceWireOriginalUsageGetBeforeLocalQuote(t *testing.T) {
+	original := sourceWireRun()
+	r := original
+	r.Quote = nil
+	calls := 0
+	foreign := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		calls++
+		if q.Method != "GET" || !strings.HasSuffix(q.URL.Path, "/"+original.Quote.UsageID) {
+			t.Error("not original usage GET", q.Method, q.URL)
+		}
+		raw := sourceBillJSON(original)
+		if foreign {
+			raw = []byte(strings.ReplaceAll(string(raw), original.Quote.UsageID, "foreign-usage"))
+		}
+		w.Write(raw)
+	}))
+	defer srv.Close()
+	c, e := NewSourceClients(sourceWireConfig(srv.URL), srv.Client())
+	if e != nil {
+		t.Fatal(e)
+	}
+	r.Bill = &si.BillFact{Scope: r.Intent.Scope, UsageID: original.Quote.UsageID, UsageKey: r.UsageKey, Capability: r.Intent.Capability, Quantity: r.Intent.Quantity, PricingVersion: r.Intent.PricingVersion, BusinessRef: r.BusinessRef, Status: "ingested"}
+	got, found, e := c.Bill.Get(t.Context(), r)
+	if e != nil || !found || got.UsageID != r.Bill.UsageID || got.Quote == nil || calls != 1 {
+		t.Errorf("unquoted durable usage cannot recover original GET: found=%v got=%+v error=%v calls=%d", found, got, e, calls)
+	}
+	foreign = true
+	if _, _, e = c.Bill.Get(t.Context(), r); !errors.Is(e, si.ErrInvariant) {
+		t.Errorf("different returned usage accepted %v", e)
+	}
+	r.Quote = original.Quote
+	r.Bill.UsageID = "different-original"
+	before := calls
+	if _, _, e = c.Bill.Get(t.Context(), r); e == nil || calls != before {
+		t.Errorf("Quote/Bill mismatch sent wire or accepted error=%v calls=%d", e, calls)
+	}
+}
+
+func TestSourceWireKnownQuoteCannotDisappear(t *testing.T) {
+	r := sourceWireRun()
+	f, e := decodeSourceBill(sourceBillJSON(r), r)
+	if e != nil {
+		t.Fatal(e)
+	}
+	r.Bill = &f
+	var env map[string]any
+	if e = json.Unmarshal(sourceBillJSON(r), &env); e != nil {
+		t.Fatal(e)
+	}
+	facts := env["facts"].(map[string]any)
+	usage := facts["usage"].(map[string]any)
+	facts["quote"] = nil
+	usage["quote_id"] = ""
+	usage["status"] = "ingested"
+	for _, k := range []string{"quoted_unit_price_minor", "quoted_at_unix", "quote_expires_at_unix", "quoted_amount_minor"} {
+		usage[k] = 0
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) { json.NewEncoder(w).Encode(env) }))
+	defer srv.Close()
+	c, e := NewSourceClients(sourceWireConfig(srv.URL), srv.Client())
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, _, e = c.Bill.Get(t.Context(), r); !errors.Is(e, si.ErrInvariant) {
+		t.Fatal("known frozen quote disappeared", e)
+	}
+	r.Quote = nil
+	if _, _, e = c.Bill.Get(t.Context(), r); !errors.Is(e, si.ErrInvariant) {
+		t.Fatal("observed original quote disappeared", e)
+	}
+}

@@ -108,16 +108,39 @@ func (c *sourceBillClient) Lookup(ctx context.Context, r si.Run) (si.BillFact, b
 	return f, e == nil, e
 }
 func (c *sourceBillClient) Get(ctx context.Context, r si.Run) (si.BillFact, bool, error) {
-	if !sourceRunValid(c.c, r) || r.Quote == nil {
+	if !sourceRunValid(c.c, r) {
 		return si.BillFact{}, false, si.ErrInvalid
 	}
-	raw, absent, e := sourceCall(ctx, c.c, pc.Call{Operation: "billing.usage_get", PathParams: map[string]string{"id": r.Quote.UsageID}, Query: sourcePayer(r)}, "billing_unified_not_found")
+	usageID := ""
+	if r.Quote != nil {
+		if si.ValidateQuote(r, *r.Quote) != nil {
+			return si.BillFact{}, false, si.ErrInvalid
+		}
+		usageID = r.Quote.UsageID
+	}
+	if r.Bill != nil {
+		b := r.Bill
+		idScope := r.Intent.Scope
+		idScope.ProjectID = b.UsageID
+		if !idScope.Valid() || b.Scope != r.Intent.Scope || b.UsageKey != r.UsageKey || b.Capability != r.Intent.Capability || b.PricingVersion != r.Intent.PricingVersion || b.Quantity != r.Intent.Quantity || b.BusinessRef != r.BusinessRef || usageID != "" && usageID != b.UsageID {
+			return si.BillFact{}, false, si.ErrInvariant
+		}
+		if b.Quote != nil && (si.ValidateQuote(r, *b.Quote) != nil || b.Quote.UsageID != b.UsageID || r.Quote != nil && *b.Quote != *r.Quote) {
+			return si.BillFact{}, false, si.ErrInvariant
+		}
+		usageID = b.UsageID
+	}
+	if usageID == "" {
+		return si.BillFact{}, false, si.ErrInvalid
+	}
+	raw, absent, e := sourceCall(ctx, c.c, pc.Call{Operation: "billing.usage_get", PathParams: map[string]string{"id": usageID}, Query: sourcePayer(r)}, "billing_unified_not_found")
 	if e != nil || absent {
 		return si.BillFact{}, false, e
 	}
 	f, e := decodeSourceBill(raw, r)
 	return f, e == nil, e
 }
+
 func (c *sourceBillClient) Usage(ctx context.Context, r si.Run) error {
 	if !sourceRunValid(c.c, r) {
 		return si.ErrInvalid
