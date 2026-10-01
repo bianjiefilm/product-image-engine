@@ -156,7 +156,7 @@ func (s *Store) ConfirmSourceRunForProject(ctx context.Context, in si.Run, hash 
 				return e
 			}
 		}
-		obs, _ := json.Marshal(sourceObservation{Bill: r.Bill, Task: r.Task, Output: r.Output})
+		obs, _ := json.Marshal(sourceObservation{Bill: r.Bill, ChargedBill: r.ChargedBill, Task: r.Task, Output: r.Output})
 		_, e = c.ExecContext(ctx, `UPDATE product_source_runs SET confirmation_hash=?,confirmed_at=?,phase=?,events_json=?,observation_json=?,lease_until=0,retry_at=0,revision=revision+1,updated_at=? WHERE id=?`, hash, confirmed, phase, events, string(obs), now, r.ID)
 		if e != nil {
 			return e

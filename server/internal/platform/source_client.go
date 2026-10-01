@@ -20,8 +20,9 @@ type sourceBillClient struct{ c *pc.Client }
 type sourceTaskClient struct{ c *pc.Client }
 type sourceContextClient struct{ c *pc.Client }
 type sourceAssetClient struct {
-	cfg  config.Config
-	http *http.Client
+	cfg      config.Config
+	http     *http.Client
+	download *sourceDownloader
 }
 
 func NewSourceClients(cfg config.Config, h *http.Client) (*SourceClients, error) {
@@ -52,7 +53,15 @@ func NewSourceClients(cfg config.Config, h *http.Client) (*SourceClients, error)
 	mk := func(token string) *pc.Client {
 		return &pc.Client{Caller: pc.Caller{Mode: "app", AppID: cfg.AppID, Token: token}, Bases: pc.Bases{Identity: cfg.IdentityBaseURL, Billing: cfg.BillingBaseURL, Task: cfg.TaskBaseURL, Upload: cfg.UploadBaseURL}, HTTP: h}
 	}
-	return &SourceClients{Bill: &sourceBillClient{mk(cfg.BillingToken)}, Tasks: &sourceTaskClient{mk(cfg.TaskToken)}, Context: &sourceContextClient{mk(cfg.IdentityToken)}, Assets: &sourceAssetClient{cfg, h}}, nil
+	var download *sourceDownloader
+	if cfg.SourceDownloadHosts != "" {
+		var err error
+		download, err = newSourceDownloader(cfg.SourceDownloadHosts, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &SourceClients{Bill: &sourceBillClient{mk(cfg.BillingToken)}, Tasks: &sourceTaskClient{mk(cfg.TaskToken)}, Context: &sourceContextClient{mk(cfg.IdentityToken)}, Assets: &sourceAssetClient{cfg: cfg, http: h, download: download}}, nil
 }
 func sourceCall(ctx context.Context, c *pc.Client, call pc.Call, absentCode string) ([]byte, bool, error) {
 	res, e := c.Call(ctx, call)

@@ -12,10 +12,11 @@ import (
 )
 
 type sourceObservation struct {
-	LastError string
-	Bill      *si.BillFact
-	Task      *si.TaskFact
-	Output    *si.Output
+	LastError   string
+	Bill        *si.BillFact
+	ChargedBill *si.BillFact
+	Task        *si.TaskFact
+	Output      *si.Output
 }
 type sourceEvent struct {
 	Phase string
@@ -48,10 +49,11 @@ func scanSource(row interface{ Scan(...any) error }) (si.Run, error) {
 		return si.Run{}, si.ErrInvariant
 	}
 	var obs sourceObservation
-	if json.Unmarshal([]byte(observationRaw), &obs) != nil {
+	if decodeSourceObservation([]byte(observationRaw), &obs) != nil {
 		return si.Run{}, si.ErrInvariant
 	}
 	r.LastError, r.Bill, r.Task, r.Output = obs.LastError, obs.Bill, obs.Task, obs.Output
+	r.ChargedBill = obs.ChargedBill
 	if quote.Valid {
 		r.Quote = &si.Quote{}
 		if json.Unmarshal([]byte(quote.String), r.Quote) != nil || si.ValidateQuote(r, *r.Quote) != nil || !usage.Valid || usage.String != r.Quote.UsageID {
@@ -79,6 +81,15 @@ func scanSource(row interface{ Scan(...any) error }) (si.Run, error) {
 	}
 	r.TaskID = task.String
 	if r.Task != nil && (r.Task.ID != r.TaskID || si.ValidateTaskFact(r, *r.Task) != nil) || r.TaskID != "" && r.Task == nil {
+		return si.Run{}, si.ErrInvariant
+	}
+	if r.Task != nil && r.Bill != nil && (r.Bill.Status == "held" || r.Bill.Status == "charged" || r.Bill.Status == "refunded" || r.Bill.Status == "released" || r.Bill.Status == "reconciling") && si.ValidateSettlement(r, *r.Bill) != nil {
+		return si.Run{}, si.ErrInvariant
+	}
+	if r.ChargedBill != nil && (si.ValidateChargedHistory(r, *r.ChargedBill) != nil || r.Bill == nil || (r.Bill.Status != "charged" && r.Bill.Status != "refunded") || si.ValidateSettlement(r, *r.Bill) != nil) {
+		return si.Run{}, si.ErrInvariant
+	}
+	if r.Output != nil && si.ValidateOutputAssociation(r, *r.Output) != nil {
 		return si.Run{}, si.ErrInvariant
 	}
 	return r, nil
@@ -310,7 +321,7 @@ func (s *Store) SaveSourceObservation(ctx context.Context, in si.Run, revision, 
 		if e = sourceRevision(r); e != nil {
 			return e
 		}
-		obs, _ := json.Marshal(sourceObservation{LastError: in.LastError, Bill: r.Bill, Task: in.Task, Output: r.Output})
+		obs, _ := json.Marshal(sourceObservation{LastError: in.LastError, Bill: r.Bill, ChargedBill: r.ChargedBill, Task: in.Task, Output: r.Output})
 		now := Now().Unix()
 		events := r.EventsJSON
 		if in.Phase != r.Phase {

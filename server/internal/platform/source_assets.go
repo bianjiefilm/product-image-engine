@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
 	pc "github.com/bianjiefilm/public-ai/sdk/go/platformconsumer"
+	"time"
 )
 
 func (c *sourceAssetClient) client(s si.Scope) (*pc.Client, error) {
@@ -173,7 +174,8 @@ func (c *sourceAssetClient) downloadGrant(ctx context.Context, r si.Run) (string
 		return "", si.ErrInvariant
 	}
 	u := sourceString(m, "download_url")
-	if u == "" || sourceString(m, "expires_at") == "" {
+	expires, e := time.Parse(time.RFC3339Nano, sourceString(m, "expires_at"))
+	if u == "" || e != nil || !expires.After(time.Now()) {
 		return "", si.ErrInvariant
 	}
 	return u, nil

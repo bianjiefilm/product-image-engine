@@ -564,6 +564,13 @@ func (s *Server) registerOutputBytes(ctx context.Context, tenant, projID, fileNa
 	}
 	sum := sha256.Sum256(data)
 	shaHex := hex.EncodeToString(sum[:])
+	// Previously verified source output belongs to its original run. Reject
+	// before the legacy duplicate path or RegisterAsset can promote it.
+	if hit, err := s.St.HasVerifiedSourceOutput(ctx, tenant, projID, shaHex, ""); err != nil {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
+	} else if hit {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusConflict, "source_output_owned", "该素材属于原生成记录，请从原记录选择或导出"}
+	}
 	// 同一份未保真模型字节不能改登记成可回执成果。
 	if hit, err := s.St.UndeliverableModelSHA(ctx, tenant, projID, shaHex); err != nil {
 		log.Printf("store error: %v", err)
@@ -581,6 +588,11 @@ func (s *Server) registerOutputBytes(ctx context.Context, tenant, projID, fileNa
 	})
 	if err != nil {
 		return store.ProjectOutput{}, false, platformErrToApiErr("素材登记", err)
+	}
+	if hit, err := s.St.HasVerifiedSourceOutput(ctx, tenant, projID, shaHex, reg.AssetID); err != nil {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
+	} else if hit {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusConflict, "source_output_owned", "该素材属于原生成记录，请从原记录选择或导出"}
 	}
 	out := store.ProjectOutput{
 		TenantScope: tenant, ProjectID: projID, PlatformAssetID: reg.AssetID,

@@ -143,7 +143,7 @@ func (s *Store) ListDueSourceRuns(ctx context.Context, now int64, limit int) ([]
 	if now <= 0 || limit <= 0 || limit > 10 {
 		return nil, si.ErrInvalid
 	}
-	rows, e := s.db.QueryContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE lease_until<=? AND retry_at<=? AND phase NOT IN('succeeded','not_dispatched','canceled','failed') AND (confirmation_hash!='' OR (quote_json IS NULL AND deleted=0 AND cancel_requested=0)) ORDER BY retry_at,id LIMIT ?`, now, now, limit)
+	rows, e := s.db.QueryContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE lease_until<=? AND retry_at<=? AND phase NOT IN('succeeded','not_dispatched','canceled','failed','output_deleted') AND (confirmation_hash!='' OR (quote_json IS NULL AND deleted=0 AND cancel_requested=0)) ORDER BY retry_at,id LIMIT ?`, now, now, limit)
 	if e != nil {
 		return nil, e
 	}

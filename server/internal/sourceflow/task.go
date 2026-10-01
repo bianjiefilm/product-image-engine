@@ -20,7 +20,7 @@ func sourceDelay(id string, attempts int64) int64 {
 }
 
 func sourceLocalTerminal(phase string) bool {
-	return phase == "succeeded" || phase == "failed" || phase == "canceled" || phase == "not_dispatched"
+	return phase == "succeeded" || phase == "failed" || phase == "canceled" || phase == "not_dispatched" || phase == "output_deleted"
 }
 func sourceTaskTerminalPhase(status string) string {
 	switch status {
@@ -49,7 +49,9 @@ func (s *Service) taskError(ctx context.Context, r si.Run, cause error) (si.Run,
 		if r.Task != nil {
 			terminal = sourceTaskTerminalPhase(r.Task.Status)
 		}
-		if terminal != "" {
+		if r.Bill != nil && r.Bill.Status == "refunded" {
+			in.Phase = "review_required"
+		} else if terminal != "" {
 			in.Phase = terminal
 		} else if r.CancelRequested && r.SubmitAttempted {
 			in.Phase = "cancel_pending"
@@ -94,6 +96,9 @@ func (s *Service) observeTask(ctx context.Context, r si.Run, f si.TaskFact, fini
 		in.Phase = "provider_unknown"
 		in.LastError = "provider_unknown"
 	}
+	if r.Bill != nil && r.Bill.Status == "refunded" {
+		in.Phase = "review_required"
+	}
 	if sourceLocalTerminal(r.Phase) {
 		in.Phase = r.Phase
 	}
@@ -123,7 +128,7 @@ func (s *Service) Advance(ctx context.Context, id string) (si.Run, error) {
 	if e != nil {
 		return r, e
 	}
-	if r.Phase == "not_dispatched" || r.Phase == "succeeded" || r.Phase == "failed" || r.Phase == "canceled" {
+	if sourceLocalTerminal(r.Phase) {
 		return r, nil
 	}
 	if r.Quote == nil {

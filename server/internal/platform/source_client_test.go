@@ -440,7 +440,7 @@ func TestSourceWireDownloadGrantScopedEcho(t *testing.T) {
 		if len(m) != 4 || sourceString(m, "principal_id") != "usr-a" {
 			t.Error("download owner")
 		}
-		json.NewEncoder(w).Encode(map[string]any{"ok": true, "download_url": "https://sample.oss-cn-hangzhou.aliyuncs.com/output.png?temporary=fixture", "expires_at": "2026-10-01T00:01:00Z", "asset": map[string]any{"asset_version": "durable_asset_v1", "app_id": "product-image", "principal_type": "user", "principal_id": "usr-a", "asset_id": "asset-a", "filename": "output.png", "content_type": "image/png", "sha256": strings.Repeat("a", 64), "size_bytes": 1024, "status": "ready", "active_reference_count": 1}})
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "download_url": "https://sample.oss-cn-hangzhou.aliyuncs.com/output.png?temporary=fixture", "expires_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339), "asset": map[string]any{"asset_version": "durable_asset_v1", "app_id": "product-image", "principal_type": "user", "principal_id": "usr-a", "asset_id": "asset-a", "filename": "output.png", "content_type": "image/png", "sha256": strings.Repeat("a", 64), "size_bytes": 1024, "status": "ready", "active_reference_count": 1}})
 	}))
 	defer srv.Close()
 	c, _ := NewSourceClients(sourceWireConfig(srv.URL), srv.Client())

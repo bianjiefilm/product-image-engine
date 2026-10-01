@@ -56,6 +56,7 @@ type Run struct {
 	ConfirmedAt                                                    int64
 	Phase, TaskID                                                  string
 	Bill                                                           *BillFact
+	ChargedBill                                                    *BillFact
 	Task                                                           *TaskFact
 	Output                                                         *Output
 	Selected, Deleted, CancelRequested, SubmitAttempted            bool
