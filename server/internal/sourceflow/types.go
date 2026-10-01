@@ -7,6 +7,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 	"io"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,13 +39,14 @@ type AssetPort interface {
 	Download(context.Context, si.Run) (io.ReadCloser, error)
 }
 type Service struct {
-	Store   *store.Store
-	Auth    *Authorizer
-	Bill    BillPort
-	Tasks   TaskPort
-	Assets  AssetPort
-	Profile Profile
-	Now     func() time.Time
+	recoveryRunning atomic.Bool
+	Store           *store.Store
+	Auth            *Authorizer
+	Bill            BillPort
+	Tasks           TaskPort
+	Assets          AssetPort
+	Profile         Profile
+	Now             func() time.Time
 }
 type Profile struct {
 	Enabled, OrgEnabled                               bool

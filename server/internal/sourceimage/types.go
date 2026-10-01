@@ -5,6 +5,7 @@ package sourceimage
 import "errors"
 
 const Owner = "product_source_v1"
+const TaskRequestBudgetSeconds int64 = 20
 
 var (
 	ErrInvalid      = errors.New("source image: invalid request")
@@ -47,6 +48,7 @@ type TaskFact struct {
 	Output                                                  *Output
 }
 type Run struct {
+	SubmitStartedAt, SubmitBudgetSeconds                           int64
 	ID, Owner, Fingerprint, UsageKey, TaskKey, BusinessRef         string
 	Intent                                                         Intent
 	Quote                                                          *Quote

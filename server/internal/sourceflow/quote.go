@@ -181,6 +181,13 @@ func (s *Service) Confirm(ctx context.Context, actor Actor, project, id, quoteID
 	if !claimed {
 		return r, si.ErrConflict
 	}
+	if r.ConfirmationHash != "" {
+		out, e := s.Store.ConfirmSourceRunForProject(ctx, r, hash, s.now().Unix(), r.Revision, r.LeaseEpoch)
+		if e != nil {
+			return s.quoteError(ctx, r, e)
+		}
+		return out, nil
+	}
 	fact, found, e := s.Bill.Get(ctx, r)
 	if e != nil {
 		return s.quoteError(ctx, r, e)

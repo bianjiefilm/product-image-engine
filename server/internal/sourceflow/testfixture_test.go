@@ -7,6 +7,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 	"io"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -89,17 +90,90 @@ func (b *billFixture) Quote(ctx context.Context, r si.Run) error {
 	return nil
 }
 
-type taskFixture struct{ Submits, Commits, Dispatches int }
+type taskFixture struct {
+	mu                                                               sync.Mutex
+	facts                                                            map[string]si.TaskFact
+	Submits, Commits, Dispatches, Lookups, Gets, Cancels, Reconciles int
+	AfterCommit                                                      string
+	ReadError                                                        error
+	BeforeLookup                                                     func()
+	Mutate                                                           func(*si.TaskFact)
+}
 
-func (f *taskFixture) Lookup(context.Context, si.Run) (si.TaskFact, bool, error) {
-	return si.TaskFact{}, false, nil
+func taskKey(r si.Run) string { return fmt.Sprintf("%q/%q", r.Intent.Scope, r.TaskKey) }
+func (f *taskFixture) read(r si.Run) (si.TaskFact, bool, error) {
+	if f.ReadError != nil {
+		return si.TaskFact{}, false, f.ReadError
+	}
+	fact, found := f.facts[taskKey(r)]
+	if f.Mutate != nil {
+		f.Mutate(&fact)
+	}
+	return fact, found, nil
 }
-func (f *taskFixture) Get(context.Context, si.Run) (si.TaskFact, bool, error) {
-	return si.TaskFact{}, false, nil
+func (f *taskFixture) Lookup(ctx context.Context, r si.Run) (si.TaskFact, bool, error) {
+	if f.BeforeLookup != nil {
+		f.BeforeLookup()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Lookups++
+	return f.read(r)
 }
-func (f *taskFixture) Submit(context.Context, si.Run) error    { f.Submits++; return si.ErrUnavailable }
-func (f *taskFixture) Cancel(context.Context, si.Run) error    { return si.ErrUnavailable }
-func (f *taskFixture) Reconcile(context.Context, si.Run) error { return si.ErrUnavailable }
+func (f *taskFixture) Get(ctx context.Context, r si.Run) (si.TaskFact, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Gets++
+	return f.read(r)
+}
+func (f *taskFixture) Submit(ctx context.Context, r si.Run) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Submits++
+	if f.AfterCommit == "submit_no_commit" {
+		f.AfterCommit = ""
+		return si.ErrUnavailable
+	}
+	if f.facts == nil {
+		f.facts = map[string]si.TaskFact{}
+	}
+	if _, found := f.facts[taskKey(r)]; !found {
+		f.Commits++
+		f.Dispatches++
+		f.facts[taskKey(r)] = si.TaskFact{ID: fmt.Sprintf("task-%d", f.Commits), IdempotencyKey: r.TaskKey, Scope: r.Intent.Scope, Quote: *r.Quote, Provider: r.Intent.Provider, Capability: r.Intent.Capability, Status: "queued", Phase: "hold_pending"}
+	}
+	if f.AfterCommit == "submit_unobservable" {
+		f.AfterCommit = ""
+		f.ReadError = si.ErrUnavailable
+		return si.ErrUnavailable
+	}
+	if f.AfterCommit == "submit" {
+		f.AfterCommit = ""
+		return si.ErrUnavailable
+	}
+	return nil
+}
+func (f *taskFixture) Cancel(ctx context.Context, r si.Run) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Cancels++
+	if fact, found := f.facts[taskKey(r)]; found {
+		fact.Status = "canceled"
+		fact.Phase = "canceled"
+		f.facts[taskKey(r)] = fact
+	}
+	if f.AfterCommit == "cancel" {
+		f.AfterCommit = ""
+		return si.ErrUnavailable
+	}
+	return nil
+}
+func (f *taskFixture) Reconcile(context.Context, si.Run) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Reconciles++
+	return nil
+}
 
 type assetFixture struct{}
 

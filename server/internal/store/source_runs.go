@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"reflect"
 	"strings"
 
 	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
@@ -23,7 +22,7 @@ type sourceEvent struct {
 	At    int64
 }
 
-const sourceColumns = `id,owner,app_id,user_id,tenant_id,project_id,payer_account_id,principal_account_id,request_key,fingerprint,intent_json,usage_key,task_key,business_ref,usage_id,task_id,quote_json,confirmation_hash,confirmed_at,phase,observation_json,events_json,quality_json,revision,lease_epoch,lease_until,retry_at,attempts,deleted,selected,cancel_requested,submit_attempted,updated_at`
+const sourceColumns = `id,owner,app_id,user_id,tenant_id,project_id,payer_account_id,principal_account_id,request_key,fingerprint,intent_json,usage_key,task_key,business_ref,usage_id,task_id,quote_json,confirmation_hash,confirmed_at,phase,observation_json,events_json,quality_json,revision,lease_epoch,lease_until,retry_at,attempts,deleted,selected,cancel_requested,submit_attempted,updated_at,submit_started_at,submit_budget_seconds`
 const sourceScopeSQL = `app_id=? AND user_id=? AND tenant_id=? AND project_id=? AND payer_account_id=? AND principal_account_id=?`
 
 func sourceScopeArgs(s si.Scope) []any {
@@ -34,7 +33,7 @@ func scanSource(row interface{ Scan(...any) error }) (si.Run, error) {
 	var scope si.Scope
 	var requestKey, intentRaw, observationRaw string
 	var usage, task, quote sql.NullString
-	err := row.Scan(&r.ID, &r.Owner, &scope.AppID, &scope.UserID, &scope.TenantID, &scope.ProjectID, &scope.PayerAccountID, &scope.PrincipalAccountID, &requestKey, &r.Fingerprint, &intentRaw, &r.UsageKey, &r.TaskKey, &r.BusinessRef, &usage, &task, &quote, &r.ConfirmationHash, &r.ConfirmedAt, &r.Phase, &observationRaw, &r.EventsJSON, &r.QualityJSON, &r.Revision, &r.LeaseEpoch, &r.LeaseUntil, &r.RetryAt, &r.Attempts, &r.Deleted, &r.Selected, &r.CancelRequested, &r.SubmitAttempted, &r.UpdatedAt)
+	err := row.Scan(&r.ID, &r.Owner, &scope.AppID, &scope.UserID, &scope.TenantID, &scope.ProjectID, &scope.PayerAccountID, &scope.PrincipalAccountID, &requestKey, &r.Fingerprint, &intentRaw, &r.UsageKey, &r.TaskKey, &r.BusinessRef, &usage, &task, &quote, &r.ConfirmationHash, &r.ConfirmedAt, &r.Phase, &observationRaw, &r.EventsJSON, &r.QualityJSON, &r.Revision, &r.LeaseEpoch, &r.LeaseUntil, &r.RetryAt, &r.Attempts, &r.Deleted, &r.Selected, &r.CancelRequested, &r.SubmitAttempted, &r.UpdatedAt, &r.SubmitStartedAt, &r.SubmitBudgetSeconds)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, si.ErrNotFound
 	}
@@ -75,7 +74,13 @@ func scanSource(row interface{ Scan(...any) error }) (si.Run, error) {
 	if r.ConfirmationHash != "" && (r.Quote == nil || r.ConfirmationHash != si.QuoteHash(*r.Quote) || r.ConfirmedAt <= 0) {
 		return si.Run{}, si.ErrInvariant
 	}
+	if !(r.SubmitStartedAt == 0 && r.SubmitBudgetSeconds == 0 || r.SubmitStartedAt > 0 && r.SubmitStartedAt <= math.MaxInt64-si.TaskRequestBudgetSeconds && r.SubmitBudgetSeconds == si.TaskRequestBudgetSeconds && r.SubmitAttempted) {
+		return si.Run{}, si.ErrInvariant
+	}
 	r.TaskID = task.String
+	if r.Task != nil && (r.Task.ID != r.TaskID || si.ValidateTaskFact(r, *r.Task) != nil) || r.TaskID != "" && r.Task == nil {
+		return si.Run{}, si.ErrInvariant
+	}
 	return r, nil
 }
 func (s *Store) withSourceWrite(ctx context.Context, fn func(*sql.Conn) error) error {
@@ -284,9 +289,9 @@ func (s *Store) ClaimSourceRun(ctx context.Context, scope si.Scope, id string, n
 	return
 }
 
-// SaveSourceObservation only changes retry/error metadata in this initial local
-// increment. Quote/confirmation and later financial/output transitions use their
-// own guarded operations; caller-provided summaries cannot grant those facts.
+// SaveSourceObservation permits fenced retry metadata and verified original
+// Task facts. The typed submit marker owns the first request budget. Bill/quote/confirmation/output ownership stays
+// with its dedicated operations; caller summaries cannot grant those facts.
 func (s *Store) SaveSourceObservation(ctx context.Context, in si.Run, revision, epoch int64) (out si.Run, err error) {
 	err = s.withSourceWrite(ctx, func(c *sql.Conn) error {
 		r, e := scanSource(c.QueryRowContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE id=?`, in.ID))
@@ -296,12 +301,8 @@ func (s *Store) SaveSourceObservation(ctx context.Context, in si.Run, revision, 
 		if epoch <= 0 || r.LeaseUntil <= Now().Unix() || r.Revision != revision || r.LeaseEpoch != epoch || in.Revision != revision || in.LeaseEpoch != epoch {
 			return si.ErrConflict
 		}
-		allowed := r
-		allowed.LastError = in.LastError
-		allowed.RetryAt = in.RetryAt
-		allowed.Attempts = in.Attempts
-		if !reflect.DeepEqual(in, allowed) {
-			return si.ErrConflict
+		if e = validateSourceObservation(ctx, c, r, in); e != nil {
+			return e
 		}
 		if len(in.LastError) > 128 || strings.ContainsAny(in.LastError, "\r\n") || in.RetryAt < 0 || in.Attempts < r.Attempts {
 			return si.ErrInvalid
@@ -309,8 +310,19 @@ func (s *Store) SaveSourceObservation(ctx context.Context, in si.Run, revision, 
 		if e = sourceRevision(r); e != nil {
 			return e
 		}
-		obs, _ := json.Marshal(sourceObservation{LastError: in.LastError, Bill: r.Bill, Task: r.Task, Output: r.Output})
-		_, e = c.ExecContext(ctx, `UPDATE product_source_runs SET observation_json=?,retry_at=?,attempts=?,revision=revision+1,updated_at=? WHERE id=?`, string(obs), in.RetryAt, in.Attempts, Now().Unix(), in.ID)
+		obs, _ := json.Marshal(sourceObservation{LastError: in.LastError, Bill: r.Bill, Task: in.Task, Output: r.Output})
+		now := Now().Unix()
+		events := r.EventsJSON
+		if in.Phase != r.Phase {
+			events, e = sourceEvents(r, in.Phase, now)
+			if e != nil {
+				return e
+			}
+		}
+		_, e = c.ExecContext(ctx, `UPDATE product_source_runs SET observation_json=?,task_id=?,phase=?,submit_attempted=?,lease_until=?,events_json=?,retry_at=?,attempts=?,revision=revision+1,updated_at=? WHERE id=?`, string(obs), sourceTaskIDValue(in.TaskID), in.Phase, in.SubmitAttempted, in.LeaseUntil, events, in.RetryAt, in.Attempts, now, in.ID)
+		if isUniqueErr(e) {
+			return si.ErrConflict
+		}
 		if e != nil {
 			return e
 		}
