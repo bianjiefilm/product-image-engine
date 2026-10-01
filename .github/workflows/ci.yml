@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/hui-2232-source-consumer-20261001]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-image-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    # The private-module credential is available only to this repository's PRs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
+    env:
+      GOWORK: 'off'
+      GOPROXY: https://goproxy.cn,direct
+      GOPRIVATE: github.com/bianjiefilm/*
+      GOMODCACHE: ${{ runner.temp }}/../go-mod-cache
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Download locked private SDK and dependencies
+        working-directory: server
+        env:
+          MODULE_AUTH_BASIC: ${{ secrets.MODULE_AUTH_BASIC }}
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic ${{ secrets.MODULE_AUTH_BASIC }}'
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          test -n "$MODULE_AUTH_BASIC" || { echo 'MODULE_AUTH_BASIC must grant public-ai module access'; exit 1; }
+          go mod download
+          go mod verify
+      - name: Vet, build and test server
+        working-directory: server
+        env:
+          GOPROXY: 'off'
+        run: |
+          set -euo pipefail
+          go vet ./...
+          go build ./...
+          go test -p 1 -count=1 ./...
+          go test -race -p 1 -count=1 ./internal/sourceimage ./internal/sourceflow ./internal/store ./internal/platform ./internal/httpapi ./cmd/server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked Web dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: Test, typecheck and build Web
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm test
+          ./node_modules/.bin/tsc --noEmit
+          npm run build
