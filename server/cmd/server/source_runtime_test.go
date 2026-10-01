@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -408,4 +410,212 @@ func TestSourceRuntimeInFlightOriginalSDKReadJoinsBeforeStoreClose(t *testing.T)
 	if !errors.Is(co.err, context.Canceled) {
 		t.Fatal(co.err)
 	}
+}
+
+type sourceServeOutcome struct{ stopErr, shutdownErr error }
+
+// This listener owns only net.Pipe connections: no TCP listener, port, TLS,
+// provider or external service is created by the real Serve/Shutdown tests.
+type sourceMemoryListener struct {
+	conn     net.Conn
+	accepted sync.Once
+	closing  sync.Once
+	closed   chan struct{}
+}
+
+func (l *sourceMemoryListener) Accept() (net.Conn, error) {
+	var c net.Conn
+	l.accepted.Do(func() { c = l.conn })
+	if c != nil {
+		return c, nil
+	}
+	<-l.closed
+	return nil, net.ErrClosed
+}
+func (l *sourceMemoryListener) Close() error   { l.closing.Do(func() { close(l.closed) }); return nil }
+func (l *sourceMemoryListener) Addr() net.Addr { return sourceMemoryAddr{} }
+
+type sourceMemoryAddr struct{}
+
+func (sourceMemoryAddr) Network() string { return "pipe" }
+func (sourceMemoryAddr) String() string  { return "source-fixture-memory" }
+func sourceRuntimeHTTPFixture(t *testing.T, handler http.Handler) (*store.Store, context.Context, context.CancelFunc, *sourceCoordinator, *sourceRequests, *http.Server, net.Listener, net.Conn) {
+	t.Helper()
+	st := sourceRuntimeStore(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	svc, e := newSourceRuntime(sourceRuntimeConfig(), st)
+	if e != nil {
+		t.Fatal(e)
+	}
+	co, e := startSourceCoordinator(ctx, svc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() {
+		cancel()
+		co.cancel()
+		select {
+		case <-co.done:
+		case <-time.After(time.Second):
+			t.Error("fixture worker did not join")
+		}
+	})
+	reqs := newSourceRequests(handler)
+	srv := &http.Server{Handler: reqs, BaseContext: func(net.Listener) context.Context { return ctx }}
+	serverConn, clientConn := net.Pipe()
+	ln := &sourceMemoryListener{conn: serverConn, closed: make(chan struct{})}
+	t.Cleanup(func() { ln.Close(); clientConn.Close(); serverConn.Close() })
+	return st, ctx, cancel, co, reqs, srv, ln, clientConn
+}
+func sourceMemoryRequest(t *testing.T, c net.Conn) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r, _ := http.NewRequest("GET", "http://source-fixture/healthz", nil)
+		_ = r.Write(c)
+		_, _ = io.Copy(io.Discard, c)
+	}()
+	return done
+}
+func sourceAwait(t *testing.T, ch <-chan struct{}, message string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal(message)
+	}
+}
+func TestSourceRuntimeRealServeUnexpectedWorkerCancelsAndJoins(t *testing.T) {
+	entered := make(chan struct{})
+	afterCancel := make(chan error, 1)
+	release := make(chan struct{})
+	var st *store.Store
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		_, e := st.ListDueSourceRuns(context.Background(), time.Now().Unix(), 10)
+		afterCancel <- e
+		<-release
+	})
+	var ctx context.Context
+	var cancel context.CancelFunc
+	var co *sourceCoordinator
+	var reqs *sourceRequests
+	var srv *http.Server
+	var ln net.Listener
+	var client net.Conn
+	st, ctx, cancel, co, reqs, srv, ln, client = sourceRuntimeHTTPFixture(t, handler)
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	done := make(chan sourceServeOutcome, 1)
+	go func() {
+		stopErr, shutdownErr := serveSourceRuntime(ctx, cancel, srv, reqs, co, st, ln, 2*time.Second)
+		done <- sourceServeOutcome{stopErr, shutdownErr}
+	}()
+	requestDone := sourceMemoryRequest(t, client)
+	sourceAwait(t, entered, "real Serve never accepted the in-memory HTTP request")
+	co.cancel() // Actual worker completes while parent is live: unexpected exit.
+	select {
+	case e := <-afterCancel:
+		if e != nil {
+			t.Fatal("database closed before canceled request joined", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker exit did not cancel actual HTTP BaseContext")
+	}
+	sourceAwait(t, co.done, "actual coordinator not joined")
+	if _, e := st.ListDueSourceRuns(t.Context(), time.Now().Unix(), 10); e != nil {
+		t.Fatal("Store closed while HTTP handler still active", e)
+	}
+	close(release)
+	select {
+	case e := <-done:
+		if e.shutdownErr != nil || !errors.Is(e.stopErr, errSourceCoordinatorExited) {
+			t.Fatal("unexpected worker exit hidden", e)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("actual runtime failed to join")
+	}
+	sourceAwait(t, requestDone, "HTTP connection not shut down")
+	if _, e := st.ListDueSourceRuns(t.Context(), time.Now().Unix(), 10); e == nil {
+		t.Fatal("fully joined runtime did not close Store")
+	}
+}
+func TestSourceRuntimeRealServeCanceledSignalIsNotFatal(t *testing.T) {
+	entered := make(chan struct{})
+	checked := make(chan error, 1)
+	var st *store.Store
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		_, e := st.ListDueSourceRuns(context.Background(), time.Now().Unix(), 10)
+		checked <- e
+	})
+	st, ctx, cancel, co, reqs, srv, ln, client := sourceRuntimeHTTPFixture(t, handler)
+	done := make(chan sourceServeOutcome, 1)
+	go func() {
+		stopErr, shutdownErr := serveSourceRuntime(ctx, cancel, srv, reqs, co, st, ln, time.Second)
+		done <- sourceServeOutcome{stopErr, shutdownErr}
+	}()
+	requestDone := sourceMemoryRequest(t, client)
+	sourceAwait(t, entered, "real Serve did not accept")
+	cancel()
+	select {
+	case e := <-done:
+		if e.stopErr != nil || e.shutdownErr != nil {
+			t.Fatal("ordinary canceled parent treated as fatal", e)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled runtime not joined")
+	}
+	if e := <-checked; e != nil {
+		t.Fatal("request lost original Store before join", e)
+	}
+	sourceAwait(t, requestDone, "ordinary shutdown connection not closed")
+	if _, e := st.ListDueSourceRuns(t.Context(), time.Now().Unix(), 10); e == nil {
+		t.Fatal("Store not closed after ordinary complete join")
+	}
+}
+func TestSourceRuntimeRealServeTimeoutDoesNotCloseStore(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	handlerDone := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(entered); <-release; close(handlerDone) })
+	st, ctx, cancel, co, reqs, srv, ln, client := sourceRuntimeHTTPFixture(t, handler)
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	done := make(chan sourceServeOutcome, 1)
+	go func() {
+		stopErr, shutdownErr := serveSourceRuntime(ctx, cancel, srv, reqs, co, st, ln, 40*time.Millisecond)
+		done <- sourceServeOutcome{stopErr, shutdownErr}
+	}()
+	requestDone := sourceMemoryRequest(t, client)
+	sourceAwait(t, entered, "real Serve did not accept")
+	cancel()
+	select {
+	case e := <-done:
+		if !errors.Is(e.shutdownErr, errSourceUnjoined) {
+			t.Fatal("unjoined actual handler claimed success", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("actual shutdown not bounded")
+	}
+	sourceAwait(t, co.done, "worker did not join during handler timeout")
+	if _, e := st.ListDueSourceRuns(t.Context(), time.Now().Unix(), 10); e != nil {
+		t.Fatal("timeout closed in-use original Store", e)
+	}
+	close(release)
+	sourceAwait(t, handlerDone, "fixture handler not released")
+	sourceAwait(t, requestDone, "timeout did not close HTTP connection")
 }

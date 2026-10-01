@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
@@ -223,4 +225,17 @@ func waitSourceStop(ctx context.Context, served <-chan error, co *sourceCoordina
 		}
 		return errSourceCoordinatorExited
 	}
+}
+
+// serveSourceRuntime is the existing main Serve/wait/bounded-stop sequence.
+// Tests supply only in-memory listeners; main keeps its original TCP listener
+// and explicitly supplies the unchanged ten-second shutdown budget.
+func serveSourceRuntime(ctx context.Context, cancel context.CancelFunc, server *http.Server, requests *sourceRequests, coordinator *sourceCoordinator, st *store.Store, ln net.Listener, shutdownBudget time.Duration) (error, error) {
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(ln) }()
+	stopErr := waitSourceStop(ctx, served, coordinator)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownBudget)
+	shutdownErr := stopSourceProcess(shutdownCtx, cancel, server, requests, coordinator, st)
+	shutdownCancel()
+	return stopErr, shutdownErr
 }

@@ -120,12 +120,7 @@ func main() {
 		log.Fatalf("product-image-server: 监听 %s 失败: %v", cfg.Addr, err)
 	}
 	log.Printf("product-image-server: listening on %s", ln.Addr())
-	served := make(chan error, 1)
-	go func() { served <- server.Serve(ln) }()
-	stopErr := waitSourceStop(processCtx, served, coordinator)
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	shutdownErr := stopSourceProcess(shutdownCtx, cancelProcess, server, requests, coordinator, st)
-	shutdownCancel()
+	stopErr, shutdownErr := serveSourceRuntime(processCtx, cancelProcess, server, requests, coordinator, st, ln, 10*time.Second)
 	if shutdownErr != nil {
 		// log.Fatal exits without defers. OS reclaims the Store; next startup resumes
 		// the same identities. Closing an in-use DB here would corrupt the join rule.
