@@ -317,12 +317,13 @@ func decodeSourceBill(raw []byte, r si.Run) (si.BillFact, error) {
 		amount, e := sourceInt(h, "amount_minor")
 		holdSpent, e = sourceInt(h, "spent_minor")
 		holdStatus = sourceString(h, "status")
-		if e != nil || amount != f.Quote.AmountMinor || (holdStatus != "open" && holdStatus != "spent" && holdStatus != "refunded") {
+		if e != nil || amount != f.Quote.AmountMinor || (holdStatus != "open" && holdStatus != "spent" && holdStatus != "refunded" && holdStatus != "released") {
 			return f, si.ErrInvariant
 		}
 	} else if f.HoldID != "" {
 		return f, si.ErrInvariant
 	}
+	chargeSources := map[string]int64{}
 	if sourcePresent(m["charge"]) {
 		c, e := sourceObject(m["charge"], "charge_id usage_id payer_account_id app_id capability quantity pricing_version amount_minor promo_minor allowance_minor cash_minor deduction_version status reason created_at_unix idempotency_key allocations", "")
 		if e != nil || f.Quote == nil || sourceString(c, "usage_id") != f.UsageID || sourceString(c, "payer_account_id") != r.Intent.Scope.PayerAccountID || sourceString(c, "app_id") != r.Intent.Scope.AppID || sourceString(c, "capability") != r.Intent.Capability || sourceString(c, "pricing_version") != r.Intent.PricingVersion || sourceString(c, "charge_id") == "" {
@@ -342,6 +343,7 @@ func decodeSourceBill(raw []byte, r si.Run) (si.BillFact, error) {
 			if e != nil || n > remaining {
 				return f, si.ErrInvariant
 			}
+			chargeSources[key] = n
 			remaining -= n
 		}
 		if remaining != 0 {
@@ -356,7 +358,12 @@ func decodeSourceBill(raw []byte, r si.Run) (si.BillFact, error) {
 			return f, si.ErrInvariant
 		}
 		amount, e := sourceInt(rel, "amount_minor")
-		if e != nil || amount != f.Quote.AmountMinor || f.ChargeID != "" {
+		if e != nil || amount != f.Quote.AmountMinor || f.ChargeID != "" || f.Status != "released" || holdStatus != "released" || holdSpent != 0 || sourceString(rel, "status") != "released" || sourceString(rel, "idempotency_key") == "" || sourceString(rel, "evidence_ref") == "" {
+			return f, si.ErrInvariant
+		}
+		switch sourceString(rel, "resolution") {
+		case "not_dispatched", "provider_failed", "provider_canceled":
+		default:
 			return f, si.ErrInvariant
 		}
 		f.ReleaseID = sourceString(rel, "release_id")
@@ -364,6 +371,20 @@ func decodeSourceBill(raw []byte, r si.Run) (si.BillFact, error) {
 	if sourcePresent(m["refund"]) {
 		ref, e := sourceObject(m["refund"], "refund_id charge_id idempotency_key reason promo_minor allowance_minor cash_minor created_at_unix", "")
 		if e != nil || sourceString(ref, "charge_id") != f.ChargeID || f.ChargeID == "" || sourceString(ref, "refund_id") == "" {
+			return f, si.ErrInvariant
+		}
+		if f.Status != "refunded" || holdStatus != "refunded" || sourceString(ref, "idempotency_key") == "" || f.Quote == nil {
+			return f, si.ErrInvariant
+		}
+		remaining := f.Quote.AmountMinor
+		for _, key := range []string{"promo_minor", "allowance_minor", "cash_minor"} {
+			n, e := sourceInt(ref, key)
+			if e != nil || n != chargeSources[key] || n > remaining {
+				return f, si.ErrInvariant
+			}
+			remaining -= n
+		}
+		if remaining != 0 {
 			return f, si.ErrInvariant
 		}
 		f.RefundID = sourceString(ref, "refund_id")
@@ -391,7 +412,7 @@ func decodeSourceTask(raw []byte, r si.Run) (si.TaskFact, error) {
 			return si.TaskFact{}, si.ErrInvariant
 		}
 	}
-	f := si.TaskFact{ID: sourceString(m, "task_id"), IdempotencyKey: r.TaskKey, Phase: sourceString(m, "phase"), Status: sourceString(m, "status"), Provider: r.Intent.Provider, Capability: r.Intent.Capability, Scope: s, Quote: *q}
+	f := si.TaskFact{HoldID: sourceString(m, "hold_id"), ChargeID: sourceString(m, "charge_id"), ReleaseID: sourceString(m, "release_id"), ID: sourceString(m, "task_id"), IdempotencyKey: r.TaskKey, Phase: sourceString(m, "phase"), Status: sourceString(m, "status"), Provider: r.Intent.Provider, Capability: r.Intent.Capability, Scope: s, Quote: *q}
 	if f.ID == "" || f.Phase == "" || r.TaskID != "" && r.TaskID != f.ID {
 		return f, si.ErrInvariant
 	}
@@ -419,7 +440,7 @@ func decodeSourceTask(raw []byte, r si.Run) (si.TaskFact, error) {
 		}
 		f.Output = &si.Output{AssetID: sourceString(out, "asset_id"), ReferenceID: sourceString(out, "reference_id"), ProjectID: s.ProjectID, AppID: s.AppID, PrincipalType: "user", PrincipalID: s.UserID, SHA256: sourceString(out, "sha256"), ContentType: "image/png", SizeBytes: size}
 	}
-	if f.Output != nil && !ready || f.Status == "succeeded" && (!ready || f.Output == nil) {
+	if f.Output != nil && !ready || f.Status == "succeeded" && (!ready || f.Output == nil || f.HoldID == "" || f.ChargeID == "" || f.ReleaseID != "") {
 		return f, si.ErrInvariant
 	}
 	return f, nil

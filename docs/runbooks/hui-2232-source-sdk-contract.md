@@ -71,3 +71,44 @@ platform tests plus the required SDK catalog test are included; final exact
 commit is handed to root. Baseline store/sourceimage/platform/publicconsumer passed first. Bill,
 Browser, Production, Human and new complete Service chain remain NOT_RUN here.
 HUI-2232 stays open: text generation does not prove product subject fidelity.
+
+## Independent review corrections
+
+Root/reviewer actually reproduced four blockers against original `415552f`:
+307 forwarded the original POST and app credential through a caller-supplied
+HTTP client; actual released hold state was rejected; an open/nonterminal
+release was accepted; a zero-source refund of allowance25 was accepted.
+These exact probes were archived outside the author worktree and then imported
+as regression tests. The author reran all four and observed failure before the
+narrow fixes. Original commit and the independent RED log remain preserved.
+
+The constructor now shallow-copies HTTP Client, preserves its Transport/Timeout
+and replaces CheckRedirect with unconditional refusal. Caller state is unchanged;
+all three fixed clients and per-user Upload clients share only this guarded copy.
+A two-server test covers all four credential families and proves no destination
+request; a separate request using the original caller still follows redirect.
+
+Released usage requires hold and release to have actual released status, hold
+spent=0, matching usage/hold/quote/original amount, no charge/refund, known original
+resolution (not_dispatched/provider_failed/provider_canceled) and identity/evidence.
+Refund requires original refunded usage/charge/hold and original charge_id; all
+three refund sources equal their original charge sources individually and sum to
+the original amount with checked subtraction. Same total paid from another source
+is rejected. A refund retains the original charge observation; it is not a new
+charge and does not erase paid history. No product refund writer was introduced.
+
+TaskFact now also carries pure observed hold_id/charge_id/release_id from the
+public Task summary. Succeeded needs original hold+charge and no release. Task6
+must still compare these IDs with independently read official Bill facts before
+promoting a usable successful output. This adapter does not own settlement.
+
+Final correction checks: `go test -count=1 ./...` passed every package (HTTP
+8.653s, platform4.632s, store5.020s). Scoped fresh race passed platform1.731s,
+publicconsumer2.035s, sourceimage2.508s; scoped vet exited0. Four independent
+probes and three additional all-client redirect/financial-ID/valid released+
+refund conservation tests passed. Task3's approved test-first preparation has
+real missing-API RED and is preserved outside this Task2 checkpoint in
+`HUI-2232-task3-red-preparation`; it is not implemented or falsely included in
+Task2 all-green. An initial full invocation with those future RED tests failed
+as expected, then the final exact Task2 suite was run fresh without that
+unimplemented next-task scope. Module pin is unchanged; no remote actions.

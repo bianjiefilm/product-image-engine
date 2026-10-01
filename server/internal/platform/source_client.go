@@ -25,6 +25,15 @@ type sourceAssetClient struct {
 }
 
 func NewSourceClients(cfg config.Config, h *http.Client) (*SourceClients, error) {
+	// Copy the caller's client: SDK injection preserves CheckRedirect otherwise.
+	// Never repeat a credentialed request at a redirected authority.
+	if h == nil {
+		h = &http.Client{}
+	}
+	guarded := *h
+	guarded.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	h = &guarded
+
 	if cfg.AppID == "" || cfg.AppID != cfg.IdentityAppID {
 		return nil, si.ErrUnconfigured
 	}

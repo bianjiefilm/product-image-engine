@@ -40,6 +40,7 @@ type BillFact struct {
 	ChargedMinor                                                       *int64
 }
 type TaskFact struct {
+	HoldID, ChargeID, ReleaseID                             string
 	ID, IdempotencyKey, Phase, Status, Provider, Capability string
 	Scope                                                   Scope
 	Quote                                                   Quote

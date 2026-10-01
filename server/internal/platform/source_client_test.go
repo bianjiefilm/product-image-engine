@@ -276,6 +276,8 @@ func TestSourceDecodeOutputOriginalReference(t *testing.T) {
 	m["output_ready"] = true
 	m["status"] = "succeeded"
 	m["phase"] = "succeeded"
+	m["hold_id"] = "hold-a"
+	m["charge_id"] = "charge-a"
 	raw, _ := json.Marshal(m)
 	f, e := decodeSourceTask(raw, r)
 	if e != nil || f.Output == nil || f.Output.ReferenceID != "ref-a" {
