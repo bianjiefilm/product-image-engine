@@ -184,6 +184,14 @@ res,e:=client.Call(ctx,platformconsumer.Call{Operation:"billing.usage_get",PathP
 - [x] ForGET org callonlyreadonlynoselectorContext, strictcurrenttenantcompare; selection_required or differentcurrenttenant closesread withoutswitch. Forprojectarchive denywritebut permitread. Forhistoricalrun do notreplace frozenpayer onnewContext changes: read may validateprojectmembershipthen useoriginaluser+scope; newconfirm requirescurrentpayer==frozenpayer or409 newexplicitquote. Add testrevokedmembershipdenial while workerdoesnotinvoke newpaid Task; alreadyTask-ownedsettlement unaffected.
 - [x] GREEN targeted plus allconfig/sourceflow; commit files explicitly. Report orgpath implementedbutdefaultoff/realE7notverified; noorganizationGatePASS.
 
+Task3 independent-review correction: canonical Identity personal storage is
+`acct_` plus sixteen lowercase hexadecimal characters. A foreign canonical
+personal key or `personal/default:` key cannot fall through to organization
+Context. Only the scoped personal account + CreatedBy path grants that owner.
+Other `acct_*` names may still be actual organizations; no broad prefix denial.
+Both reviewer and author reproduced the initial read/write bypass, then the
+narrow correction is independently reviewed before Task4 production begins.
+
 ## Task 4: Durable usage/quote producer with explicit confirmation
 
 **Files:** Create sourceflow/quote.go, quote_test.go, testfixture_test.go. Extend store/source_runs.go tests only with requiredCAS. No hold/capture methods in productports.

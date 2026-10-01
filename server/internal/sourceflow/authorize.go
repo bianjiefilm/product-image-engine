@@ -26,6 +26,22 @@ func nilPort(v any) bool {
 	}
 	return false
 }
+
+// canonicalPersonalStorage matches Identity's account key: acct_ followed by
+// sixteen lowercase hexadecimal characters. Other acct_* names remain eligible
+// for real organization Context validation; a private account never does.
+func canonicalPersonalStorage(tenant string) bool {
+	if len(tenant) != len("acct_")+16 || !strings.HasPrefix(tenant, "acct_") {
+		return false
+	}
+	for _, c := range tenant[len("acct_"):] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *Authorizer) ForProject(ctx context.Context, actor Actor, id string, write bool) (Authorization, error) {
 	if a == nil || a.Store == nil || id == "" {
 		return Authorization{}, si.ErrNotFound
@@ -58,7 +74,7 @@ func (a *Authorizer) ForProject(ctx context.Context, actor Actor, id string, wri
 	if e != nil {
 		return Authorization{}, si.ErrNotFound
 	}
-	if strings.HasPrefix(p.TenantID, "personal/default:") || p.Status == "deleted" || nilPort(a.Context) {
+	if canonicalPersonalStorage(p.TenantID) || strings.HasPrefix(p.TenantID, "personal/default:") || p.Status == "deleted" || nilPort(a.Context) {
 		return Authorization{}, si.ErrNotFound
 	}
 	q := si.ContextQuery{AppID: a.AppID, UserID: actor.UserID, ReadOnly: !write}

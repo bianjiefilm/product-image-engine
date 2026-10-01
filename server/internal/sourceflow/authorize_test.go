@@ -208,3 +208,62 @@ func TestSourceAuthMalformedActorNeverQueriesContext(t *testing.T) {
 		t.Fatal(ctx.queries)
 	}
 }
+
+func TestSourceAuthForeignCanonicalPersonalCannotBecomeOrganization(t *testing.T) {
+	s := authStore(t)
+	foreignAccount := "acct_0123456789abcdef"
+	p := authProject(t, s, foreignAccount, "usr_0123456789abcdef")
+	port := &authContext{fact: si.ContextFact{Resolved: true, PayerKnown: true, AppID: "product-image", UserID: "usr_aabbccddeeff0011", TenantID: foreignAccount, Role: "editor", MemberRole: "payer", PayerAccountID: "org_payer", PayerSource: "delegation"}}
+	a := &Authorizer{Store: s, Context: port, AppID: "product-image"}
+	for _, write := range []bool{false, true} {
+		got, e := a.ForProject(t.Context(), Actor{UserID: "usr_aabbccddeeff0011", AccountID: "acct_aabbccddeeff0011"}, p.ID, write)
+		if !errors.Is(e, si.ErrNotFound) {
+			t.Errorf("foreign personal became organization write=%v auth=%+v error=%v", write, got, e)
+		}
+	}
+	if len(port.queries) != 0 {
+		t.Errorf("foreign personal entered organization Context %v", port.queries)
+	}
+}
+func TestSourceAuthAccountPrefixOrganizationIsAllowed(t *testing.T) {
+	s := authStore(t)
+	p := authProject(t, s, "acct_business_team", "usr-org-owner")
+	port := &authContext{fact: si.ContextFact{Resolved: true, PayerKnown: true, AppID: "product-image", UserID: "usr-a", TenantID: p.TenantID, Role: "editor", MemberRole: "payer", PayerAccountID: "org-payer", PayerSource: "delegation"}}
+	a := &Authorizer{Store: s, Context: port, AppID: "product-image"}
+	for _, write := range []bool{false, true} {
+		got, e := a.ForProject(t.Context(), Actor{UserID: "usr-a", AccountID: "acct-a"}, p.ID, write)
+		if e != nil || got.Scope.PayerAccountID != "org-payer" {
+			t.Fatal(got, e)
+		}
+	}
+	if len(port.queries) != 2 {
+		t.Fatal(port.queries)
+	}
+}
+
+func TestSourceAuthCanonicalPersonalStillRequiresAccountAndCreator(t *testing.T) {
+	s := authStore(t)
+	actor := Actor{UserID: "usr_aabbccddeeff0011", AccountID: "acct_aabbccddeeff0011"}
+	port := &authContext{err: si.ErrUnavailable}
+	a := &Authorizer{Store: s, Context: port, AppID: "product-image"}
+	own := authProject(t, s, actor.AccountID, actor.UserID)
+	for _, write := range []bool{false, true} {
+		if got, e := a.ForProject(t.Context(), actor, own.ID, write); e != nil || got.Scope.PayerAccountID != actor.AccountID {
+			t.Fatal(got, e)
+		}
+	}
+	for _, p := range []store.Project{authProject(t, s, actor.AccountID, "usr-other"), authProject(t, s, "acct_0123456789abcdef", actor.UserID)} {
+		for _, write := range []bool{false, true} {
+			if _, e := a.ForProject(t.Context(), actor, p.ID, write); !errors.Is(e, si.ErrNotFound) {
+				t.Fatal(p, e)
+			}
+		}
+	}
+	if len(port.queries) != 0 {
+		t.Fatal("private accounts queried Context", port.queries)
+	}
+	runs, e := s.ListSourceRuns(t.Context(), si.Scope{AppID: a.AppID, TenantID: actor.AccountID, ProjectID: own.ID, UserID: actor.UserID, PrincipalAccountID: actor.AccountID, PayerAccountID: actor.AccountID})
+	if e != nil || len(runs) != 0 {
+		t.Fatal("authorization created business facts", runs, e)
+	}
+}

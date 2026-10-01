@@ -51,3 +51,23 @@ settling changes (sourceflow 3.100s, config 1.543s, httpapi 5.833s, platform
 store 7.165s; scoped vet exited 0. Exact commit is handed to root for independent
 review. This is engineering evidence. Organization real E7, Web, Billing,
 Production and fidelity/customer adoption acceptance remain incomplete here.
+
+Independent Task3 review of b9272ae requested changes: metadata discovery could
+classify a foreign canonical personal account project as an organization when a
+Context response matched. Reviewer probe and author test both actually reproduced
+read and write authorization with two Context calls (sourceflow RED 1.599s).
+
+Root authorized a narrow fix based on the repository's real Identity account key:
+`acct_` plus sixteen lowercase hex characters (existing httpapi mint/derive tests),
+as well as existing `personal/default:` private keys, cannot enter organization
+Context validation after the scoped personal ownership path fails. Other `acct_*`
+organization names remain valid only with actual Context authorization. Canonical
+own account still requires its original creator, and a matching creator on another
+account does not grant ownership. Read/write failures make zero Context requests
+and create no source business facts. The initial reviewed commit and actual RED
+remain preserved; the final correction is submitted separately for independent
+review. Task4 preparation remains outside the author tree until final Task3 PASS.
+
+Author narrow-fix verification: canonical bypass probe GREEN 0.812s; fresh scoped
+race sourceflow 10.045s/config 1.820s/store 11.379s; scoped vet and diff check exit0.
+Full server suite passed; no credentials, deployment, real E7 or fidelity claim.
