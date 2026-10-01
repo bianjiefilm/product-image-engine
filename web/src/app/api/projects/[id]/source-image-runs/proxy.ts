@@ -32,7 +32,11 @@ function cursor(v: string): void {
   try { const bytes=Buffer.from(v,"base64url"); if(bytes.toString("base64url") !== v) reject(400,"invalid_request"); const c=record(parseSourceJSON(new TextDecoder("utf-8",{fatal:true}).decode(bytes))); fields(c,["v","created_at","id"]); if(c.v !== 1 || !isMinor(c.created_at) || c.created_at === "0" || !sourceSegment(c.id) || !c.id.startsWith("sir_")) reject(400,"invalid_request"); } catch {reject(400,"invalid_request");}
 }
 function queryFor(url: URL, resource: string, method: string): string {
-  if(/%(?![0-9a-fA-F]{2})/.test(url.search)) reject(400,"invalid_request");
+  // Validate original percent bytes before URLSearchParams can replace invalid UTF8.
+  try { for(const pair of url.search.slice(1).split("&")) {
+    const equal=pair.indexOf("=");
+    for(const part of equal<0 ? [pair] : [pair.slice(0,equal),pair.slice(equal+1)]) decodeURIComponent(part.replace(/\+/g," "));
+  } } catch {reject(400,"invalid_request");}
   const allowed=method === "GET" && resource === "list" ? ["limit","cursor"] : resource === "find" ? ["request_key"] : [];
   const seen=new Set<string>(); for(const [key,value] of url.searchParams) { if(!allowed.includes(key) || seen.has(key)) reject(400,"invalid_request"); seen.add(key);
     if(key === "limit" && (!/^[1-9][0-9]{0,2}$/.test(value) || Number(value)>100)) reject(400,"invalid_request");

@@ -39,37 +39,95 @@ export function SourceImageScreen(p: ScreenProps) {
     {p.nextCursor ? <Button type="button" variant="outline" disabled={!!p.busy} onClick={p.onMore}>读取更多历史</Button> : null}
   </Card>;
 }
-async function principal(): Promise<{userID:string;accountID:string}> {
+async function principal(ensure:()=>void): Promise<{userID:string;accountID:string}> {
   const abort=new AbortController(); const timeout=setTimeout(()=>abort.abort(),10000);
-  try { const r=await fetch("/api/auth/session",{cache:"no-store",credentials:"same-origin",redirect:"error",signal:abort.signal}); if(!r.ok) throw new SourceHTTPError(r.status,"unauthenticated");
-    const body=await r.json() as {principal?:{user_id?:string;account_id?:string}}; const p=body.principal;
+  try { ensure(); const r=await fetch("/api/auth/session",{cache:"no-store",credentials:"same-origin",redirect:"error",signal:abort.signal}); ensure(); if(!r.ok) throw new SourceHTTPError(r.status,"unauthenticated");
+    const body=await r.json() as {principal?:{user_id?:string;account_id?:string}}; ensure(); const p=body.principal;
     if(!sourceSegment(p?.user_id) || !sourceSegment(p?.account_id)) throw new Error("登录身份未验证"); return {userID:p.user_id,accountID:p.account_id};
   } finally {clearTimeout(timeout);}
 }
+// A lease binds async validation to the panel that dispatched it, before controller scope exists.
+type PanelLease={generation:number;project:string};
 export function SourceImagePanel({projectId}:{projectId?:string}) {
   const controller=useRef<SourceImageController | null>(null); if(!controller.current) controller.current=new SourceImageController(sourceImageAPI);
   const c=controller.current;
-  const [bound,setBound]=useState(projectId ?? ""), [prompt,setPrompt]=useState(""), [busy,setBusy]=useState(false), [notice,setNotice]=useState(""), [armed,setArmed]=useState(false), [tick,setTick]=useState(0), [history,setHistory]=useState<SourceRunView[]>([]), [nextCursor,setNextCursor]=useState("");
-  const verifiedScope=useRef<SourceScope | null>(null); const mounted=useRef(true);
-  const operationRunning=useRef(false);
+  const [,setBound]=useState(projectId ?? ""), [prompt,setPrompt]=useState(""), [busy,setBusy]=useState(false), [notice,setNotice]=useState(""), [armed,setArmed]=useState(false), [tick,setTick]=useState(0), [history,setHistory]=useState<SourceRunView[]>([]), [nextCursor,setNextCursor]=useState("");
+  const verifiedScope=useRef<SourceScope | null>(null), mounted=useRef(true);
+  const binding=useRef({prop:projectId,project:projectId ?? "",generation:0});
+  const operationRunning=useRef<PanelLease | null>(null);
+  // Invalidate synchronously on render: the old effect may not have cleaned up yet.
+  if(binding.current.prop !== projectId) {
+    binding.current={prop:projectId,project:projectId ?? "",generation:binding.current.generation+1};
+    c.setScope(null);verifiedScope.current=null;operationRunning.current=null;
+  }
+  const rendered={generation:binding.current.generation,project:binding.current.project};
+  const current=(l:PanelLease)=>mounted.current && l.generation === binding.current.generation && l.project === binding.current.project;
+  function ensure(l:PanelLease): void {if(!current(l)) throw new Error("页面或登录范围已改变");}
   const repaint=()=>{if(mounted.current) setTick(n=>n+1);}; void tick;
-  async function authorize(id:string): Promise<SourceScope> { const p=await principal(); const s={...p,projectID:id}; const changed=JSON.stringify(s) !== JSON.stringify(verifiedScope.current); c.setScope(s); verifiedScope.current=s; if(changed) {setHistory([]);setNextCursor("");setArmed(false);repaint();} return s; }
-  function hint(): void { const s=verifiedScope.current; if(!s) return; try { const h=c.pendingHint; if(h) sessionStorage.setItem(pendingHintKey(s),JSON.stringify(h)); else sessionStorage.removeItem(pendingHintKey(s)); } catch {} }
-  async function readHistory(cursor?:string): Promise<void> {const list=await c.history(cursor); setHistory(prev=>cursor ? [...prev,...list.runs.filter(r=>!prev.some(p=>p.run_id === r.run_id))] : list.runs);setNextCursor(list.next_cursor);}
-  useEffect(()=>{mounted.current=true; setBound(projectId ?? ""); c.setScope(null); verifiedScope.current=null; setHistory([]);setNextCursor("");setArmed(false);repaint();
-    let gone=false;
-    if(projectId && sourceSegment(projectId)) void (async()=>{try { await authorize(projectId); if(gone) return; await c.loadCapabilities(); await readHistory();
-      const run=new URLSearchParams(window.location.search).get("source_run"); if(run && sourceSegment(run)) await c.restore(projectId,run);
-      else { try { const raw=sessionStorage.getItem(pendingHintKey(verifiedScope.current!)); if(raw) await c.restoreHint(parseSourceJSON(raw)); } catch {} }
-      if(!gone) repaint();
-    } catch {if(!gone) {c.setScope(null);verifiedScope.current=null;setHistory([]);setNotice("当前登录或工程未验证，请重新读取。");repaint();}} })();
-    return ()=>{gone=true;mounted.current=false;c.setScope(null);verifiedScope.current=null;};
+  function invalidate(): void {binding.current.generation++;c.setScope(null);verifiedScope.current=null;operationRunning.current=null;}
+  async function step<T>(l:PanelLease,work:()=>Promise<T>): Promise<T> {ensure(l);const value=await work();ensure(l);return value;}
+  async function authorize(l:PanelLease): Promise<SourceScope> {
+    const p=await step(l,()=>principal(()=>ensure(l))), s={...p,projectID:l.project};ensure(l);
+    const previous=verifiedScope.current, changed=JSON.stringify(s) !== JSON.stringify(previous);
+    if(previous && changed) {const ownsOperation=operationRunning.current === l;invalidate();l.generation=binding.current.generation;if(ownsOperation)operationRunning.current=l;}
+    ensure(l);c.setScope(s);verifiedScope.current=s;
+    if(changed) {setHistory([]);setNextCursor("");setArmed(false);repaint();}return s;
+  }
+  function hint(l:PanelLease): void {ensure(l);const s=verifiedScope.current;if(!s)return;try {const h=c.pendingHint;if(h)sessionStorage.setItem(pendingHintKey(s),JSON.stringify(h));else sessionStorage.removeItem(pendingHintKey(s));}catch {}}
+  async function readHistory(l:PanelLease,cursor?:string): Promise<void> {
+    const list=await step(l,()=>c.history(cursor));ensure(l);
+    setHistory(prev=>cursor ? [...prev,...list.runs.filter(r=>!prev.some(p=>p.run_id === r.run_id))] : list.runs);setNextCursor(list.next_cursor);
+  }
+  useEffect(()=>{
+    mounted.current=true;const l={generation:binding.current.generation,project:binding.current.project};
+    setBound(l.project);c.setScope(null);verifiedScope.current=null;setHistory([]);setNextCursor("");setArmed(false);setBusy(false);repaint();
+    if(l.project && sourceSegment(l.project)) void (async()=>{try {
+      await authorize(l);await step(l,()=>c.loadCapabilities());await readHistory(l);ensure(l);
+      const run=new URLSearchParams(window.location.search).get("source_run");
+      if(run && sourceSegment(run)) await step(l,()=>c.restore(l.project,run));
+      else {try {ensure(l);const raw=sessionStorage.getItem(pendingHintKey(verifiedScope.current!));if(raw)await step(l,()=>c.restoreHint(parseSourceJSON(raw)));}catch(e){ensure(l);void e;}}
+      ensure(l);repaint();
+    }catch {if(current(l)){invalidate();setHistory([]);setNextCursor("");setNotice("当前登录或工程未验证，请重新读取。");repaint();}}})();
+    return()=>{if(current(l)){invalidate();mounted.current=false;}};
   // Effects perform only session/capabilities/history/original-run GET reads.
   },[projectId,c]);
-  useEffect(()=>{const interval=setInterval(()=>{if(c.view?.quote) repaint();},1000); const hide=()=>{c.setScope(null);verifiedScope.current=null;setHistory([]);setNextCursor("");repaint();}; const onVisibility=()=>{if(document.visibilityState !== "visible") hide();}; window.addEventListener("pagehide",hide); document.addEventListener("visibilitychange",onVisibility); return()=>{clearInterval(interval);window.removeEventListener("pagehide",hide);document.removeEventListener("visibilitychange",onVisibility);};},[c]);
-  async function operate(work:()=>Promise<void>): Promise<void> { if(operationRunning.current) return; operationRunning.current=true;setBusy(true);setNotice("");try {if(bound) {await authorize(bound);await c.loadCapabilities();} await work();hint(); if(c.view) {const url=new URL(window.location.href);url.searchParams.set("source_run",c.view.run_id);window.history.replaceState(null,"",url);await readHistory();} } catch(e) {hint();setNotice(e instanceof SourceHTTPError ? e.status === 401 ? "请重新登录；原请求需服务端再次授权" : e.status === 409 ? "原请求事实冲突，请读取原记录" : "原请求状态待核实，请读取原记录或用原请求键恢复" : e instanceof Error ? e.message : "原请求状态待核实");if(e instanceof SourceHTTPError && (e.status === 401 || e.status === 403 || e.status === 404)) {c.setScope(null);verifiedScope.current=null;setHistory([]);setNextCursor("");} } finally {operationRunning.current=false;setBusy(false);repaint();} }
-  async function quote(): Promise<void> { if(!bound) { const p=await principal(); const r=await fetch("/api/projects",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"个人普通概念图",usage_kind:"文生图",width_px:1024,height_px:1024,source_type:"standalone"}),credentials:"same-origin",redirect:"error",signal:AbortSignal.timeout(10000)}); if(!r.ok) throw new Error("创建工程状态待核实，不代表生成或收费成功"); const d=await r.json() as {project?:{id?:string}}; if(!sourceSegment(d.project?.id)) throw new Error("工程未验证"); const id=d.project.id; setBound(id); const after=await principal(); if(after.userID !== p.userID || after.accountID !== p.accountID) throw new Error("登录范围已改变"); await authorize(id);await c.loadCapabilities();await readHistory(); return; } await c.quote({projectID:bound,prompt,size:"1024*1024"}); }
-  const sameProject=!projectId || projectId === bound;
-  return <SourceImageScreen view={sameProject ? c.view:null} capabilities={sameProject ? c.capabilities:null} nowUnix={Math.floor(Date.now()/1000)} projectID={sameProject ? bound:projectId} prompt={prompt} busy={busy} notice={notice} deleteArmed={armed} history={sameProject ? history:[]} nextCursor={sameProject ? nextCursor:""} pendingKey={sameProject ? c.pendingHint?.requestKey:undefined}
-    onPrompt={setPrompt} onQuote={()=>void operate(quote)} onConfirm={()=>void operate(()=>c.confirm())} onRefresh={()=>void operate(()=>c.restore(bound,c.view?.run_id ?? ""))} onReload={()=>void operate(async()=>{await readHistory(); const h=c.pendingHint; if(h) await c.restoreHint(h);})} onNew={()=>{try {if(operationRunning.current) throw new Error("pending");c.newRequest();hint();setArmed(false);setNotice("下一次获取报价将创建新请求，原请求保留在历史中。");repaint();} catch {setNotice("原动作尚未返回");}}} onAction={name=>void operate(async()=>{await c.action(name);setArmed(false);})} onArmDelete={()=>setArmed(true)} onHistory={run=>void operate(()=>c.restore(bound,run))} onMore={()=>void operate(()=>readHistory(nextCursor))} />;
+  useEffect(()=>{
+    const interval=setInterval(()=>{if(c.view?.quote)repaint();},1000);
+    const hide=()=>{invalidate();setHistory([]);setNextCursor("");setArmed(false);setBusy(false);repaint();};
+    const onVisibility=()=>{if(document.visibilityState !== "visible")hide();};
+    window.addEventListener("pagehide",hide);document.addEventListener("visibilitychange",onVisibility);
+    return()=>{clearInterval(interval);window.removeEventListener("pagehide",hide);document.removeEventListener("visibilitychange",onVisibility);invalidate();mounted.current=false;};
+  },[c]);
+  async function operate(work:(l:PanelLease)=>Promise<void>): Promise<void> {
+    const l={...rendered};if(!current(l) || operationRunning.current)return;
+    operationRunning.current=l;setBusy(true);setNotice("");
+    try {
+      if(l.project){await authorize(l);await step(l,()=>c.loadCapabilities());}
+      await step(l,()=>work(l));hint(l);
+      if(c.view){ensure(l);const url=new URL(window.location.href);url.searchParams.set("source_run",c.view.run_id);window.history.replaceState(null,"",url);await readHistory(l);}
+    }catch(e){if(current(l)){
+      hint(l);setNotice(e instanceof SourceHTTPError ? e.status === 401 ? "请重新登录；原请求需服务端再次授权" : e.status === 409 ? "原请求事实冲突，请读取原记录" : "原请求状态待核实，请读取原记录或用原请求键恢复" : e instanceof Error ? e.message : "原请求状态待核实");
+      if(e instanceof SourceHTTPError && [401,403,404].includes(e.status)){invalidate();setHistory([]);setNextCursor("");setBusy(false);repaint();}
+    }}finally{if(current(l)){if(operationRunning.current === l)operationRunning.current=null;setBusy(false);repaint();}}
+  }
+  async function quote(l:PanelLease): Promise<void> {
+    if(!l.project){
+      const p=await step(l,()=>principal(()=>ensure(l)));
+      const r=await step(l,()=>fetch("/api/projects",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"个人普通概念图",usage_kind:"文生图",width_px:1024,height_px:1024,source_type:"standalone"}),credentials:"same-origin",redirect:"error",signal:AbortSignal.timeout(10000)}));
+      if(!r.ok)throw new Error("创建工程状态待核实，不代表生成或收费成功");
+      const d=await step(l,()=>r.json()) as {project?:{id?:string}};if(!sourceSegment(d.project?.id))throw new Error("工程未验证");
+      const after=await step(l,()=>principal(()=>ensure(l)));if(after.userID !== p.userID || after.accountID !== p.accountID)throw new Error("登录范围已改变");
+      ensure(l);binding.current.generation++;binding.current.project=d.project.id;l.generation=binding.current.generation;l.project=d.project.id;
+      ensure(l);setBound(l.project);await authorize(l);await step(l,()=>c.loadCapabilities());await readHistory(l);return;
+    }
+    await step(l,()=>c.quote({projectID:l.project,prompt,size:"1024*1024"}));
+  }
+  const displayed=projectId ?? binding.current.project, s=verifiedScope.current;
+  const sameScope=displayed === binding.current.project && !!s && s.projectID === displayed;
+  const belongs=(v:SourceRunView)=>sameScope && v.project_id === s!.projectID && v.payment.payer_user_id === s!.userID && (v.payment.payer_source !== "personal" || v.payment.payer_account_id === s!.accountID);
+  const view=c.view && belongs(c.view) ? c.view:null;
+  const local=(work:()=>void)=>{if(current(rendered))work();};
+  return <SourceImageScreen view={view} capabilities={sameScope ? c.capabilities:null} nowUnix={Math.floor(Date.now()/1000)} projectID={displayed} prompt={prompt} busy={busy && !!operationRunning.current} notice={notice} deleteArmed={sameScope && armed} history={history.filter(belongs)} nextCursor={sameScope ? nextCursor:""} pendingKey={sameScope ? c.pendingHint?.requestKey:undefined}
+    onPrompt={v=>local(()=>setPrompt(v))} onQuote={()=>void operate(quote)} onConfirm={()=>void operate(l=>step(l,()=>c.confirm()))} onRefresh={()=>void operate(l=>step(l,()=>c.restore(l.project,c.view?.run_id ?? "")))} onReload={()=>void operate(async l=>{await readHistory(l);const h=c.pendingHint;if(h)await step(l,()=>c.restoreHint(h));})}
+    onNew={()=>local(()=>{try {if(operationRunning.current)throw new Error("pending");c.newRequest();hint(rendered);setArmed(false);setNotice("下一次获取报价将创建新请求，原请求保留在历史中。");repaint();}catch {setNotice("原动作尚未返回");}})} onAction={name=>void operate(async l=>{await step(l,()=>c.action(name));ensure(l);setArmed(false);})} onArmDelete={()=>local(()=>setArmed(true))} onHistory={run=>void operate(l=>step(l,()=>c.restore(l.project,run)))} onMore={()=>void operate(l=>readHistory(l,nextCursor))} />;
 }
