@@ -84,5 +84,52 @@ handler 和 worker 退出。任何未完成 join 将返回不确定关闭结果�
 |Production|NOT_RUN|部署身份与普通用户实际产物、授权内容/导出验证|
 |Human adoption|NOT_RUN|真实人类视觉/主体要求评审，禁止 fixture 推为 PASS|
 
-后续由 Root 按阶段门单独执行普通 Web/full services 与真验收。本任务不提前执行
-Task10 故障矩阵、SDK 发布、consumer/deploy/生产门或关闭父票。
+后续由 Root 按阶段门单独执行普通 Web/full services 与真验收。Task9 本身未执行 Task10；后续 Task10 的工程回归见下表。SDK 发布、consumer/deploy/生产门和父票关闭仍需独立真实证据。
+
+
+## Task10 故障矩阵与已发布 wire 回归
+
+所有以下行都是工程测试，不是远程 Billing/Task/Upload 或供应商验收。
+新 `sourceRecoveryWire` 使用实际产品 Router、JWT、文件 SQLite、已发布 v0.1.1
+SDK 和本地 httptest 上游。上游自己记录接受的原 key/quote/task，在提交 fixture
+事实后实际断开 HTTP 连接；重开只关闭/重开产品文件数据库，上游事实继续存在。
+该上游是独立脚本事实边界，不是公共服务实现。未把内部包接进消费端。
+`source_contract_test.go` 独立冻结14个已发布 operation 的 method/path/service/
+auth/idempotency/retry/query/payer/tenant/timeout/mutating/app字段，不能以目录存在
+替代合同核对。SDK tag、checksum 和真实外部验收边界保持上文原值。
+
+|故障项|实际测试锚点|测试层与限制|
+|---|---|---|
+|usage 已接受但回复丢失，再重开|`TestSourceRecoveryPublishedWireLostCommitReopen/billing.usage`|真实 Router/JWT/fileDB/SDK wire；原 key、commit1、未确认 Task0|
+|quote 已接受但回复丢失|`TestSourceRecoveryPublishedWireLostCommitReopen/billing.source_quote`、`TestSourceQuoteFormalSDKUnquotedUsageRecovery`|真实 SDK wire；原 quoteID/25 minor/300秒窗口保留，不重新报价|
+|confirm 回复丢失/重复确认|`TestSourceRecoveryConfirmResponseLostReopenOriginalReceipt`、`TestSourceRecoveryPublishedWireLostCommitReopen/task.source_submit`|实际产品HTTP执行确认后断连、产品fileDB重开并重复确认；原confirmation/hash/quote/Task不变、dispatch1；正式浏览器实网仍未验证|
+|Task 接受但回复丢失|`TestSourceRecoveryPublishedWireLostCommitReopen/task.source_submit`、`TestSourceTaskFormalSDKLostHTTPResponseReopensOriginalTask`|真实 SDK wire；重开查回原 TaskID，submit/commit各1|
+|双 Store claim/cancel 交错|`TestSourceTaskTwoStoresHaveOneCommit`、`TestSourceTaskMarkerAndCancelHaveOneWinner`、`TestSourceCancelWinsBeforeSubmitMarker`|真实 SQLite 事务/CAS；外部端口 fixture，未直接杀远程进程|
+|lease 到期/旧 writer|`TestSourceClaimTwoStoresAndStaleWriter`、`TestSourceRunLeaseExpiryAndProtectedObservation`|真实 SQLite/CAS/时钟 fixture，原身份复用、旧 epoch 拒绝|
+|provider_unknown|`TestSourceRecoveryPublishedWireLostCommitReopen/task.source_submit`|真实 SDK wire 返回未知状态，不能新 quote/Task/output|
+|asset_pending/capture_unknown|`TestSourceRecoveryPublishedWirePendingOutputDoesNotUpgrade` 两分支|真实 SDK wire/重开；result保留，未生成可用 Output/charged receipt，select/export409|
+|成功 Task 但 Bill 读取超时/unknown|`TestSourceOutputUnknownBillNeverBecomesSuccess`、`TestSourceOutputWrongOriginalProofAndFreshTimeoutPreserveReceipt`|产品 service/store + 外部端口故障 fixture；不能把未知资金升级成功|
+|Upload 的 app/user/project/hash 不符|`TestSourceRecoveryWrongPublishedUploadFactsNoSelection` 四分支|实际 Upload SDK wire，其他端口 fixture；select/export503、原映射/金额守恒、GET无写。显式 select允许记录失败证明与 lease/retry元数据|
+|已持久映射重开/重复观察|`TestSourceRecoveryMappingReopenArchiveRoundTrip`|实际 Router/JWT/fileDB+外部端口 fixture；原 asset/reference/quote/Task 不变，没有第二映射|
+|删除先于输出/释放回复丢失|`TestSourceDeleteLateRefundedOutputReleaseLostReplyReopen`、`TestSourceExplicitDeleteBeforeLateOutputNeverRevivesHTTP`、`TestSourceDeleteBeforeLateOutputQueuesOriginalReferenceWithoutResurrection`|真实产品 store/service/Router；上游释放端口 fixture；tombstone和原 outbox 不复活|
+|archive/unarchive|`TestSourceRecoveryMappingReopenArchiveRoundTrip`、`TestSourceOutputArchiveRetainsOriginalReference`|Router/JWT/fileDB；archive只读、select403；恢复 active保持原引用，无资金/Task变更|
+|重新登录后的 GET 历史|`TestSourceRecoveryPublishedWireLostCommitReopen` 三分支、`TestSourceFileDBReopenJWTSessionKeepsOriginalFacts`|新实际 JWT/Router/文件重开；原 key/quote/Task保留、完整 Run与所有远端变更计数守恒；真实用户登出界面尚未验证|
+|org撤销/无E7/错误当前Context|`TestSourceAuthOrgMissingRevokedOrForeignFactsAreHidden`、`TestSourceConfirmRevokedOrganizationMakesNoBillWrite`、`TestSourceReadCapabilitiesCannotGrantViewerWritePermission`|实际产品授权层+Context事实 fixture；无个人 fallback，未证明正式组织资金链已完成|
+|GET与别名/body/token族攻击|`TestSourceStrictRequestsRejectBeforeMutation`、`TestSourceCookieOnlyDoesNotGrantGoAuth`、`TestSourceWireScopeAndOneAttempt`|实际 Router/JWT 与 SDK wire；拒绝前不调用资金/Task变更|
+|DNS/peer/TLS/redirect/超大/挂起/MIME/hash/取消|`TestSourceDownloadRejectsUnsafeOriginsAndAllDNSAnswers`、`TestSourceDownloadRejectsChangedPeerOrUntrustedTLS`、`TestSourceDownloadRejectsContentFaultsAndCleansErrors`、`TestSourceDownloadHeadersHaveFiveSecondDeadline`、`TestSourceDownloadCancelRemovesReturnedTemp`|实际 downloader/临时文件、受控 DNS/TLS/HTTP故障边界；有界 deadline/清理，不是公网 OSS验收|
+|关闭新建但保留旧记录|`TestSourceRecoveryPublishedWireLostCommitReopen` 三分支、`TestSourceActionsRemainOriginalAndNewFlagsDoNotBlockRecovery`、`TestSourceRecoveryObservesOriginalOutputWithCreationDisabled`|原数据库/JWT/恢复服务；GET守恒、无新增付费工作；原迁移/legacy测试继续执行|
+
+首次已有绿色用例按新增回归记录，不捏造生产 RED。新增测试一度使用不存在的
+helper 导致编译失败，随后误要求 select POST 不得写产品 bookkeeping，四分支
+断言失败；均为测试 harness问题，原实际失败日志/receipt保留，未据此修改生产代码。
+最终分别核对显式 POST 的原身份/输出/quote/charge守恒和随后 GET 的完整 Run无写。
+
+完整工程门：`server/` 下 `GOWORK=off GOPROXY=off go test -p 1 -count=1 ./...`、
+`go test -race -p 1 -count=1 ./internal/sourceimage ./internal/sourceflow ./internal/store ./internal/platform ./internal/httpapi ./cmd/server`、
+`go vet ./...`、`go mod verify`；`web/` 下 `npm test`、本地锁定 tsc `--noEmit`、
+`npm run build`。实际 exits/耗时/完整日志与精确源 SHA 在共享 Root作者交接，
+不以此 runbook 文字代替命令 receipt。Web201测试、类型检查与build均actual0。
+构建保留现有多lockfile workspace-root提示，没有为消除提示顺手改配置。
+
+Task10 工程结果等待另一作者独立审查；Browser/Service/Billing/Production/
+Human adoption仍为NOT_RUN，org/背景锁定/参考编辑合同仍未完成。
