@@ -14,6 +14,7 @@ import (
 type Actor struct{ UserID, AccountID string }
 type Authorization struct {
 	Scope             si.Scope
+	CanWrite          bool // Derived from current project and verified Context facts; never persisted.
 	PayerSource, Role string
 }
 type ContextPort interface {

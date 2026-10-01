@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -927,5 +929,155 @@ func TestSourceViewIncludesPayerLabelWithoutGuessingAmounts(t *testing.T) {
 	p = sourceView(r)["payment"].(map[string]any)
 	if p["payer_label"] != "组织委托账户" || p["payer_account_id"] != "payer_display" {
 		t.Fatal(p)
+	}
+}
+
+func TestSourceReadCapabilitiesCannotGrantViewerWritePermission(t *testing.T) {
+	for _, roles := range []struct {
+		role, member string
+		canWrite     bool
+		status       int
+	}{{"viewer", "payer", false, 200}, {"editor", "viewer", false, 200}, {"unknown", "payer", false, 404}, {"editor", "unknown", false, 404}, {"member", "owner", false, 200}, {"owner", "owner", true, 200}, {"admin", "payer", true, 200}} {
+		t.Run(roles.role+roles.member, func(t *testing.T) {
+			f := newSourceHTTPFixture(t)
+			project, e := f.st.CreateProject(t.Context(), store.Project{TenantID: "org_caps_role", CreatedBy: f.actor.UserID, Name: "Viewer capability", SourceType: "standalone"})
+			if e != nil {
+				t.Fatal(e)
+			}
+			f.project = project
+			f.srv.Source.Profile.OrgEnabled = true
+			f.srv.Source.Auth.Context = sourceHTTPContext(func(ctx context.Context, q si.ContextQuery) (si.ContextFact, error) {
+				if !q.ReadOnly || q.TenantID != "" || q.SourceRef != "" {
+					t.Fatal("GET performed selection", q)
+				}
+				return si.ContextFact{Resolved: true, PayerKnown: true, AppID: q.AppID, UserID: q.UserID, TenantID: project.TenantID, PayerAccountID: "payer_caps_role", PayerSource: "delegation", Role: roles.role, MemberRole: roles.member}, nil
+			})
+			w := f.raw(t, "GET", "/api/v1/projects/"+f.project.ID+"/source-image-capabilities", f.token, "")
+			if w.Code != roles.status {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			if roles.status == 404 {
+				if f.ports.mutations() != [6]int{} {
+					t.Fatal("unknown role mutated")
+				}
+				return
+			}
+			var b struct {
+				Modes []struct {
+					CanQuote            bool   `json:"can_quote"`
+					CanConfirm          bool   `json:"can_confirm"`
+					Reason              string `json:"reason"`
+					AuthorizationReason string `json:"authorization_reason"`
+					RuntimeReason       string `json:"runtime_reason"`
+				} `json:"modes"`
+			}
+			json.Unmarshal(w.Body.Bytes(), &b)
+			wantReason := "project_write_forbidden"
+			if roles.canWrite {
+				wantReason = "runtime_output_recovery_unconfigured"
+			}
+			if len(b.Modes) == 0 || b.Modes[0].CanQuote != roles.canWrite || b.Modes[0].CanConfirm != roles.canWrite || b.Modes[0].Reason != wantReason {
+				t.Fatal("GET capability granted viewer write", w.Body.String())
+			}
+			wantAuthorization := "project_write_forbidden"
+			if roles.canWrite {
+				wantAuthorization = ""
+			}
+			if b.Modes[0].AuthorizationReason != wantAuthorization || b.Modes[0].RuntimeReason != "runtime_output_recovery_unconfigured" {
+				t.Fatal("authorization/runtime reasons conflated", w.Body.String())
+			}
+			if f.ports.mutations() != [6]int{} {
+				t.Fatal("read capability mutated")
+			}
+		})
+	}
+}
+
+func TestSourceCreateKnownReadonlyProjectReturnsForbidden(t *testing.T) {
+	f := newSourceHTTPFixture(t)
+	project, e := f.st.CreateProject(t.Context(), store.Project{TenantID: "org_readonly_create", CreatedBy: f.actor.UserID, Name: "Known read project", SourceType: "standalone"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	f.project = project
+	f.srv.Source.Profile.OrgEnabled = true
+	f.srv.Source.Auth.Context = sourceHTTPContext(func(ctx context.Context, q si.ContextQuery) (si.ContextFact, error) {
+		return si.ContextFact{Resolved: true, PayerKnown: true, AppID: q.AppID, UserID: q.UserID, TenantID: project.TenantID, PayerAccountID: "payer_readonly", PayerSource: "delegation", Role: "viewer", MemberRole: "viewer"}, nil
+	})
+	w := f.raw(t, "POST", f.path(""), f.token, `{"request_key":"readonly-create","mode":"text_generate","prompt":"x","size":"1024*1024"}`)
+	if w.Code != 403 || f.ports.mutations() != [6]int{} {
+		t.Fatal("known read project create permission/status", w.Code, w.Body.String())
+	}
+}
+
+func TestSourceIntegerSecondPaginationNanosecondTieIsStable(t *testing.T) {
+	f := newSourceHTTPFixture(t)
+	scope := si.Scope{AppID: "product-image", TenantID: f.actor.AccountID, ProjectID: f.project.ID, UserID: f.actor.UserID, PrincipalAccountID: f.actor.AccountID, PayerAccountID: f.actor.AccountID}
+	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	instants := []time.Time{base.Add(-time.Second), base.Add(100 * time.Millisecond), base.Add(100*time.Millisecond + time.Nanosecond), base.Add(100 * time.Millisecond), base.Add(time.Second)}
+	savedNow := store.Now
+	defer func() { store.Now = savedNow }()
+	ids := []string{}
+	for i, instant := range instants {
+		store.Now = func() time.Time { return instant }
+		in := si.Intent{Scope: scope, RequestKey: "nano-prefix-" + strconv.Itoa(i), Mode: "text_generate", Provider: "modelxing-qwen-image-2.0-v1", Model: "qwen-image-2.0", Capability: "image.generate", Size: "1024*1024", Prompt: "Time fixture", PricingVersion: "http-test-v1", Quantity: 1}
+		r, dup, e := f.st.CreateSourceRunForProject(t.Context(), in)
+		if e != nil || dup {
+			t.Fatal(r, dup, e)
+		}
+		ids = append(ids, r.ID)
+	}
+	store.Now = savedNow
+	// Source created_at is an INTEGER Unix second, not RFC3339Nano text. The three
+	// .1/.100000001/same-instant inputs intentionally tie; ID defines their order.
+	ties := append([]string(nil), ids[1:4]...)
+	sort.Sort(sort.Reverse(sort.StringSlice(ties)))
+	want := append([]string{ids[4]}, ties...)
+	want = append(want, ids[0])
+	actual := []string{}
+	cursor := ""
+	for i := 0; i < 4; i++ {
+		path := f.path("?limit=2")
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		w := f.raw(t, "GET", path, f.token, "")
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		var page struct {
+			Runs []struct {
+				ID string `json:"run_id"`
+			} `json:"runs"`
+			Next string `json:"next_cursor"`
+		}
+		if e := json.Unmarshal(w.Body.Bytes(), &page); e != nil {
+			t.Fatal(e)
+		}
+		for _, r := range page.Runs {
+			actual = append(actual, r.ID)
+		}
+		cursor = page.Next
+		if cursor == "" {
+			break
+		}
+		raw, e := base64.RawURLEncoding.DecodeString(cursor)
+		if e != nil {
+			t.Fatal(e)
+		}
+		var transport struct {
+			At string `json:"created_at"`
+			ID string `json:"id"`
+		}
+		json.Unmarshal(raw, &transport)
+		if transport.At != strconv.FormatInt(base.Unix(), 10) || transport.ID != page.Runs[len(page.Runs)-1].ID {
+			t.Fatal("cursor lost integer-second/id tie", string(raw))
+		}
+	}
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatal("cross-page duplicate/omission or unstable tie", actual, want)
+	}
+	if f.ports.mutations() != [6]int{} {
+		t.Fatal("time pagination wrote platform state")
 	}
 }

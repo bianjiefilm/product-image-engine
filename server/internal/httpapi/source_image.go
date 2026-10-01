@@ -250,6 +250,11 @@ func (s *Server) handleSourceCapabilities(w http.ResponseWriter, r *http.Request
 	}
 	canQuote, canConfirm, ready := s.Source.CreationCapabilities(auth.PayerSource)
 	reason := ""
+	authorizationReason := ""
+	runtimeReason := ""
+	if !s.Source.OutputRecoveryReady {
+		runtimeReason = "runtime_output_recovery_unconfigured"
+	}
 	project, e := s.Source.Store.GetProject(r.Context(), auth.Scope.TenantID, auth.Scope.ProjectID)
 	if e != nil {
 		s.sourceResult(w, r, si.Run{}, si.ErrUnavailable)
@@ -259,12 +264,16 @@ func (s *Server) handleSourceCapabilities(w http.ResponseWriter, r *http.Request
 		ready = false
 		canQuote, canConfirm = false, false
 		reason = "project_archived"
+	} else if !auth.CanWrite {
+		canQuote, canConfirm, ready = false, false, false
+		reason = "project_write_forbidden"
+		authorizationReason = reason
 	} else if !canQuote || !canConfirm {
 		reason = "source_unconfigured"
 	} else if !ready {
 		reason = "runtime_output_recovery_unconfigured"
 	}
-	writeJSON(w, 200, map[string]any{"modes": []any{map[string]any{"mode": "text_generate", "can_quote": canQuote, "can_confirm": canConfirm, "ready": ready, "disabled": !ready, "reason": reason, "size": "1024*1024", "model": "qwen-image-2.0", "fidelity": "not_applicable", "visual_quality": "unknown"}, map[string]any{"mode": "background_plate_lock", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}, map[string]any{"mode": "reference_edit", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}}, "historical_read": true, "automatic_output_recovery_ready": s.Source.OutputRecoveryReady})
+	writeJSON(w, 200, map[string]any{"modes": []any{map[string]any{"mode": "text_generate", "can_quote": canQuote, "can_confirm": canConfirm, "authorization_reason": authorizationReason, "runtime_reason": runtimeReason, "ready": ready, "disabled": !ready, "reason": reason, "size": "1024*1024", "model": "qwen-image-2.0", "fidelity": "not_applicable", "visual_quality": "unknown"}, map[string]any{"mode": "background_plate_lock", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}, map[string]any{"mode": "reference_edit", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}}, "historical_read": true, "automatic_output_recovery_ready": s.Source.OutputRecoveryReady})
 }
 func (s *Server) handleSourceCreate(w http.ResponseWriter, r *http.Request) {
 	if !sourceMethod(w, r, http.MethodPost) {
@@ -276,6 +285,11 @@ func (s *Server) handleSourceCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	actor, _ := sourceActor(r)
 	run, e := s.Source.Create(r.Context(), actor, r.PathValue("id"), sourceflow.NewRunRequest{RequestKey: body["request_key"], Mode: body["mode"], Prompt: body["prompt"], Size: body["size"]})
+	if errors.Is(e, si.ErrNotFound) {
+		if current, re := s.Source.Auth.ForProject(r.Context(), actor, r.PathValue("id"), false); re == nil && !current.CanWrite {
+			e = si.ErrForbidden
+		}
+	}
 	s.sourceResult(w, r, run, e)
 }
 

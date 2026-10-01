@@ -42,6 +42,18 @@ func canonicalPersonalStorage(tenant string) bool {
 	return true
 }
 
+// sourceContextRoleAllowed is the single product/Billing role policy for both
+// enforcement and read-only capability projection. No JWT org claims enter it.
+func sourceContextRoleAllowed(f si.ContextFact, write bool) bool {
+	allowedRole := f.Role == "owner" || f.Role == "admin" || f.Role == "editor"
+	allowedMember := f.MemberRole == "owner" || f.MemberRole == "payer"
+	if !write {
+		allowedRole = allowedRole || f.Role == "member" || f.Role == "viewer"
+		allowedMember = allowedMember || f.MemberRole == "viewer"
+	}
+	return allowedRole && allowedMember
+}
+
 func (a *Authorizer) ForProject(ctx context.Context, actor Actor, id string, write bool) (Authorization, error) {
 	if a == nil || a.Store == nil || id == "" {
 		return Authorization{}, si.ErrNotFound
@@ -68,7 +80,7 @@ func (a *Authorizer) ForProject(ctx context.Context, actor Actor, id string, wri
 			return Authorization{}, si.ErrForbidden
 		}
 		probe.TenantID = p.TenantID
-		return Authorization{Scope: probe, PayerSource: "personal", Role: "owner"}, nil
+		return Authorization{Scope: probe, PayerSource: "personal", Role: "owner", CanWrite: p.Status != "archived"}, nil
 	}
 	p, e := a.Store.GetProjectForSourceAuthorization(ctx, id)
 	if e != nil {
@@ -85,13 +97,7 @@ func (a *Authorizer) ForProject(ctx context.Context, actor Actor, id string, wri
 	if e != nil || !f.Resolved || !f.PayerKnown || f.AppID != a.AppID || f.UserID != actor.UserID || f.TenantID != p.TenantID || f.PayerSource != "delegation" || f.PayerAccountID == "" {
 		return Authorization{}, si.ErrNotFound
 	}
-	allowedRole := f.Role == "owner" || f.Role == "admin" || f.Role == "editor"
-	allowedMember := f.MemberRole == "owner" || f.MemberRole == "payer"
-	if !write {
-		allowedRole = allowedRole || f.Role == "member" || f.Role == "viewer"
-		allowedMember = allowedMember || f.MemberRole == "viewer"
-	}
-	if !allowedRole || !allowedMember {
+	if !sourceContextRoleAllowed(f, write) {
 		return Authorization{}, si.ErrNotFound
 	}
 	if write && p.Status == "archived" {
@@ -102,7 +108,7 @@ func (a *Authorizer) ForProject(ctx context.Context, actor Actor, id string, wri
 	if !probe.Valid() {
 		return Authorization{}, si.ErrNotFound
 	}
-	return Authorization{Scope: probe, PayerSource: f.PayerSource, Role: f.Role}, nil
+	return Authorization{Scope: probe, PayerSource: f.PayerSource, Role: f.Role, CanWrite: sourceContextRoleAllowed(f, true) && p.Status != "archived"}, nil
 }
 func (s *Service) LoadRun(ctx context.Context, actor Actor, project, id string, write bool) (si.Run, error) {
 	if s == nil || s.Store == nil || s.Auth == nil {
