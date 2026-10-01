@@ -132,7 +132,7 @@ func (s *Store) SaveSourceObservation(ctx context.Context, run si.Run, expectedR
 ```
 Recovery loader is coordinator-only: read DB and reject wrong stored owner; never expose arbitrary-ID read in HTTP. Observation writer verifies immutable storedowner/tuple/quote/IDs and monotonic terminal flags; it does not blindly overwrite caller Run.
 
-- [ ] Add tests first using file DB and two separately opened Stores. Use existing `openTest(t)` for purecases, real Open(filepath.Join(t.TempDir(),"source.db")) for durability/concurrency. Add `sourceIntent()` exactfixture:
+- [x] Add tests first using file DB and two separately opened Stores. Use existing `openTest(t)` for purecases, real Open(filepath.Join(t.TempDir(),"source.db")) for durability/concurrency. Add `sourceIntent()` exactfixture:
 ```go
 func sourceIntent() sourceimage.Intent {
  return sourceimage.Intent{Scope:sourceimage.Scope{AppID:"product-image",TenantID:"acct_u",ProjectID:"prj_a",UserID:"usr_u",PrincipalAccountID:"acct_u",PayerAccountID:"acct_u"},RequestKey:"request-a",Mode:"text_generate",Provider:"modelxing-qwen-image-2.0-v1",Model:"qwen-image-2.0",Capability:"image.generate",Size:"1024*1024",Prompt:"一张蓝色纸盒概念图",PricingVersion:"test-price-v1",Quantity:1}
@@ -146,16 +146,16 @@ func TestSourceRunReplayAndScope(t *testing.T) {
  if _,e=s.GetSourceRun(t.Context(),wrong,a.ID); !errors.Is(e,sourceimage.ErrNotFound) { t.Fatal(e) }
 }
 ```
-- [ ] RED `GOWORK=off go test ./internal/store ./internal/sourceimage -run 'TestSource(Run|Quote|Migration|Claim)' -count=1`; record real missing API/assert failure.
-- [ ] Add SQL two tables. `product_source_runs`: id PK, owner CHECK exactversion, app/user/tenant/project/payer/principal_account columns, request_key, fingerprint, immutable intent_json CHECK json_valid, usage_key/task_key/business_ref UNIQUE, nullable usage_id/task_id UNIQUE, quote_json nullable CHECK json_valid, confirmation_hash/confirmed_at, phase, observation_json/events_json/quality_json CHECK json_valid, revision/lease_epoch/lease_until/retry_at/attempts, deleted/selected/cancel_requested/submit_attempted CHECK IN(0,1), created_at/updated_at. `product_source_reference_outbox`: id PK, run_id FK source_runs RESTRICT, original scope/output JSON, app/user/asset/project/reference/action, state/retry/lease/error; UNIQUE(app,user,asset,project,reference,action), action CHECK release. Add due indices. No FK to historical test projects required; source creation checks actualproject in flow. No old table/row rewrite.
-- [ ] Implement writes in one `BEGIN IMMEDIATE` connection; do not call s.db while holding that single connection. IDs/keys mint once after replay lookup; compare all immutable fields before returning duplicate. SQL triggers reject changing owner/scope/keys/intent/nonnull upstream IDs/frozenquote. Use checked revision increments and DB CAS:
+- [x] RED `GOWORK=off go test ./internal/store ./internal/sourceimage -run 'TestSource(Run|Quote|Migration|Claim)' -count=1`; record real missing API/assert failure.
+- [x] Add SQL two tables. `product_source_runs`: id PK, owner CHECK exactversion, app/user/tenant/project/payer/principal_account columns, request_key, fingerprint, immutable intent_json CHECK json_valid, usage_key/task_key/business_ref UNIQUE, nullable usage_id/task_id UNIQUE, quote_json nullable CHECK json_valid, confirmation_hash/confirmed_at, phase, observation_json/events_json/quality_json CHECK json_valid, revision/lease_epoch/lease_until/retry_at/attempts, deleted/selected/cancel_requested/submit_attempted CHECK IN(0,1), created_at/updated_at. `product_source_reference_outbox`: id PK, run_id FK source_runs RESTRICT, original scope/output JSON, app/user/asset/project/reference/action, state/retry/lease/error; UNIQUE(app,user,asset,project,reference,action), action CHECK release. Add due indices. No FK to historical test projects required; source creation checks actualproject in flow. No old table/row rewrite.
+- [x] Implement writes in one `BEGIN IMMEDIATE` connection; do not call s.db while holding that single connection. IDs/keys mint once after replay lookup; compare all immutable fields before returning duplicate. SQL triggers reject changing owner/scope/keys/intent/nonnull upstream IDs/frozenquote. Use checked revision increments and DB CAS:
 ```sql
 UPDATE product_source_runs SET lease_epoch=lease_epoch+1,lease_until=?,revision=revision+1
 WHERE id=? AND app_id=? AND user_id=? AND tenant_id=? AND project_id=? AND payer_account_id=?
   AND lease_until<=? AND deleted IN(0,1) AND lease_epoch<9223372036854775807;
 ```
 Lease expiry only allows rereading/retrying idempotent *platform* operations; it never authorizes direct provider POST. Save requires epoch+revision. Claim/state/events commit atomically. quote compare `quantity==1`, version/usage/business match, positiveamount for thisconfiguredpaidprofile, `unit<=MaxInt64/quantity`, amount product equality, fixed five-minute interval fromformalBill, canonical integers; do not extend expiry.
-- [ ] Add rejection/reopen tests: mutatedscope/owner, twoStoresoneclaim, abandonedlease reread originalidentity, frozenquote differentbody409, exactreplaykeeps expiry, null/float/exponent/overflow input rejection, append migration rollback/read oldtext/plate/quote data counts and FK_check, selected/deleted CAS. GREEN same targetedcommand + `go test ./internal/store ./internal/sourceimage`; explicit commit only these six files.
+- [x] Add rejection/reopen tests: mutatedscope/owner, twoStoresoneclaim, abandonedlease reread originalidentity, frozenquote differentbody409, exactreplaykeeps expiry, null/float/exponent/overflow input rejection, append migration rollback/read oldtext/plate/quote data counts and FK_check, selected/deleted CAS. GREEN same targetedcommand + `go test ./internal/store ./internal/sourceimage`; explicit commit only these six files.
 
 ## Task 2: Published SDK gate and real scoped platform adapters
 
