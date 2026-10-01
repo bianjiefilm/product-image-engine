@@ -5,13 +5,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
@@ -44,7 +47,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("product-image-server: 打开数据库失败: %v", err)
 	}
-	defer st.Close()
 
 	// 应用登记表(HUI-1745 I1):优先 PRODUCT_REGISTRY_MANIFEST 文件;
 	// 缺省内嵌 PROVISIONAL 样例。加载即校验,失败拒绝启动(fail-closed)。
@@ -81,14 +83,58 @@ func main() {
 		},
 	}
 
+	// This is the existing process/Store/listener; optional source assembly never
+	// replaces legacy health or introduces a second server.
+	source, sourceErr := newSourceRuntime(cfg, st)
+	if sourceErr != nil {
+		log.Print("product-image-server: source runtime unconfigured; source routes fail closed")
+	}
+	s.Source = source
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	processCtx, cancelProcess := context.WithCancel(signalCtx)
+	coordinator, startErr := startSourceCoordinator(processCtx, source)
+	if startErr != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownErr := stopSourceProcess(shutdownCtx, cancelProcess, nil, newSourceRequests(http.NotFoundHandler()), coordinator, st)
+		shutdownCancel()
+		if shutdownErr != nil {
+			log.Fatal("product-image-server: startup shutdown incomplete; Store left open for process exit")
+		}
+		if signalCtx.Err() != nil {
+			return
+		}
+		log.Fatal("product-image-server: source coordinator startup failed")
+	}
+	// The handshake and immutable readiness happen before Router construction.
+	requests := newSourceRequests(s.Router())
+	server := &http.Server{Handler: requests, BaseContext: func(net.Listener) context.Context { return processCtx }}
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownErr := stopSourceProcess(shutdownCtx, cancelProcess, server, requests, coordinator, st)
+		shutdownCancel()
+		if shutdownErr != nil {
+			log.Fatal("product-image-server: shutdown incomplete; Store left open for process exit")
+		}
 		log.Fatalf("product-image-server: 监听 %s 失败: %v", cfg.Addr, err)
 	}
 	log.Printf("product-image-server: listening on %s", ln.Addr())
-	if err := (&http.Server{Handler: s.Router()}).Serve(ln); err != nil {
-		log.Fatalf("product-image-server: serve: %v", err)
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(ln) }()
+	stopErr := waitSourceStop(processCtx, served, coordinator)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownErr := stopSourceProcess(shutdownCtx, cancelProcess, server, requests, coordinator, st)
+	shutdownCancel()
+	if shutdownErr != nil {
+		// log.Fatal exits without defers. OS reclaims the Store; next startup resumes
+		// the same identities. Closing an in-use DB here would corrupt the join rule.
+		log.Fatal("product-image-server: shutdown incomplete; requests/recovery not confirmed joined; Store left open for process exit")
 	}
+	if stopErr != nil {
+		log.Fatal("product-image-server: serving or source coordinator exited unexpectedly")
+	}
+	log.Print("product-image-server: requests and source recovery joined; Store closed")
 }
 
 // loadRegistry 装配应用登记表:配置了路径则读文件,否则内嵌缺省样例。

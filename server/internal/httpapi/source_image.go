@@ -195,7 +195,7 @@ func (s *Server) handleSourceResource(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) sourceResult(w http.ResponseWriter, r *http.Request, run si.Run, e error) {
 	if e == nil {
-		writeJSON(w, 200, sourceView(run))
+		writeJSON(w, 200, s.sourceRuntimeView(run))
 		return
 	}
 	status, code, msg := 503, "source_unavailable", "正式服务暂时不可用，原请求状态待核实"
@@ -253,7 +253,7 @@ func (s *Server) handleSourceCapabilities(w http.ResponseWriter, r *http.Request
 	authorizationReason := ""
 	runtimeReason := ""
 	if !s.Source.OutputRecoveryReady {
-		runtimeReason = "runtime_output_recovery_unconfigured"
+		runtimeReason = s.sourceRuntimeReason()
 	}
 	project, e := s.Source.Store.GetProject(r.Context(), auth.Scope.TenantID, auth.Scope.ProjectID)
 	if e != nil {
@@ -271,7 +271,7 @@ func (s *Server) handleSourceCapabilities(w http.ResponseWriter, r *http.Request
 	} else if !canQuote || !canConfirm {
 		reason = "source_unconfigured"
 	} else if !ready {
-		reason = "runtime_output_recovery_unconfigured"
+		reason = runtimeReason
 	}
 	writeJSON(w, 200, map[string]any{"modes": []any{map[string]any{"mode": "text_generate", "can_quote": canQuote, "can_confirm": canConfirm, "authorization_reason": authorizationReason, "runtime_reason": runtimeReason, "ready": ready, "disabled": !ready, "reason": reason, "size": "1024*1024", "model": "qwen-image-2.0", "fidelity": "not_applicable", "visual_quality": "unknown"}, map[string]any{"mode": "background_plate_lock", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}, map[string]any{"mode": "reference_edit", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}}, "historical_read": true, "automatic_output_recovery_ready": s.Source.OutputRecoveryReady})
 }
@@ -364,7 +364,7 @@ func (s *Server) handleSourceList(w http.ResponseWriter, r *http.Request) {
 	}
 	views := []any{}
 	for _, run := range runs {
-		views = append(views, sourceView(run))
+		views = append(views, s.sourceRuntimeView(run))
 	}
 	cursor := ""
 	if nextID != "" {
@@ -465,4 +465,22 @@ func (s *Server) handleSourceDelete(w http.ResponseWriter, r *http.Request) {
 	s.sourceAction(w, r, http.MethodDelete, func(ctx context.Context, a sourceflow.Actor, p, id string) (si.Run, error) {
 		return s.Source.DeleteOutput(ctx, a, p, id)
 	})
+}
+
+func (s *Server) sourceRuntimeReason() string {
+	if s.Source != nil && s.Source.OutputRecoveryReady {
+		return ""
+	}
+	if s.Source != nil && s.Source.OutputRecoveryReason != "" {
+		return s.Source.OutputRecoveryReason
+	}
+	return "runtime_output_recovery_unconfigured"
+}
+
+// Readiness is transport metadata, never a Run observation or stored fact.
+func (s *Server) sourceRuntimeView(run si.Run) map[string]any {
+	view := sourceView(run)
+	view["automatic_output_recovery_ready"] = s.Source != nil && s.Source.OutputRecoveryReady
+	view["automatic_output_recovery_reason"] = s.sourceRuntimeReason()
+	return view
 }

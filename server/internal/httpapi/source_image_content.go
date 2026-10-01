@@ -84,7 +84,7 @@ func (s *Server) handleSourceExport(w http.ResponseWriter, r *http.Request) {
 		s.sourceResult(w, r, run, e)
 		return
 	}
-	snapshot, _ := json.Marshal(map[string]any{"report_version": "product-source-export/v1", "run": sourceView(run), "this_download_content_verification": "verified", "this_download_billing_check": "charged", "frozen_report_content_verification": "NOT_RUN", "visual_quality": "unknown", "human_adoption": "NOT_RUN"})
+	snapshot, _ := json.Marshal(map[string]any{"report_version": "product-source-export/v1", "run": s.sourceRuntimeView(run), "this_download_content_verification": "verified", "this_download_billing_check": "charged", "frozen_report_content_verification": "NOT_RUN", "visual_quality": "unknown", "human_adoption": "NOT_RUN"})
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="source-image.zip"`)
 	archive := zip.NewWriter(w)

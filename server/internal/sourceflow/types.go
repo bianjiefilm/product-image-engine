@@ -40,15 +40,16 @@ type AssetPort interface {
 	Download(context.Context, si.Run) (io.ReadCloser, error)
 }
 type Service struct {
-	recoveryRunning     atomic.Bool
-	OutputRecoveryReady bool // Set only by the actual joined runtime assembly; default false.
-	Store               *store.Store
-	Auth                *Authorizer
-	Bill                BillPort
-	Tasks               TaskPort
-	Assets              AssetPort
-	Profile             Profile
-	Now                 func() time.Time
+	recoveryRunning      atomic.Bool
+	OutputRecoveryReason string // Immutable startup reason, never a persisted fact.
+	OutputRecoveryReady  bool   // Set only by the actual joined runtime assembly; default false.
+	Store                *store.Store
+	Auth                 *Authorizer
+	Bill                 BillPort
+	Tasks                TaskPort
+	Assets               AssetPort
+	Profile              Profile
+	Now                  func() time.Time
 }
 type Profile struct {
 	Enabled, OrgEnabled                               bool

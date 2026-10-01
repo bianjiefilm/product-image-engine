@@ -1081,3 +1081,55 @@ func TestSourceIntegerSecondPaginationNanosecondTieIsStable(t *testing.T) {
 		t.Fatal("time pagination wrote platform state")
 	}
 }
+
+func TestSourceStartupReadinessProjectionIsReadOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name, reason   string
+		ready, enabled bool
+	}{{"joined", "", true, true}, {"creation_off", "", true, false}, {"host_missing", "source_download_hosts_unconfigured", false, true}, {"not_started", "", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSourceHTTPFixture(t)
+			run := f.create(t)
+			svc := f.srv.Source
+			svc.OutputRecoveryReady = tc.ready
+			svc.OutputRecoveryReason = tc.reason
+			svc.Profile.Enabled = tc.enabled
+			before := f.ports.mutations()
+			old, e := f.st.GetSourceRun(t.Context(), run.Intent.Scope, run.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+			w := f.raw(t, "GET", "/api/v1/projects/"+f.project.ID+"/source-image-capabilities", f.token, "")
+			var caps struct {
+				Ready bool `json:"automatic_output_recovery_ready"`
+				Modes []struct {
+					Ready         bool   `json:"ready"`
+					RuntimeReason string `json:"runtime_reason"`
+				} `json:"modes"`
+			}
+			if e = json.Unmarshal(w.Body.Bytes(), &caps); e != nil {
+				t.Fatal(e)
+			}
+			wantReason := tc.reason
+			if !tc.ready && wantReason == "" {
+				wantReason = "runtime_output_recovery_unconfigured"
+			}
+			if w.Code != 200 || caps.Ready != tc.ready || caps.Modes[0].Ready != (tc.ready && tc.enabled) || caps.Modes[0].RuntimeReason != wantReason {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			for _, suffix := range []string{"/" + run.ID, "", "/by-request?request_key=" + run.Intent.RequestKey} {
+				w = f.raw(t, "GET", f.path(suffix), f.token, "")
+				if w.Code != 200 {
+					t.Fatal(w.Code, w.Body.String())
+				}
+				if !strings.Contains(w.Body.String(), `"automatic_output_recovery_ready":`+strconv.FormatBool(tc.ready)) || !strings.Contains(w.Body.String(), `"automatic_output_recovery_reason":`+strconv.Quote(wantReason)) {
+					t.Fatal("stale HTTP readiness projection", w.Body.String())
+				}
+			}
+			got, e := f.st.GetSourceRun(t.Context(), run.Intent.Scope, run.ID)
+			if e != nil || !reflect.DeepEqual(old, got) || before != f.ports.mutations() {
+				t.Fatal("GET readiness changed original facts", e)
+			}
+		})
+	}
+}
