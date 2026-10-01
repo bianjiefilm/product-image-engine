@@ -4,7 +4,7 @@ go 1.26.0
 
 // 正式依赖是已发布的 sdk/go tag。不写 sibling replace，也不写 v0.0.0。
 require (
-	github.com/bianjiefilm/public-ai/sdk/go v0.1.0
+	github.com/bianjiefilm/public-ai/sdk/go v0.1.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	golang.org/x/image v0.46.0
 	modernc.org/sqlite v1.38.0

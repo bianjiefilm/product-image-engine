@@ -6,7 +6,7 @@ import { GET as detailGET } from "@/app/api/projects/[id]/text-images/[jobId]/ro
 import { GET as downloadGET } from "@/app/api/projects/[id]/text-images/[jobId]/download/route";
 import { POST as actionPOST } from "@/app/api/projects/[id]/text-images/[jobId]/[action]/route";
 
-function authed(url: string, init?: RequestInit): NextRequest {
+function authed(url: string, init?: NonNullable<ConstructorParameters<typeof NextRequest>[1]>): NextRequest {
   return new NextRequest(`http://localhost:3000${url}`, {
     ...init,
     headers: { cookie: "pia_access=good-token", ...(init?.headers ?? {}) },
@@ -65,7 +65,7 @@ describe("文字生成 BFF", () => {
   });
 
   it("夹具登记原样透传，不改成计费通过", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response(
         JSON.stringify({
           job: {

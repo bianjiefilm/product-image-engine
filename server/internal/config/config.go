@@ -10,6 +10,11 @@ import (
 // 本产品服务端 env(或 /etc/<产品>/<产品>.env),样例文件一律占位符,
 // 真实值禁止入库。
 type Config struct {
+	SourceImagesEnabled    bool   // FEATURE_SOURCE_IMAGES, default off
+	SourceOrgImagesEnabled bool   // FEATURE_SOURCE_ORG_IMAGES, default off
+	SourcePricingVersion   string // PRODUCT_SOURCE_PRICING_VERSION, explicit only
+	SourceDownloadHosts    string // PRODUCT_SOURCE_DOWNLOAD_HOSTS, exact OSS origins
+
 	Addr          string // PRODUCT_SERVER_ADDR,默认 127.0.0.1:18220
 	DBPath        string // PRODUCT_DB_PATH,默认 ./data/product-image.db
 	InternalToken string // PRODUCT_INTERNAL_TOKEN:web BFF → Go server 内部凭据
@@ -113,9 +118,13 @@ func (c Config) ReceiptKeyFor(appID string) string {
 // Load 从进程环境读取配置,补默认值。
 func Load() Config {
 	return Config{
-		Addr:          getEnv("PRODUCT_SERVER_ADDR", "127.0.0.1:18220"),
-		DBPath:        getEnv("PRODUCT_DB_PATH", "./data/product-image.db"),
-		InternalToken: os.Getenv("PRODUCT_INTERNAL_TOKEN"),
+		SourceImagesEnabled:    getBoolEnv("FEATURE_SOURCE_IMAGES", false),
+		SourceOrgImagesEnabled: getBoolEnv("FEATURE_SOURCE_ORG_IMAGES", false),
+		SourcePricingVersion:   os.Getenv("PRODUCT_SOURCE_PRICING_VERSION"),
+		SourceDownloadHosts:    os.Getenv("PRODUCT_SOURCE_DOWNLOAD_HOSTS"),
+		Addr:                   getEnv("PRODUCT_SERVER_ADDR", "127.0.0.1:18220"),
+		DBPath:                 getEnv("PRODUCT_DB_PATH", "./data/product-image.db"),
+		InternalToken:          os.Getenv("PRODUCT_INTERNAL_TOKEN"),
 
 		IdentityBaseURL: os.Getenv("PLATFORM_IDENTITY_BASE_URL"),
 		IdentityAppID:   os.Getenv("PLATFORM_IDENTITY_APP_ID"),

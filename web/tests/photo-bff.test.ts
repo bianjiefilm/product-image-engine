@@ -9,11 +9,11 @@ import { POST as uploadPOST } from "@/app/api/photos/route";
 import { GET as photoContentGET } from "@/app/api/photos/[id]/content/route";
 import { GET as inputContentGET } from "@/app/api/projects/[id]/inputs/[inputId]/content/route";
 
-function req(url: string, init: RequestInit = {}): NextRequest {
+function req(url: string, init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {}): NextRequest {
   return new NextRequest(`http://localhost:3000${url}`, init);
 }
 
-function authed(url: string, init: RequestInit = {}): NextRequest {
+function authed(url: string, init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {}): NextRequest {
   const headers = new Headers(init.headers);
   headers.set("cookie", "pia_access=good-token");
   return req(url, { ...init, headers });

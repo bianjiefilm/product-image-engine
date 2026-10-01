@@ -44,3 +44,11 @@ func TestLoopbackSessionResolveSendsAppHeaders(t *testing.T) {
 		t.Fatalf("classification %+v", result.Classification)
 	}
 }
+
+func TestSourceSDKOperationsPublished(t *testing.T) {
+	for _, id := range []string{"identity.context.resolve", "billing.usage", "billing.usage_lookup", "billing.usage_get", "billing.source_quote", "task.source_submit", "task.source_get", "task.source_lookup", "task.source_cancel", "task.source_reconcile", "upload.durable_asset_get", "upload.durable_download", "upload.durable_reference_get", "upload.durable_release"} {
+		if _, ok, err := platformconsumer.Lookup(id); err != nil || !ok {
+			t.Errorf("required published operation %s missing: %v", id, err)
+		}
+	}
+}

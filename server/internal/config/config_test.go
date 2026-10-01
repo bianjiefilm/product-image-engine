@@ -213,3 +213,25 @@ func TestBgModelNameEmptyCannotGenerate(t *testing.T) {
 		t.Fatal("缺地址不能出图")
 	}
 }
+func TestSourceConfigDefaultsAndExplicitFlags(t *testing.T) {
+	setEnvs(t, nil)
+	for _, k := range []string{"FEATURE_SOURCE_IMAGES", "FEATURE_SOURCE_ORG_IMAGES", "PRODUCT_SOURCE_PRICING_VERSION", "PRODUCT_SOURCE_DOWNLOAD_HOSTS"} {
+		t.Setenv(k, "")
+	}
+	c := Load()
+	if c.SourceImagesEnabled || c.SourceOrgImagesEnabled || c.SourcePricingVersion != "" || c.SourceDownloadHosts != "" {
+		t.Fatal("source default must be closed")
+	}
+	t.Setenv("FEATURE_SOURCE_IMAGES", "1")
+	t.Setenv("FEATURE_SOURCE_ORG_IMAGES", "true")
+	t.Setenv("PRODUCT_SOURCE_PRICING_VERSION", "explicit-price-v1")
+	t.Setenv("PRODUCT_SOURCE_DOWNLOAD_HOSTS", "sample.oss-cn-hangzhou.aliyuncs.com")
+	c = Load()
+	if !c.SourceImagesEnabled || !c.SourceOrgImagesEnabled || c.SourcePricingVersion != "explicit-price-v1" || c.SourceDownloadHosts == "" {
+		t.Fatal("explicit source config lost")
+	}
+	t.Setenv("FEATURE_SOURCE_IMAGES", "garbage")
+	if Load().SourceImagesEnabled {
+		t.Fatal("invalid source flag must remain closed")
+	}
+}

@@ -17,17 +17,17 @@ import { POST as receiptPOST } from "@/app/api/projects/[id]/outputs/[outputId]/
 import { GET as receiptsGET } from "@/app/api/projects/[id]/receipts/route";
 import { POST as resendPOST } from "@/app/api/receipts/[id]/resend/route";
 
-function req(url: string, init: RequestInit = {}): NextRequest {
+function req(url: string, init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {}): NextRequest {
   return new NextRequest(`http://localhost:3000${url}`, init);
 }
 
-function authed(url: string, init: RequestInit = {}): NextRequest {
+function authed(url: string, init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {}): NextRequest {
   const headers = new Headers(init.headers);
   headers.set("cookie", "pia_access=good-token");
   return req(url, { ...init, headers });
 }
 
-function jsonInit(body: unknown): RequestInit {
+function jsonInit(body: unknown): NonNullable<ConstructorParameters<typeof NextRequest>[1]> {
   return {
     method: "POST",
     headers: { "content-type": "application/json" },

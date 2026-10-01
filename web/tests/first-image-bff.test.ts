@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { POST as startPOST } from "@/app/api/entry/start/route";
 
-function req(url: string, init: RequestInit = {}): NextRequest {
+function req(url: string, init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {}): NextRequest {
   return new NextRequest(`http://localhost:3000${url}`, init);
 }
 

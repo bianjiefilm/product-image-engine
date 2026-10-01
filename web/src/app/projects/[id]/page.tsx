@@ -10,6 +10,7 @@ import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 import { LightScenePanel } from "@/components/light-scene/Panel";
 import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
 import { TextImagePanel } from "@/components/text-image/Panel";
+import { SourceImagePanel } from "@/components/source-image/Panel";
 
 interface Project {
   id: string;
@@ -736,7 +737,8 @@ export default function ProjectDetailPage() {
         }}
       />
 
-      <TextImagePanel projectId={id ?? ""} />
+      <SourceImagePanel projectId={id ?? ""} />
+      <TextImagePanel projectId={id ?? ""} historyOnly />
 
       <ShowcaseVideoPanel
         projectId={id ?? ""}

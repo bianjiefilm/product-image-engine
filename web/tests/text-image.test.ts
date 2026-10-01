@@ -1,9 +1,18 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { TextImagePanel } from "@/components/text-image/Panel";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BILLING_PENDING, canStartWithText, presentTextJob, sameRecord } from "@/lib/text-image";
 
 describe("文字描述入口", () => {
+  it("只读历史保留诚实展示，但不挂载旧创建或 POST 刷新入口", () => {
+    const html=renderToStaticMarkup(createElement(TextImagePanel,{projectId:"proj_a",historyOnly:true}));
+    expect(html).toContain("旧文字生成历史"); expect(html).toContain("读取旧记录");
+    expect(html).not.toContain("只用文字描述开始");expect(html).not.toContain("<textarea");expect(html).not.toContain("刷新同一条记录");
+    const original=renderToStaticMarkup(createElement(TextImagePanel,{projectId:"proj_a"}));expect(original).toContain("只用文字描述开始");
+  });
   it("只要有文字描述就可以开始，不要求实物照片", () => {
     expect(canStartWithText("白色陶瓷杯")).toBe(true);
     expect(canStartWithText("  ")).toBe(false);
