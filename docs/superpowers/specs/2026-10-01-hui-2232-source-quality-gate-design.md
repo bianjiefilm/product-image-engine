@@ -51,6 +51,8 @@ root 裁定：首链先以真实 personal 完成端到端，不让组织资源�
 
 项目为共享组织时，首版 source run/资产/费用默认只供原 initiating user 操作及读取；同组织其他成员不自动获取另一 user 的 Upload owner 或账事实。共享读取/代办须另有正式 delegation。列表可隐藏他人 run，不替换 payer_user_id 来读取。撤权后禁止新 usage/确认/主动调用；已在 Task 中冻结 hold 的结算由 Task 继续，产品不截停资金 owner。
 
+实证收紧（root批准）：Context Resolve 带 tenant/source selector 会保存 LastScope，SDK mutating=false 不等于实现无写。产品 GET 仅无 selector 读取当前 context，严格匹配工程组织；selection_required/不匹配即关闭并提示显式选择，不自动切换。POST 新请求/确认可携带明确工程 tenant 或 source（两者互斥），完整验证并记录。任意组织纯 read selector 是未完成公共依赖，本产品不顺手修改 Context。
+
 服务端重新验证工程归属/允许发起角色/非删除非归档状态，再新增请求；每次读取仍验证会话与工程权限。另一 stored scope 404，用户提交冲突身份字段 403/400；重复/大小写 alias JSON key、nested params duplicates、重复 query 字段、尾随 JSON 一律拒绝。GET 不产生 usage/quote/Task/retention 写。
 
 个人工程资源仍用既有 personal_default/account 归属，不能因Context缺组织membership而阻断已验证个人所有权；组织工程才使用实时Context membership/delegation。个人payer以Identity验证account与Bill成员/权益验证，不能要求不存在的组织delegation。平台普通 app credentials 仅 Go 服务持有。UI 没有平台 token；BFF 不安装 Billing operator/mint key、ModelXing key 或 OSS key。BFF 负责 usage+source_quote；hold/capture/release 仅 Task source owner 执行。此产品不新增 refund 入口、不直接调用付款 hold 以抢 Task owner。
