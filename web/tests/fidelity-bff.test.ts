@@ -6,7 +6,7 @@ import {
   POST,
 } from "@/app/api/projects/[id]/fidelity-reports/route";
 
-function authed(url: string, init: RequestInit = {}): NextRequest {
+function authed(url: string, init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {}): NextRequest {
   const headers = new Headers(init.headers);
   headers.set("cookie", "pia_access=good-token");
   return new NextRequest(`http://localhost:3000${url}`, { ...init, headers });

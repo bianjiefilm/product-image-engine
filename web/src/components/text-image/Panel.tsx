@@ -22,7 +22,7 @@ type Job = {
   pending?: string[];
 };
 
-export function TextImagePanel({ projectId }: { projectId?: string }) {
+export function TextImagePanel({ projectId, historyOnly=false }: { projectId?: string; historyOnly?: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [previousId, setPreviousId] = useState("");
@@ -74,6 +74,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
   }
 
   async function begin() {
+    if (historyOnly) return;
     if (!canStartWithText(prompt)) return;
     setBusy(true);
     setNotice("");
@@ -110,6 +111,16 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
   }
 
   async function refresh() {
+    if (historyOnly) {
+      if (!boundProject) return;
+      setBusy(true);
+      try {
+        const res=await fetch(`/api/projects/${encodeURIComponent(boundProject)}/text-images${job?.id ? "/"+encodeURIComponent(job.id) : ""}`,{cache:"no-store",redirect:"error"});
+        const data=(await res.json().catch(()=>null)) as {job?:Job;jobs?:Job[]} | null;
+        if(res.ok) { const current=data?.job ?? data?.jobs?.[0]; if(current) remember(current); } else {setJob(null);setNotice("旧记录当前不可读取");}
+      } finally {setBusy(false);}
+      return;
+    }
     if (!boundProject || !job?.id) return;
     setBusy(true);
     setNotice("");
@@ -131,7 +142,7 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
       data-production-authorized="false"
     >
       <CardHeader>
-        <CardTitle>只用文字描述</CardTitle>
+        <CardTitle>{historyOnly ? "旧文字生成历史（只读）" : "只用文字描述"}</CardTitle>
         <CardDescription>
           不上传实物照片也可以开始。夹具和任务结果可以查看，那不是模型出图。图像模型返回的字节可以打开，主体保真未核实，计费未通过，生产未授权。没有真实保真结果时仍标明真实出图未完成。
         </CardDescription>
@@ -141,16 +152,16 @@ export function TextImagePanel({ projectId }: { projectId?: string }) {
         <Badge>{view.subjectLabel}</Badge>{" "}
         <Badge>{job?.status_label || (job?.job_status === "failed" ? "失败" : "待确认")}</Badge>
       </p>
-      <label>
+      {!historyOnly ? <label>
         文字描述
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} placeholder="例如：白色陶瓷杯，浅灰棚拍" />
-      </label>
+      </label> : null}
       <div className="row" style={{ marginTop: 12 }}>
-        <Button type="button" disabled={busy || !canStartWithText(prompt)} onClick={() => void begin()}>
+        {!historyOnly ? <Button type="button" disabled={busy || !canStartWithText(prompt)} onClick={() => void begin()}>
           {busy ? "处理中…" : "只用文字描述开始"}
-        </Button>
-        <Button type="button" variant="outline" disabled={busy || !job?.id} onClick={() => void refresh()}>
-          刷新同一条记录
+        </Button> : null}
+        <Button type="button" variant="outline" disabled={busy || (historyOnly ? !boundProject : !job?.id)} onClick={() => void refresh()}>
+          {historyOnly ? "读取旧记录" : "刷新同一条记录"}
         </Button>
       </div>
       <p>{view.headline}</p>

@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { GET as capsGET } from "@/app/api/showcase-videos/capabilities/route";
 import { POST as createPOST } from "@/app/api/projects/[id]/showcase-videos/route";
 
-function authed(url: string, init?: RequestInit): NextRequest {
+function authed(url: string, init?: NonNullable<ConstructorParameters<typeof NextRequest>[1]>): NextRequest {
   return new NextRequest(`http://localhost:3000${url}`, {
     ...init,
     headers: { cookie: "pia_access=good-token", ...(init?.headers ?? {}) },
