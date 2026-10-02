@@ -1,0 +1,762 @@
+{
+ "set_id": "frozen-sample-set",
+ "version": "v1",
+ "generator": {
+  "name": "samplegen",
+  "version": "1"
+ },
+ "source": "deterministic-generator",
+ "license": "原创合成作品，项目内部授权",
+ "approval_ref": "HUI-2232 C2 spec R3",
+ "thresholds_version": "bg-lock-thresholds/v1",
+ "set_sha256": "004a18bf09a4b91ef805fbd65b40f99828efe7bcc26b8db3a6ab3ec9a7215888",
+ "cases": [
+  {
+   "case_id": "carton-1024x1024",
+   "kind": "carton",
+   "material_class": "opaque",
+   "canvas": {
+    "w": 1024,
+    "h": 1024
+   },
+   "original": {
+    "path": "originals/carton-1024x1024.png",
+    "sha256": "569313f789b4ae4a67e5e5e099870695b9f72bb2d5ad852246d0be0bf22f9f22",
+    "pixel_sha256": "46d7af4f1390a1105e01b6967104327c8645652578b6ab6b73b5ab1365ee5637"
+   },
+   "mask": {
+    "path": "masks/carton-1024x1024.png",
+    "sha256": "2cd504cbb52eb5422518584a7eeb58474cb08840310b02c9a7670ee223e6f1e9",
+    "pixel_sha256": "8fbce25075da8854ccb01d3a9b3be220914e1defcfe4c57d58722d0c9aa1f564"
+   },
+   "coverage": {
+    "logo": [
+     [
+      448,
+      320,
+      577,
+      449
+     ]
+    ],
+    "packaging_text": [
+     [
+      407,
+      464,
+      617,
+      529
+     ],
+     [
+      428,
+      600,
+      596,
+      626
+     ]
+    ],
+    "spec": [
+     [
+      428,
+      545,
+      596,
+      584
+     ]
+    ],
+    "structure": [
+     [
+      288,
+      224,
+      736,
+      288
+     ],
+     [
+      288,
+      768,
+      736,
+      800
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "NET 250G",
+     "LOT 20261002"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "top-flap",
+     "body"
+    ]
+   },
+   "intents": [
+    "深蓝色渐变摄影棚背景，柔和顶光",
+    "暖色原木桌面，窗边自然光"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "carton-1024x1280",
+   "kind": "carton",
+   "material_class": "opaque",
+   "canvas": {
+    "w": 1024,
+    "h": 1280
+   },
+   "original": {
+    "path": "originals/carton-1024x1280.png",
+    "sha256": "ca0537a2dd0fcc87bc4d5f5480b0dbdef148cf9b2435b304ffb4113ac6f157de",
+    "pixel_sha256": "50ccf84c98e91709a8a84ef35826ecd4779b01be886d98289983977639b8165f"
+   },
+   "mask": {
+    "path": "masks/carton-1024x1280.png",
+    "sha256": "2c23beca5c306af635ccc760321f44301474e83217da4f5f65e6a8e667877032",
+    "pixel_sha256": "1423b9b85fa1c95e26845b5c5216deafdf2f6c811bfcb530255f99e85764c28a"
+   },
+   "coverage": {
+    "logo": [
+     [
+      448,
+      448,
+      577,
+      577
+     ]
+    ],
+    "packaging_text": [
+     [
+      407,
+      592,
+      617,
+      657
+     ],
+     [
+      428,
+      728,
+      596,
+      754
+     ]
+    ],
+    "spec": [
+     [
+      428,
+      673,
+      596,
+      712
+     ]
+    ],
+    "structure": [
+     [
+      288,
+      352,
+      736,
+      416
+     ],
+     [
+      288,
+      896,
+      736,
+      928
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "NET 250G",
+     "LOT 20261002"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "top-flap",
+     "body"
+    ]
+   },
+   "intents": [
+    "深蓝色渐变摄影棚背景，柔和顶光",
+    "暖色原木桌面，窗边自然光"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "carton-768x1024",
+   "kind": "carton",
+   "material_class": "opaque",
+   "canvas": {
+    "w": 768,
+    "h": 1024
+   },
+   "original": {
+    "path": "originals/carton-768x1024.png",
+    "sha256": "daff54949eaeaad889dd2e1f4015b450857843aae90d7e119a82653dd5dcd998",
+    "pixel_sha256": "c118b2acc7a964e35b546882a56fba2dcf64fa06a44b7e817342f1cee823dc84"
+   },
+   "mask": {
+    "path": "masks/carton-768x1024.png",
+    "sha256": "ad53edd1afb0d54b3a3b85be24817978516ed28e7df21d6abc57eb3bea0dea67",
+    "pixel_sha256": "62f91267861efaae0aafaa2c76d1cdd1c273b20ddc83d0dcb0f92aabf79617ca"
+   },
+   "coverage": {
+    "logo": [
+     [
+      336,
+      368,
+      433,
+      465
+     ]
+    ],
+    "packaging_text": [
+     [
+      300,
+      476,
+      468,
+      528
+     ],
+     [
+      342,
+      578,
+      426,
+      591
+     ]
+    ],
+    "spec": [
+     [
+      328,
+      540,
+      440,
+      566
+     ]
+    ],
+    "structure": [
+     [
+      216,
+      296,
+      552,
+      344
+     ],
+     [
+      216,
+      704,
+      552,
+      728
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "NET 250G",
+     "LOT 20261002"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "top-flap",
+     "body"
+    ]
+   },
+   "intents": [
+    "深蓝色渐变摄影棚背景，柔和顶光",
+    "暖色原木桌面，窗边自然光"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "handled_metal-1024x1024",
+   "kind": "handled_metal",
+   "material_class": "reflective",
+   "canvas": {
+    "w": 1024,
+    "h": 1024
+   },
+   "original": {
+    "path": "originals/handled_metal-1024x1024.png",
+    "sha256": "d9753c518f1eca2f64f9e6e79ee1483168def5560b6dc05fb2e41e44b12d551e",
+    "pixel_sha256": "2e44e3b670c3a77cdff936cbdcd8ee128de39d1d2507747052b614c511eceee7"
+   },
+   "mask": {
+    "path": "masks/handled_metal-1024x1024.png",
+    "sha256": "a529df06d117799781011d489acca0f4d43d6eb34204cb2f53fc8b02a1cb311d",
+    "pixel_sha256": "a7b35d5bdecf6f83c07adae609fb2fc4306df911916f42745d375e02242fc02f"
+   },
+   "coverage": {
+    "logo": [
+     [
+      416,
+      384,
+      481,
+      449
+     ]
+    ],
+    "packaging_text": [
+     [
+      343,
+      480,
+      553,
+      545
+     ]
+    ],
+    "spec": [
+     [
+      396,
+      577,
+      501,
+      616
+     ]
+    ],
+    "structure": [
+     [
+      288,
+      320,
+      608,
+      352
+     ],
+     [
+      608,
+      392,
+      624,
+      428
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "350ML"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "rim",
+     "handle-hole"
+    ]
+   },
+   "intents": [
+    "深灰色大理石台面，冷色侧光",
+    "绿色植物墙背景，浅景深"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "handled_metal-1024x1280",
+   "kind": "handled_metal",
+   "material_class": "reflective",
+   "canvas": {
+    "w": 1024,
+    "h": 1280
+   },
+   "original": {
+    "path": "originals/handled_metal-1024x1280.png",
+    "sha256": "8f155d360b3df765258c95d2ebdf22e3f6e24b9a2461fa01687a9dc638d3a5dd",
+    "pixel_sha256": "adfedeea73c05a6920220ae121050a5bf8d169c0432c0403028f8586e0c20fde"
+   },
+   "mask": {
+    "path": "masks/handled_metal-1024x1280.png",
+    "sha256": "d4c63d64bf2d6c1a032c358d37a534fc5d5aca95938b7577ae46908938b70488",
+    "pixel_sha256": "279ca76d34110fa85818a9266a9edba554f5483620bb06594bb209c539a4b5d6"
+   },
+   "coverage": {
+    "logo": [
+     [
+      416,
+      512,
+      481,
+      577
+     ]
+    ],
+    "packaging_text": [
+     [
+      343,
+      608,
+      553,
+      673
+     ]
+    ],
+    "spec": [
+     [
+      396,
+      705,
+      501,
+      744
+     ]
+    ],
+    "structure": [
+     [
+      288,
+      448,
+      608,
+      480
+     ],
+     [
+      608,
+      520,
+      624,
+      556
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "350ML"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "rim",
+     "handle-hole"
+    ]
+   },
+   "intents": [
+    "深灰色大理石台面，冷色侧光",
+    "绿色植物墙背景，浅景深"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "handled_metal-768x1024",
+   "kind": "handled_metal",
+   "material_class": "reflective",
+   "canvas": {
+    "w": 768,
+    "h": 1024
+   },
+   "original": {
+    "path": "originals/handled_metal-768x1024.png",
+    "sha256": "ad6ebf3458ad6d76381b29b7e81be82ea16e6bf3c4caf7b99bb16520303eb244",
+    "pixel_sha256": "1ca35d819095fb5b5649e1365946dbc2870d8bc512490ba3af4c52c92b63d636"
+   },
+   "mask": {
+    "path": "masks/handled_metal-768x1024.png",
+    "sha256": "6873d87e943ff6cdbaf90197338bcb98f102caa99bcc9934615e93012605d810",
+    "pixel_sha256": "81f7e76c2a6bbedb31865df645f81386508fe3fb76edc28f54169562b5da2b69"
+   },
+   "coverage": {
+    "logo": [
+     [
+      312,
+      416,
+      361,
+      465
+     ]
+    ],
+    "packaging_text": [
+     [
+      252,
+      488,
+      420,
+      540
+     ]
+    ],
+    "spec": [
+     [
+      301,
+      564,
+      371,
+      590
+     ]
+    ],
+    "structure": [
+     [
+      216,
+      368,
+      456,
+      392
+     ],
+     [
+      456,
+      422,
+      468,
+      449
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "350ML"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "rim",
+     "handle-hole"
+    ]
+   },
+   "intents": [
+    "深灰色大理石台面，冷色侧光",
+    "绿色植物墙背景，浅景深"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "glass_bottle-1024x1024",
+   "kind": "glass_bottle",
+   "material_class": "transparent",
+   "canvas": {
+    "w": 1024,
+    "h": 1024
+   },
+   "original": {
+    "path": "originals/glass_bottle-1024x1024.png",
+    "sha256": "a5fde84157e373e3f8e14a2a0c0af104c4638ef6ef7f83e20e8e12e463ac0b35",
+    "pixel_sha256": "9f7bfc2d9875f7f43f09a68b8e7f77ea89393d7f90d2948032a87d4b67abe6a4"
+   },
+   "mask": {
+    "path": "masks/glass_bottle-1024x1024.png",
+    "sha256": "8e3efcb340ee15ccf76c8f6cad24523b3b504a0d58258077d51af1ec0882bd99",
+    "pixel_sha256": "68408a7f3f0dc7068701586aaae515b21c2105002ac2ff02dbc07033e1e33aea"
+   },
+   "coverage": {
+    "logo": [
+     [
+      496,
+      504,
+      561,
+      569
+     ]
+    ],
+    "packaging_text": [
+     [
+      444,
+      576,
+      612,
+      628
+     ]
+    ],
+    "spec": [
+     [
+      493,
+      636,
+      563,
+      662
+     ]
+    ],
+    "structure": [
+     [
+      448,
+      256,
+      576,
+      304
+     ],
+     [
+      464,
+      304,
+      560,
+      432
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "500ML"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "cap",
+     "neck",
+     "body"
+    ]
+   },
+   "intents": [
+    "黑色亚克力台面，细长高光",
+    "海边沙滩与蓝天，明亮日光"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "transmission_edge",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "glass_bottle-1024x1280",
+   "kind": "glass_bottle",
+   "material_class": "transparent",
+   "canvas": {
+    "w": 1024,
+    "h": 1280
+   },
+   "original": {
+    "path": "originals/glass_bottle-1024x1280.png",
+    "sha256": "a49a3f9dd2e0629d7885ea6e378ccb90ca7749858bdef2c5212a05c77fca2db5",
+    "pixel_sha256": "f6cefa2bbf333742d366269ee27af4ab192ba3a1d9bcc6c3f85ec6deebee327d"
+   },
+   "mask": {
+    "path": "masks/glass_bottle-1024x1280.png",
+    "sha256": "5f21fe5b15e33c0e08d801a3c2e96afcb4b0b295b13d7a02c7fc5316eb4c684b",
+    "pixel_sha256": "1eb0a42dc9e32b9c9ca266a05aacba7a78f20c026074328e50c8eb03bd2c1f68"
+   },
+   "coverage": {
+    "logo": [
+     [
+      496,
+      632,
+      561,
+      697
+     ]
+    ],
+    "packaging_text": [
+     [
+      444,
+      704,
+      612,
+      756
+     ]
+    ],
+    "spec": [
+     [
+      493,
+      764,
+      563,
+      790
+     ]
+    ],
+    "structure": [
+     [
+      448,
+      384,
+      576,
+      432
+     ],
+     [
+      464,
+      432,
+      560,
+      560
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "500ML"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "cap",
+     "neck",
+     "body"
+    ]
+   },
+   "intents": [
+    "黑色亚克力台面，细长高光",
+    "海边沙滩与蓝天，明亮日光"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "transmission_edge",
+    "visual_composite_quality"
+   ]
+  },
+  {
+   "case_id": "glass_bottle-768x1024",
+   "kind": "glass_bottle",
+   "material_class": "transparent",
+   "canvas": {
+    "w": 768,
+    "h": 1024
+   },
+   "original": {
+    "path": "originals/glass_bottle-768x1024.png",
+    "sha256": "0d9700f1fadd8864b248c5f5b3bb001ca4baf74aa6936eb018e07b3766659572",
+    "pixel_sha256": "3ee0aa782c572e17867a0a7a5d95bb206876f0349b2592b683a07d28c021ad0c"
+   },
+   "mask": {
+    "path": "masks/glass_bottle-768x1024.png",
+    "sha256": "97661bdbea23533aaef4b5bd5865b72e2a3ba9740c352d0718a548436d64d15f",
+    "pixel_sha256": "8f454aaf8c197ac0cea8cf090c4e68ac6c0cbed0698925f8246f79afe3949202"
+   },
+   "coverage": {
+    "logo": [
+     [
+      372,
+      506,
+      421,
+      555
+     ]
+    ],
+    "packaging_text": [
+     [
+      333,
+      560,
+      459,
+      599
+     ]
+    ],
+    "spec": [
+     [
+      361,
+      605,
+      431,
+      631
+     ]
+    ],
+    "structure": [
+     [
+      336,
+      320,
+      432,
+      356
+     ],
+     [
+      348,
+      356,
+      420,
+      452
+     ]
+    ]
+   },
+   "product_count": 1,
+   "expected_keypoints": {
+    "text": [
+     "PAINUO",
+     "500ML"
+    ],
+    "logo": "circle-emblem",
+    "structure": [
+     "cap",
+     "neck",
+     "body"
+    ]
+   },
+   "intents": [
+    "黑色亚克力台面，细长高光",
+    "海边沙滩与蓝天，明亮日光"
+   ],
+   "human_axes": [
+    "background_extra_objects",
+    "background_intent_followed",
+    "transmission_edge",
+    "visual_composite_quality"
+   ]
+  }
+ ]
+}
