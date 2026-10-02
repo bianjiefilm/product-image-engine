@@ -31,10 +31,22 @@ func (s Scope) Valid() bool {
 	return true
 }
 func Fingerprint(in Intent) (string, error) {
-	if !in.Scope.Valid() || !identifier(in.RequestKey) || !identifier(in.PricingVersion) || in.Mode != "text_generate" || in.Provider != "modelxing-qwen-image-2.0-v1" || in.Model != "qwen-image-2.0" || in.Capability != "image.generate" || in.Size != "1024*1024" || in.Quantity != 1 || !utf8.ValidString(in.Prompt) || len(in.Prompt) > 16<<10 || strings.TrimSpace(in.Prompt) == "" {
+	modeOK := in.Mode == ModeTextGenerate && in.PlateDigest == "" || in.Mode == ModePlateLock && validDigest(in.PlateDigest)
+	if !in.Scope.Valid() || !identifier(in.RequestKey) || !identifier(in.PricingVersion) || !modeOK || in.Provider != "modelxing-qwen-image-2.0-v1" || in.Model != "qwen-image-2.0" || in.Capability != "image.generate" || in.Size != "1024*1024" || in.Quantity != 1 || !utf8.ValidString(in.Prompt) || len(in.Prompt) > 16<<10 || strings.TrimSpace(in.Prompt) == "" {
 		return "", ErrInvalid
 	}
 	return digest(in), nil
+}
+func validDigest(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 func digest(v any) string {
 	raw, _ := json.Marshal(v)

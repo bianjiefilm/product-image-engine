@@ -5,6 +5,13 @@ package sourceimage
 import "errors"
 
 const Owner = "product_source_v1"
+
+// Modes the source owner can run. Both share one provider, model, size,
+// quantity and price profile; only background_plate_lock adds a frozen input.
+const (
+	ModeTextGenerate = "text_generate"
+	ModePlateLock    = "background_plate_lock"
+)
 const TaskRequestBudgetSeconds int64 = 20
 
 var (
@@ -15,6 +22,10 @@ var (
 	ErrInvariant    = errors.New("source image: persisted invariant")
 	ErrUnconfigured = errors.New("source image: unconfigured")
 	ErrForbidden    = errors.New("source image: forbidden")
+	// ErrNotFrozen: the registered input is not a frozen, approved sample.
+	ErrNotFrozen = errors.New("source image: input is not a frozen sample")
+	// ErrNotUsable: the derived result failed a required quality axis.
+	ErrNotUsable = errors.New("source image: candidate not usable")
 )
 
 type Scope struct{ AppID, TenantID, ProjectID, UserID, PrincipalAccountID, PayerAccountID string }
@@ -22,6 +33,9 @@ type Intent struct {
 	Scope                                                                       Scope
 	RequestKey, Mode, Provider, Model, Capability, Size, Prompt, PricingVersion string
 	Quantity                                                                    int64
+	// PlateDigest binds a background_plate_lock run to its frozen input record.
+	// Empty (and omitted from the JSON, keeping old rows byte-stable) otherwise.
+	PlateDigest string `json:",omitempty"`
 }
 type Quote struct {
 	UsageID, UsageKey, QuoteID, PricingVersion, BusinessRef, Currency  string
