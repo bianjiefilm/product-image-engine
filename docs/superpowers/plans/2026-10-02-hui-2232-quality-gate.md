@@ -34,11 +34,11 @@
 
 spec 没有逐条写出、但最可能咬到真实使用者的输入 / 条件（每条都已在所属任务里有一条钉死它的测试）：
 
-1. **用户上传的是普通照片而不是冻结样本**：期望 = 能力端点不列它、创建返回 422 `sample_not_frozen`、**零 Billing / Task 调用**、界面用人话说明范围。→ Task 4 `TestPlateCreateRefusesBeforeAnyPaidCall`、Task 5 `photo-not-in-range`。
-2. **模型返回的“新背景”几乎等于原图**（纯白背景落在原背景色附近、返回原图、±3 噪声）：期望 = `background_changed` FAIL → `not_usable_candidate`，已扣费事实保留，**不自动重做、不再扣费**，界面说清失败项。→ Task 2 `TestThresholdCalibration`、Task 3 `TestF07F06UnusablePlatesAreRecordedNotRegenerated`、Task 4 `TestPlateUnusableCandidate…`、Task 5 `not-usable-candidate`。
-3. **生成过程中双击 / 刷新 / 退出重登 / 响应丢失**：期望 = 沿原键恢复同一 run，usage / quote / Task / charge 各恒为 1。→ Task 3 `TestF09…`、`TestReconcileAndRecoveryLoopDriveDerivation`，Task 5 `refresh-and-relogin-restore-same-run`，Task 6 M3 探针。
-4. **背景文字的边角输入**（空、仅空白、换行 / 控制字符、201 字、前后空格、浏览器夹带 `mask` / `passed` / `prompt` / `amount` 字段）：期望 = 400，**拒绝发生在任何付费调用之前**。→ Task 4 同一张表驱动测试、Task 5 `plate-lock-bff.test.ts`。
-5. **回滚 / 关开关发生在生成中途，或原图已从 Upload 清理**：期望 = 关开关只禁止新建与新确认，历史读取 / 导出 / 选定 / 删除 / 恢复照常；派生用冻结集合里的原图字节，**不依赖 Upload 里的原图还在**；样本集在计价后被换掉 → `blocked / sample_set_changed`，不下载、不扣费。→ Task 3 `TestF17…`、`TestFlagOffRefusesAnUnconfirmedQuote…`，Task 4 `TestPlateFlagOffClosesNewWorkButKeepsHistoryAndRecovery`。
+1. **用户上传的是普通照片而不是冻结样本**：期望 = 能力端点不列它、创建返回 422 `sample_not_frozen`、**零 Billing / Task 调用**、界面用人话说明范围。→ Task 2B `TestPlateCreateRefusesBeforeAnyPaidCall`、Task 3 `photo-not-in-range`。
+2. **模型返回的“新背景”几乎等于原图**（纯白背景落在原背景色附近、返回原图、±3 噪声）：期望 = `background_changed` FAIL → `not_usable_candidate`，已扣费事实保留，**不自动重做、不再扣费**，界面说清失败项。→ Task 1B `TestThresholdCalibration`、Task 2A `TestF07F06UnusablePlatesAreRecordedNotRegenerated`、Task 2B `TestPlateUnusableCandidate…`、Task 3 `not-usable-candidate`。
+3. **生成过程中双击 / 刷新 / 退出重登 / 响应丢失**：期望 = 沿原键恢复同一 run，usage / quote / Task / charge 各恒为 1。→ Task 2A `TestF09…`、`TestReconcileAndRecoveryLoopDriveDerivation`，Task 3 `refresh-and-relogin-restore-same-run`（fixture：清 cookie 后重新写入 fixture cookie，只证明界面按地址找回同一 run），Task 4 M3 探针。**措辞纪律：** 真实栈的 M3 第四个探针 `new_context_same_login_state` 只是“新浏览器上下文复用同一份登录态”，不是退出再登录；证据、runbook 与 handoff 一律如实这样写，不得写成“退出重登已验证”。
+4. **背景文字的边角输入**（空、仅空白、换行 / 控制字符、201 字、前后空格、浏览器夹带 `mask` / `passed` / `prompt` / `amount` 字段）：期望 = 400，**拒绝发生在任何付费调用之前**。→ Task 2B 同一张表驱动测试、Task 3 `plate-lock-bff.test.ts`。
+5. **回滚 / 关开关发生在生成中途，或原图已从 Upload 清理**：期望 = 关开关只禁止新建与新确认，历史读取 / 导出 / 选定 / 删除 / 恢复照常；派生用冻结集合里的原图字节，**不依赖 Upload 里的原图还在**；样本集在计价后被换掉 → `blocked / sample_set_changed`，不下载、不扣费。→ Task 2A `TestF17…`、`TestFlagOffRefusesAnUnconfirmedQuote…`，Task 2B `TestPlateFlagOffClosesNewWorkButKeepsHistoryAndRecovery`。
 
 ## 计划阶段的 Root 自答（对 spec 的精确化 / 偏离，均已在对应任务实现并有测试）
 
@@ -46,7 +46,7 @@ Ruling: **P1 派生用冻结集合里的原图字节，不再经 Upload 读原�
 
 Ruling: **P2 派生记录写一次、不可变** — spec §4.4 里的 `selected / returned_output_id / revision` 列不进派生表：选定仍是 source run 的 `selected`，回流绑定落在 `0021` 的 `project_output_quality` — 因为可变列会让“结果与报告被事后改写”成为可能；写一次 + 读时校验 SHA 是更强的不变量 — 如果错了的代价：多一张表（0021），无其它。
 
-Ruling: **P3 迁移拆为 0020 / 0021** — `0020` 只含冻结输入与派生（Task 3），`0021` 只含回流质量绑定（Task 4），各自随所属任务可独立提交与验证 — 如果错了的代价：无。
+Ruling: **P3 迁移拆为 0020 / 0021** — `0020` 只含冻结输入与派生（Task 2A），`0021` 只含回流质量绑定（Task 2B），各自随所属任务可独立提交与验证 — 如果错了的代价：无。
 
 Ruling: **P4 `capabilities` 对 `supported_input_ids` 只读本地照片登记（SHA）** — 创建时才经 Upload 取字节核对 — 因为 GET 不得访问远端、不得写库（沿用 #38 约束） — 如果错了的代价：本地登记与 Upload 真实内容不一致时，能力端点会列出而创建时才 422（零费用，仅体验问题）。
 
@@ -71,26 +71,30 @@ cd "$WT" && git status --short && git branch --show-current   # 期望：分支 
 
 ## 文件结构总览
 
-| 任务 | 新增（Create） | 修改（Modify） |
+| 任务（部分） | 新增（Create） | 修改（Modify） |
 |---|---|---|
-| 1 样本集 / 装载器 / 配置 | `server/internal/fidelitysamples/{manifest.go,load.go,fidelitysamples_test.go,sampletest/sampletest.go}`、`server/internal/samplegen/{draw.go,samplegen.go,samplegen_test.go}`、`server/cmd/samplegen/main.go`、`server/internal/buildinfo/{buildinfo.go,buildinfo_test.go}`、`fixtures/frozen-samples/v1/**`（生成） | `server/internal/config/{config.go,config_test.go}`、`deploy/product-image.env.example` |
-| 2 platelock 引擎 | `server/internal/platelock/{fit.go,report.go,platelock_test.go}` | — |
-| 3 run 流水线 | `server/internal/sourceimage/{plate.go,plate_test.go}`、`server/internal/store/migrations/0020_plate_lock.sql`、`server/internal/store/{plate.go,plate_test.go}`、`server/internal/sourceflow/{plate.go,plate_test.go,plate_io_test.go}` | `sourceimage/{types.go,validate.go,quality.go}`、`store/{source_runs.go,source_http.go}`、`sourceflow/{types.go,quote.go,recover.go,task.go,output.go}` |
-| 4 HTTP / 回流 / 接线 | `store/migrations/0021_plate_output_quality.sql`、`store/{plate_output.go,plate_output_test.go}`、`httpapi/{source_plate.go,source_plate_test.go}` | `httpapi/{server.go,source_image.go,source_image_content.go,source_image_view.go,handoff.go,bgreplace.go,bgreplace_test.go,source_image_test.go}`、`cmd/server/{source_runtime.go,source_runtime_test.go}` |
-| 5 Web | `web/src/lib/plate-lock.ts`、`web/src/components/plate-lock/{PlateLockScreen.tsx,PhotoUpload.tsx}`、`web/src/components/ui/{alert,field,skeleton,stepper}.tsx`、`web/tests/plate-lock-*.test.ts(x)`、`web/e2e/{fixture-api.mjs,fixture-run.mjs,zip.mjs}` | `web/src/lib/source-image.ts`、`web/src/app/api/projects/[id]/source-image-runs/proxy.ts`、`…/background-replacements/[jobId]/[action]/route.ts`、`web/src/components/{source-image/Panel.tsx,first-image/StartScreen.tsx,background-replace/Panel.tsx}`、`web/src/app/{start/ui.tsx,projects/[id]/page.tsx,globals.css}`、`web/src/components/ui/ui.module.css`、`web/tests/{source-image-fixture.ts,source-image-mounts.test.tsx,bg-replace.test.ts}`、`web/package.json` |
-| 6 真实验收 / 收口 | `web/e2e/{ledger.mjs,fault-proxy.mjs,review-validate.mjs,verdict.mjs,real-run.mjs}`、`web/tests/e2e-helpers.test.ts`、`docs/runbooks/hui-2232-plate-lock.md` | `web/package.json`（scripts） |
+| 1（1A）样本集 / 装载器 / 配置 | `server/internal/fidelitysamples/{manifest.go,load.go,fidelitysamples_test.go,sampletest/sampletest.go}`、`server/internal/samplegen/{draw.go,directions.go,samplegen.go,samplegen_test.go}`、`server/cmd/samplegen/main.go`、`server/internal/buildinfo/{buildinfo.go,buildinfo_test.go}`、`fixtures/frozen-samples/v1/**`（生成） | `server/internal/config/{config.go,config_test.go}`、`deploy/product-image.env.example` |
+| 1（1B）platelock 引擎 | `server/internal/platelock/{fit.go,report.go,platelock_test.go}` | — |
+| 2（2A）run 流水线 | `server/internal/sourceimage/{plate.go,plate_test.go}`、`server/internal/store/migrations/0020_plate_lock.sql`、`server/internal/store/{plate.go,plate_test.go}`、`server/internal/sourceflow/{plate.go,plate_test.go,plate_io_test.go}` | `sourceimage/{types.go,validate.go,quality.go}`、`store/{source_runs.go,source_http.go}`、`sourceflow/{types.go,quote.go,recover.go,task.go,output.go}` |
+| 2（2B）HTTP / 回流 / 接线 | `store/migrations/0021_plate_output_quality.sql`、`store/{plate_output.go,plate_output_test.go}`、`httpapi/{source_plate.go,source_plate_test.go}` | `httpapi/{server.go,source_image.go,source_image_content.go,source_image_view.go,handoff.go,bgreplace.go,bgreplace_test.go,source_image_test.go}`、`cmd/server/{source_runtime.go,source_runtime_test.go}` |
+| 3 Web | `web/src/lib/plate-lock.ts`、`web/src/components/plate-lock/{PlateLockScreen.tsx,PhotoUpload.tsx}`、`web/src/components/ui/{alert,field,skeleton,stepper}.tsx`、`web/tests/plate-lock-*.test.ts(x)`、`web/e2e/{fixture-api.mjs,fixture-run.mjs,zip.mjs}` | `web/src/lib/source-image.ts`、`web/src/app/api/projects/[id]/source-image-runs/proxy.ts`、`…/background-replacements/[jobId]/[action]/route.ts`、`web/src/components/{source-image/Panel.tsx,first-image/StartScreen.tsx,background-replace/Panel.tsx}`、`web/src/app/{start/ui.tsx,projects/[id]/page.tsx,globals.css}`、`web/src/components/ui/ui.module.css`、`web/tests/{source-image-fixture.ts,source-image-mounts.test.tsx,bg-replace.test.ts}`、`web/package.json` |
+| 4 真实验收 / 收口 | `web/e2e/{ledger.mjs,fault-proxy.mjs,review-validate.mjs,verdict.mjs,real-run.mjs}`、`web/tests/e2e-helpers.test.ts`、`docs/runbooks/hui-2232-plate-lock.md` | `web/package.json`（scripts） |
 
-任务依赖：1 → 2 → 3 → 4 → 5 → 6（2 依赖 1 的样本与类型；3 依赖 1、2；4 依赖 3；5 依赖 4 的 HTTP 契约；6 依赖 5）。
+任务依赖（共 4 个任务，部分只是任务内的提交边界）：Task 1（1A → 1B）→ Task 2（2A → 2B）→ Task 3 → Task 4。1B 依赖 1A 的样本与类型；2A 依赖 Task 1 全部；2B 依赖 2A；Task 3 依赖 2B 的 HTTP 契约；Task 4 依赖 Task 3。
 
 ---
 
-## Task 1：冻结授权样本集、确定性生成器、运行时装载器与默认关闭的配置
+## Task 1：冻结样本集、装载器、构建身份与 `platelock` 引擎（1A + 1B 两部分，各自独立提交）
+
+**交付物（Task 级）：** 9 个冻结合成样本与可复验生成器、失败即整体关闭的装载器、默认关闭的配置与构建身份（1A）；纯函数 `platelock` 引擎与 `product-source-quality/v2` 报告（1B）。**提交纪律：** 1A、1B 各沿用自己的 Step 与提交点（1A Step 7、1B Step 6，各是一次独立提交），合并为一个 Task 只是少了一个评审边界，**不是**一次性大提交。**Task 验收：** 1A、1B 各自的“运行，确认通过”都绿，且 `go vet ./...`、`samplegen -check` 通过。
+
+### 1A：冻结授权样本集、确定性生成器、运行时装载器与默认关闭的配置（原 Task 1）
 
 **交付物（可独立提交 / 独立验证）：** 仓库内 9 个冻结合成样本（PNG 原图 + 蒙版 + `manifest.json`）、可复验的生成器 `samplegen -check`、失败即整体关闭的装载器 `fidelitysamples.Load`、`FEATURE_BG_PLATE_LOCK` / `PRODUCT_FIDELITY_SAMPLES_DIR` 两个默认关闭的配置、构建身份包 `buildinfo`。对应 spec §4.2、§4.3（装载与配置部分）、§4.5 的 `build` 来源；反例 F01–F03、F05（装载层）、F16。
 
 **Files:**
 - Create: `server/internal/fidelitysamples/manifest.go`、`load.go`、`fidelitysamples_test.go`、`sampletest/sampletest.go`
-- Create: `server/internal/samplegen/draw.go`、`samplegen.go`、`samplegen_test.go`、`server/cmd/samplegen/main.go`
+- Create: `server/internal/samplegen/draw.go`、`directions.go`、`samplegen.go`、`samplegen_test.go`、`server/cmd/samplegen/main.go`
 - Create: `server/internal/buildinfo/buildinfo.go`、`buildinfo_test.go`
 - Create（由生成器产出，不手写）: `fixtures/frozen-samples/v1/manifest.json`、`README.md`、`originals/*.png`（9）、`masks/*.png`（9）
 - Modify: `server/internal/config/config.go`、`server/internal/config/config_test.go`、`deploy/product-image.env.example`
@@ -318,6 +322,7 @@ func TestValidIntent(t *testing.T) {
 package samplegen_test
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -364,6 +369,38 @@ func TestWriteThenCheckRoundTripAndTamperDetection(t *testing.T) {
 	}
 	if err := samplegen.Check(dir); err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Fatalf("tampered mask not detected: %v", err)
+	}
+}
+
+// R30: a frozen background direction must contrast clearly with the sample's own background,
+// otherwise a perfectly good model plate would be (conservatively) judged background_changed=FAIL.
+func TestEveryFrozenDirectionContrastsWithItsSampleBackground(t *testing.T) {
+	for _, c := range samplegen.Build() {
+		bg := c.Original.NRGBAAt(0, 0) // the sample's own background colour (the corner is never subject)
+		for _, in := range c.Meta.Intents {
+			ref, ok := samplegen.DirectionReference[in]
+			if !ok {
+				t.Fatalf("%s: direction %q has no reference colour; add it to samplegen.DirectionReference", c.Meta.CaseID, in)
+			}
+			d := math.Sqrt(math.Pow(float64(ref.R)-float64(bg.R), 2) + math.Pow(float64(ref.G)-float64(bg.G), 2) + math.Pow(float64(ref.B)-float64(bg.B), 2))
+			if d < samplegen.MinDirectionContrast {
+				t.Fatalf("%s: direction %q is only %.0f from the sample background (need >= %.0f)", c.Meta.CaseID, in, d, samplegen.MinDirectionContrast)
+			}
+		}
+	}
+}
+
+func TestEveryDirectionReferenceBelongsToAFrozenDirection(t *testing.T) {
+	used := map[string]bool{}
+	for _, c := range samplegen.Build() {
+		for _, in := range c.Meta.Intents {
+			used[in] = true
+		}
+	}
+	for in := range samplegen.DirectionReference {
+		if !used[in] {
+			t.Fatalf("reference colour for %q but no case freezes that direction", in)
+		}
 	}
 }
 ````
@@ -1558,6 +1595,32 @@ PRODUCT_FIDELITY_SAMPLES_DIR=
 ENVEOF
 ```
 
+同一步里再写一个小文件，把 R30 钉成可执行的规则（每个冻结方向对应的“代表色”，与样本底色的欧氏 RGB 距离必须 >= 100；当前最小距离约 126，是玻璃瓶底色 `(222,228,222)` 对“海边沙滩与蓝天”）：
+
+`server/internal/samplegen/directions.go`
+
+````go
+package samplegen
+
+import "image/color"
+
+// MinDirectionContrast is the smallest Euclidean RGB distance allowed between a frozen
+// background direction's representative colour and the sample's own background (R30).
+const MinDirectionContrast = 100.0
+
+// DirectionReference is the representative mean colour of what each frozen direction
+// describes. It exists only to pin R30 in tests; it is not read at runtime, and a
+// direction added to `kinds` without an entry here fails TestEveryFrozenDirectionContrasts….
+var DirectionReference = map[string]color.NRGBA{
+	"深蓝色渐变摄影棚背景，柔和顶光": {20, 40, 90, 255},
+	"暖色原木桌面，窗边自然光":     {150, 100, 60, 255},
+	"深灰色大理石台面，冷色侧光":    {70, 70, 75, 255},
+	"绿色植物墙背景，浅景深":      {50, 110, 60, 255},
+	"黑色亚克力台面，细长高光":     {20, 20, 22, 255},
+	"海边沙滩与蓝天，明亮日光":     {110, 170, 215, 255},
+}
+````
+
 - [ ] **Step 4: 生成并提交冻结样本集**
 
 ```bash
@@ -1618,7 +1681,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 2：`platelock` 引擎——等比覆盖适配、主体锁回、服务端质量证据报告 v2
+### 1B：`platelock` 引擎——等比覆盖适配、主体锁回、服务端质量证据报告 v2（原 Task 2）
 
 **交付物：** 纯函数包 `platelock`（无 I/O、无时钟、无随机）：`FitPlateCover`、`Compose`、`Evaluate`、`Derive`、`StateOf`、`ReportJSON`、`DecodeReport`；冻结阈值 `bg-lock-thresholds/v1` 及其正反例标定；报告里不存在任何分数入口。对应 spec §4.2（阈值）、§4.5、§4.4 第 5 点（适配）；反例 F06、F07、F08(b)(c)、F18、F22。
 
@@ -1626,8 +1689,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Create: `server/internal/platelock/fit.go`、`report.go`、`platelock_test.go`
 
 **Interfaces:**
-- Consumes（Task 1）：`fidelitysamples.Case` / `Rect` / `Scope` / `ThresholdsVersion` / `MaterialTransparent`；`fidelitysamples.Load`、`sampletest.Dir`（仅测试）；既有 `bgreplace.LockSubject`、`bgreplace.SubjectPixelChecks`（仅测试，用来做**独立**对照）。
-- Produces（Task 3 / 4 精确使用）：
+- Consumes（Task 1A）：`fidelitysamples.Case` / `Rect` / `Scope` / `ThresholdsVersion` / `MaterialTransparent`；`fidelitysamples.Load`、`sampletest.Dir`（仅测试）；既有 `bgreplace.LockSubject`、`bgreplace.SubjectPixelChecks`（仅测试，用来做**独立**对照）。
+- Produces（Task 2A / 2B 精确使用）：
   - 常量 `ReportVersion="product-source-quality/v2"`、`Claim`、`FitID="fit-cover-center-catmullrom/v1"`、`ComposeID="compose-mask-lock/v1"`、`PlateSide=1024`、`Pass/Fail/Unknown/NA`、`CandidateLimited/CandidatePending/CandidateNotUsable`、轴名常量 `Axis*`。
   - `type Input struct{ Case fidelitysamples.Case; Original, Mask []byte; CoverageSHA256 string; Plate []byte; Facts Facts; Build Build }`；`type Facts struct{ Mode, Provider, Model, PricingVersion, UsageID, QuoteID, TaskID, OriginalChargeID, PlateAssetID, PlateReferenceID, PlateSHA256 string; TaskSucceeded, PlateHashVerified, ChargeSeen bool }`；`type Build struct{ VCSRevision string; VCSModified bool }`。
   - `type Report`（含 `Axes []Axis`、`Verdicts`、`CandidateState`、`Limits []string`、`Facts ReportFacts`、`Build`、可选 `Review *Review`）；`type Output struct{ Composite []byte; Report Report }`。
@@ -2732,7 +2795,11 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 3：`background_plate_lock` 模式的 run 流水线——冻结输入、写一次的派生、恢复与门控
+## Task 2：run 流水线、HTTP 面、旧路由退役与回流质量绑定（2A + 2B 两部分，各自独立提交）
+
+**交付物（Task 级）：** `background_plate_lock` 模式的冻结输入 / 写一次派生 / 恢复与门控（2A，迁移 `0020`）；浏览器可用的 HTTP 面、旧 `model-plate` 路由 410、回流质量绑定（迁移 `0021`）与 `cmd/server` 接线（2B）。**提交纪律：** 2A（Step 8）、2B（Step 8）各是一次独立提交，其内部的小步提交保留。**Task 验收：** 2B 结束时全量 `go test -p 2 ./...`、涉及包 `-race`、`go vet ./...` 与真实进程冒烟全部通过。
+
+### 2A：`background_plate_lock` 模式的 run 流水线——冻结输入、写一次的派生、恢复与门控（原 Task 3）
 
 **交付物：** source run 新增 `background_plate_lock` 模式：创建时冻结服务端派生的输入（样本 / 蒙版 / 覆盖摘要 / 背景文字 / 适配与合成标识）并绑进 `Intent.PlateDigest`；底板 Task 成功且已扣费后，**恢复协调器或显式 reconcile** 触发一次幂等派生（下载并核对底板 → `platelock.Derive` → 写一次的派生记录）；选定被 `limited_candidate` 门控；plate 的 Upload 资产永不作为结果展示。对应 spec §4.4 第 1–5 点、§4.5 的落库部分；反例 F06–F10（服务层）、F15、F17（按 P1 改写）、F18。
 
@@ -2743,8 +2810,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Modify: `server/internal/sourceimage/{types.go,validate.go,quality.go}`、`server/internal/store/{source_runs.go,source_http.go}`、`server/internal/sourceflow/{types.go,quote.go,recover.go,task.go,output.go}`
 
 **Interfaces:**
-- Consumes（Task 1 / 2）：`fidelitysamples.Set`（`BySHA/ID/SHA256`）、`fidelitysamples.LoadedCase`、`fidelitysamples.ValidIntent`、`sampletest.Dir/Copy/Resign`；`platelock.Derive/Input/Facts/Build/ReportJSON/DecodeReport/FitID/ComposeID`；既有 `bgreplace.ModelPlatePrompt`、`bgreplace.SubjectPixelChecks`、`bgreplace.LockSubject`。
-- Produces（Task 4 精确使用）：
+- Consumes（Task 1A / 1B）：`fidelitysamples.Set`（`BySHA/ID/SHA256`）、`fidelitysamples.LoadedCase`、`fidelitysamples.ValidIntent`、`sampletest.Dir/Copy/Resign`；`platelock.Derive/Input/Facts/Build/ReportJSON/DecodeReport/FitID/ComposeID`；既有 `bgreplace.ModelPlatePrompt`、`bgreplace.SubjectPixelChecks`、`bgreplace.LockSubject`。
+- Produces（Task 2B 精确使用）：
   - `sourceimage`：`ModeTextGenerate`、`ModePlateLock`（= `"background_plate_lock"`）、`ErrNotFrozen`、`ErrNotUsable`、`Intent.PlateDigest string`（`json:",omitempty"`，旧行 JSON 字节不变）、`PlateInput`、`PlateDigest(PlateInput) string`、`ValidIntentText(string) bool`、`PlateDerivation`、`ValidatePlateDerivation`、`SHA256Hex`、状态常量 `DerivationDerived/Blocked`、`CandidateLimited/NotUsable/Pending/Blocked`、`BlockedSampleSetChanged`。
   - `store`：`(*Store).CreateSourcePlateRunForProject(ctx, si.Intent, si.PlateInput) (si.Run, bool, error)`、`GetPlateInput(ctx, si.Run) (si.PlateInput, error)`、`GetPlateDerivation(ctx, runID) (si.PlateDerivation, bool, error)`、`SavePlateDerivation(ctx, si.PlateDerivation) (si.PlateDerivation, error)`、`ListPlateRunsAwaitingDerivation(ctx, limit) ([]si.Run, error)`；`createSourceRun` 增加可选的同事务 `extra` 钩子。
   - `sourceflow.Service`：字段 `PlateEnabled bool`、`Samples *fidelitysamples.Set`、`SamplesReason string`、`Build platelock.Build`；`PlateRequest{RequestKey, InputID, BackgroundIntent, OriginalSHA256 string}`；`(*Service).PlateReady(payerSource string) (bool, string)`（原因码 `plate_lock_disabled | sample_set_unconfigured | sample_set_invalid | plate_org_not_supported | source_unconfigured`）、`CreatePlate(ctx, Actor, project string, PlateRequest) (si.Run, error)`、`DerivePlate(ctx, runID) (si.PlateDerivation, error)`、`LoadPlate(ctx, Actor, project, runID string) (PlateContent, error)`（`PlateContent{Run; Input; Derivation}`）；`Select` 对 plate 模式要求 `limited_candidate`（未派生 → `ErrConflict`，不可用 → `ErrNotUsable`）；`OpenOutput` 对 plate 模式恒 `ErrConflict`；`Confirm` 在 flag 关闭时拒绝**未确认**的 plate 报价（已确认的重放照常）。
@@ -4633,7 +4700,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 4：HTTP 面、旧直调路由退役、回流质量绑定与进程接线
+### 2B：HTTP 面、旧直调路由退役、回流质量绑定与进程接线（原 Task 4）
 
 **交付物：** 浏览器可用的限定保真 API（创建 / 能力 / 视图 / 内容 / 导出 / 选定 / 回传）、对用户输入的服务端封闭校验、旧 `model-plate` 直调路由永久 410、回流质量绑定（只有 `limited_candidate` 能回传，回执只引用原 charge）、`/readyz` 增加构建身份与 `plate_lock` 门、`cmd/server` 装载样本集（失败只关本模式）。对应 spec §4.3（运行时部分）、§4.4 第 6–8 点、§4.7、R6、R12、R18；反例 F04、F05、F11–F16、F19–F21。
 
@@ -4643,8 +4710,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Modify: `server/internal/httpapi/{server.go,source_image.go,source_image_content.go,source_image_view.go,handoff.go,bgreplace.go,bgreplace_test.go,source_image_test.go}`、`server/cmd/server/{source_runtime.go,source_runtime_test.go}`
 
 **Interfaces:**
-- Consumes（Task 1–3）：`sourceflow.Service` 的 `PlateReady/CreatePlate/LoadPlate/Select/PlateEnabled/Samples/SamplesReason/Build`、`sourceflow.PlateRequest`、`sourceflow.PlateContent`；`store` 的 `GetPlateInput/GetPlateDerivation`；`platelock.DecodeReport/Claim`；`fidelitysamples.Load/Scope/LoadedCase`；`buildinfo.Read`；`si.ErrNotFrozen/ErrNotUsable/SHA256Hex/ValidIntentText/ModePlateLock`。
-- Produces（Task 5 / 6 的契约，字段名逐字使用）：
+- Consumes（Task 1A–2A）：`sourceflow.Service` 的 `PlateReady/CreatePlate/LoadPlate/Select/PlateEnabled/Samples/SamplesReason/Build`、`sourceflow.PlateRequest`、`sourceflow.PlateContent`；`store` 的 `GetPlateInput/GetPlateDerivation`；`platelock.DecodeReport/Claim`；`fidelitysamples.Load/Scope/LoadedCase`；`buildinfo.Read`；`si.ErrNotFrozen/ErrNotUsable/SHA256Hex/ValidIntentText/ModePlateLock`。
+- Produces（Task 3 / 4 的契约，字段名逐字使用）：
   - `POST /api/v1/projects/{id}/source-image-runs`：当 body 的 `mode == "background_plate_lock"`，封闭键集 `{request_key, mode, input_id, background_intent}`（全是字符串，多一个 / 少一个 / 重复 / 非字符串 → 400）。错误：`422 sample_not_frozen`、`503 <plate_lock_disabled|sample_set_unconfigured|sample_set_invalid|plate_org_not_supported|source_unconfigured|…>`、`409 original_missing`。
   - `GET …/source-image-capabilities` 的 `background_plate_lock` 项：`{mode, ready, disabled, reason, can_quote, can_confirm, size:"1024*1024", model, claim:"frozen_synthetic_sample_only", fidelity:"frozen_sample_only", visual_quality:"unknown", supported_input_ids:[…], supported_inputs:[{input_id, kind, canvas:{width_px,height_px}}]}`（纯本地读，不访问远端、不写库）。
   - plate run 的视图：`mode:"background_plate_lock"`、`output:null`（原始底板绝不展示）、`fidelity:"frozen_sample_only"`、`plate:{result_kind:"derived_composite", claim, human_usefulness:"NOT_RUN", derivation_state:"pending|derived|blocked|invalid", candidate_state:"limited_candidate|pending|not_usable_candidate|blocked", sample_set_id, case_id, background_intent, canvas, blocked_reason?, plate_task?, verdicts?, axes?, limits?, report_sha256?, composite_sha256?, result?}`；`text_generate` 的视图**没有** `plate` 键、`fidelity` 仍是 `not_applicable`。
@@ -6545,7 +6612,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 5：Web——真实上传、限定保真面板、能力矩阵、人话文案与浏览器取证（fixture 栈）
+## Task 3：Web——真实上传、限定保真面板、能力矩阵、人话文案与浏览器取证（fixture 栈）（原 Task 5）
 
 **交付物：** `/start` 个人路径换成“真实上传（`<input type=file>`，不再是禁用按钮）→ 限定保真换背景”，旧 first-image 表单与开发者字段退出个人路径；`/projects/[id]` 同样挂载；source BFF 放行限定保真的封闭请求体 / `return` 动作 / 稳定错误码；新的无障碍小原语（Field / Alert / Skeleton / Stepper）与语义变量层；能力矩阵如实显示每个模式；旧 `model-plate` 按钮与 BFF 动作删除；Playwright（`playwright-core@1.63.0`，本机 Chrome 二进制 + 独立 profile + 端口 `32321/32324`）在 fixture 栈上取证。对应 spec §4.8、§4.10 与 A6、A9；**所有浏览器证据标 `fixture`，不当验收**。
 
@@ -6556,7 +6623,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Modify: `web/src/lib/source-image.ts`、`web/src/app/api/projects/[id]/source-image-runs/proxy.ts`、`web/src/app/api/projects/[id]/background-replacements/[jobId]/[action]/route.ts`、`web/src/components/{source-image/Panel.tsx,first-image/StartScreen.tsx,background-replace/Panel.tsx}`、`web/src/app/{start/ui.tsx,projects/[id]/page.tsx,globals.css}`、`web/src/components/ui/ui.module.css`、`web/tests/{source-image-fixture.ts,source-image-mounts.test.tsx,bg-replace.test.ts}`、`web/package.json`、`web/package-lock.json`
 
 **Interfaces:**
-- Consumes（Task 4 的 HTTP 契约，字段名逐字）：见 Task 4 Interfaces（创建封闭键集、能力项、`plate` 视图、`content` / `export` / `return`、错误码 `sample_not_frozen | candidate_not_usable | not_selected | no_source_binding | no_composite | original_missing | plate_lock_disabled | sample_set_unconfigured | sample_set_invalid | plate_org_not_supported`）。
+- Consumes（Task 2B 的 HTTP 契约，字段名逐字）：见 Task 2B Interfaces（创建封闭键集、能力项、`plate` 视图、`content` / `export` / `return`、错误码 `sample_not_frozen | candidate_not_usable | not_selected | no_source_binding | no_composite | original_missing | plate_lock_disabled | sample_set_unconfigured | sample_set_invalid | plate_org_not_supported`）。
 - Produces：
   - `SourceImagePanel({projectId?, mode?: "text_generate"|"background_plate_lock", returnEnabled?, reloadKey?, uploadSlot?, onReturned?})`（`mode` 默认 `text_generate`，文字面板行为不变；恢复参数分别是 `?source_run=` 与 `?plate_run=`；待核实请求键在 sessionStorage 里按模式分键）。
   - `SourceImageController(api, uuid?, now?, mode?)` 新增 `quotePlate({projectID, inputID, background})` 与 `returnToSource(): Promise<string>`；`confirm()` / `action()` 按**当前 run 的模式**读能力；`remember()` 拒绝另一种模式的 run（两个面板不会互换视图）。
@@ -8906,9 +8973,9 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 6：真实付费隔离验收（M1–M3）、SIMULATED-HUMAN、模式收口、runbook、handoff 与清理
+## Task 4：真实付费隔离验收（M1–M3）、逐层 verdict、SIMULATED-HUMAN、模式收口、runbook、handoff 与清理（原 Task 6）
 
-**交付物：** 一套**不会撒谎**的验收驱动与证据包：账本先意图后观测、构建身份预检、故障注入、零新增费用的恢复探针、导出与展示结果的逐字节核对；真实前置缺失时如实 `BLOCKED`（不用 fixture 补数）；六层结论互不折叠的 verdict 推导器；runbook；`RUN/handoffs/HUI-2232.md`；收尾清理。对应 spec §4.9、§4.10、§8、A8、A9、A11、A12。
+**交付物：** 一套**不会撒谎**的验收驱动与证据包：账本先意图后观测、构建身份预检、故障注入、零新增费用的恢复探针、导出与展示结果的逐字节核对；真实前置缺失时如实 `BLOCKED`（不用 fixture 补数）；逐层（engineering / browser / fidelity / generation / export / billing_recovery / cross_app / production / human）互不折叠、各自从 run-record 真实字段推导的 verdict 推导器，**DONE_WITH_SIMULATION 只在所有必需层都 PASS 时才可能，`cross_app`（订单 / Campaign 真实回流，A7 Level B）为 `NOT_RUN` 时硬封顶 `PARTIAL`**；runbook；`RUN/handoffs/HUI-2232.md`；收尾清理。对应 spec §4.9、§4.10、§8、A8、A9、A11、A12。
 
 **Files:**
 - Create: `web/e2e/{ledger.mjs,fault-proxy.mjs,review-validate.mjs,verdict.mjs,real-run.mjs}`、`web/tests/e2e-helpers.test.ts`、`docs/runbooks/hui-2232-plate-lock.md`
@@ -8916,12 +8983,12 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - 仓库外产出：`$EV/**` 证据、`$RUN/handoffs/HUI-2232.md`
 
 **Interfaces:**
-- Consumes：Task 1–5 全部；Task 5 的 `web/e2e/zip.mjs`；真实栈前置（**只能是环境变量 / 文件路径引用**，名字见 Step 6）。
-- Produces：`$EV/real-e2e/run-record.json`（`layer:"real"`）**或** `$EV/real-e2e/BLOCKED.json`；`charge-ledger.jsonl`（每个 `observed` 之前必有同 label 的 `intent`）；`$EV/gates.json`；`verdict.mjs` 输出的六层表（Engineering / Browser / Service-Provider / Billing / Production / Human）与 verdict。
+- Consumes：Task 1A–3 全部；Task 3 的 `web/e2e/zip.mjs`；真实栈前置（**只能是环境变量 / 文件路径引用**，名字见 Step 7a）。
+- Produces：`$EV/real-e2e/run-record.json`（`layer:"real"`）**或** `$EV/real-e2e/BLOCKED.json`；`charge-ledger.jsonl`（每个 `observed` 之前必有同 label 的 `intent`）；`$EV/gates.json`；`verdict.mjs` 输出的分层表（engineering / browser_fixture / browser_real / fidelity / generation / export / billing_recovery / service_provider / cross_app / production / human）、`unmet` 清单、`open_items`（含组织付款 Gate E7 未完成）与 verdict；可选的 `$EV/cross-app/return-record.json`（仅在有真实订单 / Campaign 回流栈时由 Root 供给的 Level B 取证写出：`{layer:"real",status:"PASS",quality_binding_checked:true,receipt_id}`）或 `$EV/cross-app/BLOCKED.json`；**两者都没有 → `cross_app` 为 `NOT_RUN`，verdict 封顶 `PARTIAL`**。
 
 - [ ] **Step 1: 先写失败的测试（证据工具本身也要被测）**
 
-覆盖：ZIP 往返逐字节一致；账本拒绝“没有先写意图的观测”、把“有意图没观测”标为 `UNKNOWN`、只统计 `charged`；SIMULATED-HUMAN 评审**只有**在“不声称任何更多”时才被接受（拒绝 `kind` 不对、上下文非 fresh、带 `verdict/pass` 字段、轴意见取值越界、声称真人确认）；verdict 推导器**永远不会高于证据**（门禁有一项非 0 → `PARTIAL`；fixture 干跑的记录不算真实；真实 + 账本完整但无评审 → `PARTIAL`；真实 + 账本完整 + 有效评审 → `DONE_WITH_SIMULATION`；`production` 恒 `NOT_RUN`）：
+覆盖：ZIP 往返逐字节一致；账本拒绝“没有先写意图的观测”、把“有意图没观测”标为 `UNKNOWN`、只统计 `charged`；SIMULATED-HUMAN 评审**只有**在“不声称任何更多”时才被接受（拒绝 `kind` 不对、上下文非 fresh、带 `verdict/pass` 字段、轴意见取值越界、声称真人确认）；verdict 推导器**永远不会高于证据**：每个分层都由 run-record 的真实字段推导（`fidelity` 看每个 M1 run 是否 `OBSERVED` 且 `limited_candidate`；`generation` 看 3 块底板与 M2 文字图是否真实产出并加载；`export` 看导出 zip 与展示合成图是否逐字节一致；`billing_recovery` 看账本完整、每个 run 恰好扣费一次、故障注入真的发生过、四个探针全部 `equal`；`cross_app` 看真实回流证据）。唯一的 `DONE_WITH_SIMULATION` 路径是一份**完整诚实**的真实记录 + 有效的 SIMULATED-HUMAN 评审 + 回流 Level B 证据；反例表每一行只改动一个事实，并断言封顶 `PARTIAL`——包括 `not_usable_candidate` / `UNKNOWN` 的 run、探针不等、缺 M2、无故障注入、导出不一致、脏工作区 / 构建身份不符、回流 `NOT_RUN`，以及旧实现会放行的“只有 `task_id` 与 `plate.asset_id` 的最小记录”。`production` 恒 `NOT_RUN`；组织付款 Gate（E7）不在本票范围，只作为 `open_items` 如实列出：
 
 `web/tests/e2e-helpers.test.ts`
 
@@ -8973,35 +9040,98 @@ describe("evidence helpers", () => {
     ];
     for (const [name, mutate] of bad) { const d = goodReview() as Record<string, unknown>; mutate(d); expect(validateReview(d).length, name).toBeGreaterThan(0); }
   });
+});
 
-  it("the verdict never rises above what the evidence supports", () => {
-    const dir = tmp();
-    fs.mkdirSync(path.join(dir, "real-e2e"), { recursive: true });
-    const write = (f: string, v: unknown) => fs.writeFileSync(path.join(dir, f), JSON.stringify(v));
-    const gates = { go_test: 0, go_vet: 0, go_race: 0, web_test: 0, web_tsc: 0, next_build: 0, samplegen_check: 0 };
-    write("gates.json", { ...gates, go_race: 1 });
-    expect(assess(dir).verdict).toBe("PARTIAL");
-    write("gates.json", gates);
-    expect(assess(dir).layers.browser_real).toBe("NOT_RUN");
-    expect(assess(dir).verdict).toBe("PARTIAL");
-    write("real-e2e/BLOCKED.json", { reason: "no_storage_state" });
-    expect(assess(dir).layers.browser_real).toBe("BLOCKED");
-    fs.rmSync(path.join(dir, "real-e2e", "BLOCKED.json"));
-    // A dry run on the fixture stack never counts as real evidence.
-    const run = (layer: string) => ({ layer, runs: [1, 2, 3].map(i => ({ layer, task_id: "t" + i, plate: { asset_id: "a" + i } })) });
-    write("real-e2e/run-record.json", run("fixture-dry-run"));
-    expect(assess(dir).layers.browser_real).toBe("NOT_RUN");
+// ---- the verdict derivation -------------------------------------------------
+// A complete, honest real-stack record: three limited candidates through the UI, one
+// of them through the fault proxy, four zero-cost probes, one ordinary text image,
+// a clean build identity. Every counter-example below mutates ONE fact of it.
+const PROBES = ["confirm_again_with_the_original_quote", "reconcile", "reload_page", "new_context_same_login_state"];
+const REV = "f".repeat(40);
+const GATES = { go_test: 0, go_vet: 0, go_race: 0, web_test: 0, web_tsc: 0, next_build: 0, samplegen_check: 0 };
+const goodRun = (layer = "real") => ({
+  layer, frontend_git_sha: REV, tree_dirty: false, backend_build: { vcs_revision: REV, vcs_modified: false },
+  runs: [0, 1, 2].map((i) => ({
+    label: `M1-case${i}`, layer, outcome: "OBSERVED", task_id: `t${i}`, candidate_state: "limited_candidate", payment_status: "charged", charge_id: `ch${i}`,
+    plate: { asset_id: `a${i}` }, composite_sha256: sha, selected: true,
+    export: { image_sha_matches_view: true, report_bound_to_image: true, report_version: "product-source-quality/v2" },
+    fault: i === 1 ? { submits_seen: 2, dropped: [2] } : null,
+  })),
+  probes: PROBES.map((name) => ({ name, equal: true })),
+  text_run: { label: "M2-text_generate", layer, outcome: "OBSERVED", image_loaded: true },
+});
+type Stage = { mutate?: (r: any) => void; ledger?: boolean; review?: boolean | "invalid"; cross?: "pass" | "blocked" | "incomplete" | "none"; gates?: Record<string, number>; layer?: string };
+function stage(o: Stage = {}) {
+  const dir = tmp();
+  for (const d of ["real-e2e", "cross-app"]) fs.mkdirSync(path.join(dir, d), { recursive: true });
+  const write = (f: string, v: unknown) => fs.writeFileSync(path.join(dir, f), JSON.stringify(v));
+  write("gates.json", { ...GATES, ...o.gates });
+  const run = goodRun(o.layer ?? "real"); o.mutate?.(run); write("real-e2e/run-record.json", run);
+  if (o.ledger !== false) {
     const l = openLedger(path.join(dir, "real-e2e", "charge-ledger.jsonl"));
-    for (const label of ["a", "b", "c"]) { l.intent(label, {}); l.observed(label, { payment_status: "charged", charged_minor: "25" }); }
-    write("real-e2e/run-record.json", run("real"));
-    expect(assess(dir).layers.browser_real).toBe("PASS");
-    expect(assess(dir).layers.production).toContain("NOT_RUN");
-    expect(assess(dir).verdict).toBe("PARTIAL"); // no simulated review yet
-    write("review.simulated_human.v1.json", goodReview());
-    const done = assess(dir);
-    expect(done.verdict).toBe("DONE_WITH_SIMULATION");
-    expect(done.layers.human).toContain("SIMULATED-HUMAN");
-    expect(done.layers.billing).toContain("not audited");
+    for (const label of [...run.runs.map((r: { label: string }) => r.label), "M2-text_generate"]) { l.intent(label, {}); l.observed(label, { payment_status: "charged", charged_minor: "25" }); }
+  }
+  if (o.review !== false) { const r = goodReview(); if (o.review === "invalid") (r.items[0] as Record<string, unknown>).verdict = "PASS"; write("review.simulated_human.v1.json", r); }
+  const cross = o.cross ?? "pass";
+  if (cross === "pass") write("cross-app/return-record.json", { layer: "real", status: "PASS", quality_binding_checked: true, receipt_id: "rcpt_1" });
+  if (cross === "incomplete") write("cross-app/return-record.json", { layer: "real", status: "PASS" });
+  if (cross === "blocked") write("cross-app/BLOCKED.json", { reason: "no_order_stack" });
+  return dir;
+}
+const layerOf = (dir: string, key: string) => (assess(dir).layers as Record<string, string>)[key];
+const isPass = (v: string) => v.startsWith("PASS");
+
+describe("the verdict never rises above what the evidence supports", () => {
+  it("a complete honest record is the only way to DONE_WITH_SIMULATION, and production / org gate stay open", () => {
+    const out = assess(stage());
+    expect(out.verdict).toBe("DONE_WITH_SIMULATION");
+    for (const k of ["engineering", "browser_real", "fidelity", "generation", "export", "billing_recovery", "cross_app"]) expect(isPass((out.layers as Record<string, string>)[k]), k).toBe(true);
+    expect(out.layers.production).toContain("NOT_RUN");
+    expect(out.layers.human).toContain("SIMULATED-HUMAN");
+    expect(out.layers.billing_recovery).toContain("not audited");
+    expect(out.open_items.join("|")).toMatch(/organization_gate/);
+  });
+
+  it("the minimal record the old verdict accepted (only task_id and plate.asset_id) is PARTIAL", () => {
+    const dir = stage({ mutate: (r) => { r.runs = r.runs.map((x: any) => ({ layer: x.layer, task_id: x.task_id, plate: x.plate, label: x.label })); delete r.probes; delete r.text_run; } });
+    expect(assess(dir).verdict).toBe("PARTIAL");
+  });
+
+  const cases: Array<[string, Stage, string, RegExp]> = [
+    ["a not_usable_candidate run", { mutate: (r) => { r.runs[1].candidate_state = "not_usable_candidate"; r.runs[1].export = null; r.runs[1].selected = false; } }, "fidelity", /^FAIL/],
+    ["a run whose candidate_state is missing", { mutate: (r) => { delete r.runs[2].candidate_state; } }, "fidelity", /^UNKNOWN/],
+    ["a run that is not OBSERVED (timed out)", { mutate: (r) => { r.runs[0].outcome = "UNKNOWN"; } }, "fidelity", /^UNKNOWN/],
+    ["a probe whose before/after differ", { mutate: (r) => { r.probes[2].equal = false; } }, "billing_recovery", /^FAIL/],
+    ["a missing probe", { mutate: (r) => { r.probes.pop(); } }, "billing_recovery", /^UNKNOWN/],
+    ["no fault injection exercised", { mutate: (r) => { r.runs[1].fault = null; } }, "billing_recovery", /^UNKNOWN/],
+    ["a run that is not charged exactly once", { mutate: (r) => { r.runs[0].charge_id = null; } }, "billing_recovery", /^UNKNOWN/],
+    ["an incomplete ledger", { ledger: false }, "billing_recovery", /^UNKNOWN/],
+    ["no M2 text_generate record", { mutate: (r) => { r.text_run = null; } }, "generation", /^UNKNOWN/],
+    ["M2 image that did not load", { mutate: (r) => { r.text_run = { layer: "real", outcome: "UNKNOWN", image_loaded: false }; } }, "generation", /^UNKNOWN/],
+    ["an M1 run without a plate asset", { mutate: (r) => { r.runs[0].plate = null; } }, "generation", /^UNKNOWN/],
+    ["an export that differs from the displayed composite", { mutate: (r) => { r.runs[0].export.image_sha_matches_view = false; } }, "export", /^FAIL/],
+    ["a dirty working tree", { mutate: (r) => { r.tree_dirty = true; } }, "browser_real", /^FAIL/],
+    ["a backend build that is not the frontend revision", { mutate: (r) => { r.backend_build.vcs_revision = "0".repeat(40); } }, "browser_real", /^FAIL/],
+    ["a run skipped for budget", { mutate: (r) => { r.runs[2] = { layer: "real", label: "M1-case2", skipped: "budget" }; } }, "browser_real", /^NOT_RUN/],
+    ["a fixture dry run", { layer: "fixture-dry-run" }, "browser_real", /^NOT_RUN/],
+    ["a failing engineering gate", { gates: { go_race: 1 } }, "engineering", /^FAIL/],
+    ["no order / Campaign return evidence (Level B NOT_RUN)", { cross: "none" }, "cross_app", /^NOT_RUN/],
+    ["a blocked return stack", { cross: "blocked" }, "cross_app", /^BLOCKED/],
+    ["a return record without the quality binding check", { cross: "incomplete" }, "cross_app", /^UNKNOWN/],
+    ["no simulated review", { review: false }, "human", /^NOT_RUN/],
+    ["an invalid simulated review", { review: "invalid" }, "human", /^NOT_RUN/],
+  ];
+  it.each(cases)("%s caps the verdict at PARTIAL", (_name, opts, layer, want) => {
+    const dir = stage(opts);
+    expect(layerOf(dir, layer)).toMatch(want);
+    expect(assess(dir).verdict).toBe("PARTIAL");
+  });
+
+  it("a BLOCKED.json reports every real layer as BLOCKED, never as a fixture value", () => {
+    const dir = stage(); fs.writeFileSync(path.join(dir, "real-e2e", "BLOCKED.json"), JSON.stringify({ reason: "no_storage_state" }));
+    const out = assess(dir);
+    expect(out.layers.browser_real).toBe("BLOCKED");
+    expect(out.verdict).toBe("PARTIAL");
   });
 });
 ````
@@ -9012,7 +9142,7 @@ describe("evidence helpers", () => {
 cd "$WT/web" && npx vitest run tests/e2e-helpers.test.ts 2>&1 | grep -E "Test Files|Tests |Error|Failed to resolve" | head -5
 ```
 
-期望：`FAIL`（无法解析 `../e2e/ledger.mjs` 等；`zip.mjs` 已在 Task 5 存在）。
+期望：`FAIL`（无法解析 `../e2e/ledger.mjs` 等；`zip.mjs` 已在 Task 3 存在）。
 
 - [ ] **Step 3: 写实现——证据工具**
 
@@ -9090,19 +9220,26 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
 }
 ````
 
-verdict 推导器（只会拒绝抬高，不会抬高）：
+verdict 推导器（只会拒绝抬高，不会抬高；不再把“记录存在”当成通过）：
 
 `web/e2e/verdict.mjs`
 
 ````js
-// Computes the six-layer table and the verdict the evidence supports. It cannot
-// raise a verdict; it can only refuse to. Layers are never merged.
+// Computes the layer table and the verdict the evidence supports. It cannot raise a
+// verdict; it can only refuse to. Layers are never merged, and each one is derived
+// from the real run record's own fields, not from the mere existence of a record.
+// DONE_WITH_SIMULATION needs EVERY required layer to say PASS; anything else is PARTIAL.
 import fs from "node:fs";
 import path from "node:path";
 import { readLedger, ledgerProblems } from "./ledger.mjs";
 import { validateReview } from "./review-validate.mjs";
 
 const read = (f) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : null);
+const isPass = (v) => typeof v === "string" && v.startsWith("PASS");
+// The four zero-cost recovery probes. The last one reuses the SAME stored login state in a
+// fresh browser context; it is NOT a sign-out / sign-in and must never be reported as one.
+export const PROBES = ["confirm_again_with_the_original_quote", "reconcile", "reload_page", "new_context_same_login_state"];
+const REQUIRED = ["engineering", "browser_real", "fidelity", "generation", "export", "billing_recovery", "cross_app"];
 
 export function assess(dir) {
   const gates = read(path.join(dir, "gates.json")) ?? {};
@@ -9110,30 +9247,76 @@ export function assess(dir) {
   const blocked = read(path.join(dir, "real-e2e", "BLOCKED.json"));
   const fixture = read(path.join(dir, "browser", "fixture", "fixture-run-record.json"));
   const review = read(path.join(dir, "review.simulated_human.v1.json"));
+  const crossRec = read(path.join(dir, "cross-app", "return-record.json"));
+  const crossBlocked = read(path.join(dir, "cross-app", "BLOCKED.json"));
   const entries = readLedger(path.join(dir, "real-e2e", "charge-ledger.jsonl"));
-  const required = ["go_test", "go_vet", "go_race", "web_test", "web_tsc", "next_build", "samplegen_check"];
-  const missingGates = required.filter((g) => gates[g] !== 0);
-  const realOk = !!real && real.layer === "real" && real.runs?.length >= 3 && real.runs.every((r) => r.layer === "real");
-  const ledgerOk = ledgerProblems(entries).length === 0 && entries.length > 0;
+  const gateNames = ["go_test", "go_vet", "go_race", "web_test", "web_tsc", "next_build", "samplegen_check"];
+  const missingGates = gateNames.filter((g) => gates[g] !== 0);
+  const problems = ledgerProblems(entries);
+  const ledgerOk = problems.length === 0 && entries.length > 0;
   const reviewProblems = review ? validateReview(review) : null;
+
+  const runs = Array.isArray(real?.runs) ? real.runs : [];
+  const isReal = !!real && real.layer === "real" && runs.length >= 3 && runs.every((r) => r?.layer === "real" && !r.skipped);
+  const buildOk = isReal && real.tree_dirty === false && real.backend_build?.vcs_modified === false && !!real.backend_build?.vcs_revision && real.backend_build.vcs_revision === real.frontend_git_sha;
+  const observed = isReal && runs.every((r) => r.outcome === "OBSERVED");
+  const none = blocked ? "BLOCKED" : "NOT_RUN";
+
+  const fidelity = !isReal ? none
+    : !observed ? "UNKNOWN (a limited-fidelity run is not OBSERVED)"
+    : runs.some((r) => r.candidate_state === "not_usable_candidate") ? `FAIL (${runs.filter((r) => r.candidate_state === "not_usable_candidate").length} not_usable_candidate)`
+    : runs.every((r) => r.candidate_state === "limited_candidate") ? "PASS (limited_candidate, frozen synthetic samples only)"
+    : "UNKNOWN (candidate_state missing)";
+
+  const m1Ok = observed && runs.every((r) => r.task_id && r.plate?.asset_id);
+  const text = real?.text_run;
+  const generation = !isReal ? none
+    : !m1Ok ? "UNKNOWN (an M1 run has no Task id or plate asset)"
+    : !text ? "UNKNOWN (M2 text_generate not run)"
+    : text.layer !== "real" || text.outcome !== "OBSERVED" || text.image_loaded !== true ? "UNKNOWN (M2 image not observed)"
+    : "PASS (3 plates + 1 text image produced and loaded)";
+
+  const limited = runs.filter((r) => r.candidate_state === "limited_candidate");
+  const exportOk = (r) => r.selected === true && r.export?.image_sha_matches_view === true && r.export?.report_bound_to_image === true && r.export?.report_version === "product-source-quality/v2";
+  const exportLayer = !isReal ? none
+    : limited.length === 0 ? "NOT_RUN (no limited_candidate to export)"
+    : limited.every(exportOk) ? `PASS (${limited.length} export(s) byte-identical to the displayed composite)`
+    : "FAIL (an export differs from the displayed composite or lacks its report)";
+
+  const probes = Array.isArray(real?.probes) ? real.probes : [];
+  const billing = !isReal ? none
+    : !ledgerOk ? "UNKNOWN (ledger incomplete)"
+    : probes.some((p) => p.equal !== true) ? "FAIL (a recovery probe changed usage / quote / Task / charge / balance)"
+    : PROBES.some((n) => !probes.some((p) => p.name === n)) ? "UNKNOWN (a recovery probe is missing)"
+    : !runs.every((r) => r.payment_status === "charged" && r.charge_id) ? "UNKNOWN (a run is not charged exactly once)"
+    : !runs.some((r) => r.fault?.dropped?.length > 0) ? "UNKNOWN (fault injection was not exercised)"
+    : "PASS (supplier cost declared, not audited)";
+
+  const cross = crossBlocked ? "BLOCKED"
+    : !crossRec ? "NOT_RUN (no real order / Campaign return stack; A7 Level B)"
+    : crossRec.layer === "real" && crossRec.status === "PASS" && crossRec.quality_binding_checked === true && crossRec.receipt_id ? "PASS (Level B)"
+    : "UNKNOWN (return record incomplete)";
+
   const layers = {
     engineering: missingGates.length === 0 ? "PASS" : `FAIL (${missingGates.join(", ")} not 0)`,
     browser_fixture: fixture ? (fixture.results.every((r) => r.ok) ? "PASS (fixture only)" : "FAIL") : "NOT_RUN",
-    browser_real: blocked ? "BLOCKED" : realOk ? "PASS" : "NOT_RUN",
-    service_provider: realOk ? (real.runs.every((r) => r.task_id && r.plate?.asset_id) ? "PASS" : "UNKNOWN") : blocked ? "BLOCKED" : "NOT_RUN",
-    billing: realOk && ledgerOk ? "PASS (supplier cost declared, not audited)" : blocked ? "BLOCKED" : realOk ? "UNKNOWN (ledger incomplete)" : "NOT_RUN",
+    browser_real: blocked ? "BLOCKED" : !isReal ? "NOT_RUN" : !buildOk ? "FAIL (build identity: dirty tree, modified build or revision mismatch)" : "PASS",
+    fidelity, generation, export: exportLayer, billing_recovery: billing,
+    service_provider: generation.startsWith("PASS") ? "PASS" : generation,
+    cross_app: cross,
     production: "NOT_RUN (needs Root go)",
     human: review && reviewProblems.length === 0 ? "SIMULATED-HUMAN (advisory)" : "NOT_RUN",
   };
-  let verdict = "PARTIAL";
-  if (missingGates.length > 0) verdict = "PARTIAL";
-  else if (realOk && ledgerOk) verdict = review && reviewProblems.length === 0 ? "DONE_WITH_SIMULATION" : "PARTIAL";
-  return { layers, verdict, notes: { missingGates, blocked: blocked?.reason ?? null, ledgerProblems: ledgerProblems(entries), reviewProblems } };
+  const unmet = REQUIRED.filter((k) => !isPass(layers[k])).map((k) => `${k}: ${layers[k]}`);
+  if (!(review && reviewProblems.length === 0)) unmet.push("human: no valid SIMULATED-HUMAN review");
+  const verdict = unmet.length === 0 ? "DONE_WITH_SIMULATION" : "PARTIAL";
+  // Always reported, never a reason to claim more: the org payment gate (E7) is out of this ticket's scope and still open.
+  const open_items = ["organization_gate: E7 not completed (out of scope, default closed)", "human: NEEDS_REAL_HUMAN", "production: NOT_RUN (needs Root go)"];
+  return { layers, verdict, unmet, open_items, notes: { missingGates, blocked: blocked?.reason ?? null, ledgerProblems: problems, reviewProblems } };
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  const out = assess(process.argv[2]);
-  console.log(JSON.stringify(out, null, 2));
+  console.log(JSON.stringify(assess(process.argv[2]), null, 2));
 }
 ````
 
@@ -9324,7 +9507,8 @@ async function probes(r0) {
       ["confirm_again_with_the_original_quote", () => jpost(ctx, `${base}/confirm`, { quote_id: r0.quote_id, quote_fingerprint: r0.quote_fingerprint })],
       ["reconcile", () => jpost(ctx, `${base}/reconcile`, {})],
       ["reload_page", async () => { await open(page); await page.reload(); await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 90_000 }); }],
-      ["relogin_new_browser_context", async () => { const s2 = await session("probes-relogin"); try { await open(s2.page); } finally { await s2.ctx.close(); } }],
+      // NOT a sign-out / sign-in: a fresh browser context reusing the SAME stored login state. Evidence and handoff must say exactly that.
+      ["new_context_same_login_state", async () => { const s2 = await session("probes-newctx"); try { await open(s2.page); } finally { await s2.ctx.close(); } }],
     ];
     for (const [name, step] of steps) { await step(); const after = await snap(); out.push({ name, equal: JSON.stringify(after) === JSON.stringify(baseline), before: baseline, after }); }
     return out;
@@ -9337,7 +9521,8 @@ async function textRun() {
   try {
     await page.goto(`${WEB}/start`);
     await page.locator("summary", { hasText: "普通文字生成" }).click();
-    await page.getByRole("button", { name: /创建个人普通概念图工程/ }).click();
+    // matches SourceImagePanel.tsx today: "创建个人普通图工程（1024×1024）" (the text panel is unchanged by Task 3)
+    await page.getByRole("button", { name: /创建个人普通图工程/ }).click();
     await page.getByLabel("文字描述").waitFor({ timeout: 90_000 });
     await page.getByLabel("文字描述").fill("蓝色纸盒，浅灰棚拍");
     await page.getByRole("button", { name: "获取报价" }).click();
@@ -9363,7 +9548,7 @@ const entries = readLedger(ledger.file);
 const record = {
   layer: LAYER, frontend_git_sha: frontendSha, tree_dirty: dirty, backend_build: ready?.build ?? null, login: DRY ? "fixture cookie" : "ROOT_ASSISTED", ready_gates: ready?.gates?.plate_lock ?? null,
   runs, probes: probeRecord, text_run: textRunRecord, spent_minor: spentMinor(entries), ledger_problems: ledgerProblems(entries),
-  supplier_expense_ledger_verified: false, notes: ["supplier cost is only a declared SKU value; no audited supplier ledger was available", "human usefulness: NOT_RUN"],
+  supplier_expense_ledger_verified: false, notes: ["supplier cost is only a declared SKU value; no audited supplier ledger was available", "human usefulness: NOT_RUN", "probe new_context_same_login_state reuses the same stored login state in a new browser context; it is not a sign-out / sign-in", "cross_app (order / Campaign return, A7 Level B) is not driven by this script: it needs a real guanlan-order stack and its own evidence under cross-app/"],
 };
 fs.writeFileSync(path.join(OUT, "run-record.json"), JSON.stringify(record, null, 2));
 const bad = runs.some((r) => r.outcome !== "OBSERVED") || probeRecord.some((p) => !p.equal) || record.ledger_problems.length > 0;
@@ -9428,13 +9613,13 @@ GOWORK=off go build -buildvcs=false -ldflags "-X github.com/bianjiefilm/product-
 
 - **M1** 三次付费限定保真：`carton-1024x1024`、`handled_metal-1024x1280`、`glass_bottle-768x1024`，背景方向互异；全程正常 UI（真实上传冻结原图 → 写背景 → 报价 → 确认 → 生成 → 质量结果 → 选定 → 导出）。第二次经**故障代理**丢弃首个 Task submit 响应，验证沿原键恢复、charge 仍为 1。
 - **M2** 一次付费 `text_generate` 经正常 UI（它不宣称保真）。
-- **M3** 在 M1 的 run 上做零新增费用的恢复探针：再次确认原报价、reconcile、刷新页面、新浏览器上下文“重登”；断言 usage / quote / Task / charge、run 数、余额都不变。
+- **M3** 在 M1 的 run 上做零新增费用的恢复探针：再次确认原报价、reconcile、刷新页面、**新浏览器上下文复用同一份登录态**（这不是退出再登录，证据与 handoff 必须如实这样写）；断言 usage / quote / Task / charge、run 数、余额都不变。
 - 每笔付费动作**之前**先追加一行意图到 `charge-ledger.jsonl`，动作后追加观测；供应商成本只记声明值（`supplier_expense_ledger_verified=false`），不推导成已核账。
 - 独立评审代理（全新上下文）可对照原图 / 合成图 / 冻结关键点写 `review.simulated_human.v1.json`；它**只作参考**，不改变任何裁决，人判层保持 `NOT_RUN` / `NEEDS_REAL_HUMAN`。
 
 ## 6. 证据目录（`.claude-orchestration/20261002/evidence/HUI-2232/`）
 
-`gates.json` + `go-test-full.log / go-vet.log / go-race.log / samplegen-check.log / web-test.log / web-tsc.log / next-build.log`；`browser/fixture/`（fixture 栈，标 `fixture`）；`real-e2e/{run-record.json | BLOCKED.json, charge-ledger.jsonl, capabilities-snapshot.json, exports/*.zip, *.png}`；`review.simulated_human.v1.json`（可选）；`mode-matrix.md`。
+`gates.json` + `go-test-full.log / go-vet.log / go-race.log / samplegen-check.log / web-test.log / web-tsc.log / next-build.log`；`browser/fixture/`（fixture 栈，标 `fixture`）；`real-e2e/{run-record.json | BLOCKED.json, charge-ledger.jsonl, capabilities-snapshot.json, exports/*.zip, *.png}`；`review.simulated_human.v1.json`（可选）；`cross-app/{return-record.json | BLOCKED.json}`（订单 / Campaign 真实回流 Level B，仅 Root 供给真实栈时存在；缺失即 `cross_app = NOT_RUN`，verdict 封顶 `PARTIAL`）；`mode-matrix.md`。
 
 ## 7. 其它模式如实收口
 
@@ -9453,7 +9638,7 @@ GOWORK=off go build -buildvcs=false -ldflags "-X github.com/bianjiefilm/product-
 
 ```bash
 cd "$WT/web" && npx tsc --noEmit | head -3                                                       # 期望：无输出
-npx vitest run 2>&1 | grep -E "Test Files|Tests |FAIL|×" | head -4                              # 期望：Test Files 31 passed；Tests 244 passed
+npx vitest run 2>&1 | grep -E "Test Files|Tests |FAIL|×" | head -4                              # 期望：全部通过（Test Files 数不变，e2e-helpers 为新增文件的一部分；Tests 数 = 上一任务结束时的数量 + e2e-helpers 的新增用例）
 for f in e2e/*.mjs; do node --check "$f" || echo "SYNTAX $f"; done                              # 期望：无输出
 ```
 
@@ -9471,7 +9656,7 @@ REAL_DRY_RUN_FIXTURE=1 REAL_WAIT_MS=60000 E2E_OUT="$EV/dryrun" node e2e/real-run
 kill $API_PID $WEB_PID; sleep 1; lsof -nP -iTCP:32321 -iTCP:32324 -sTCP:LISTEN
 ```
 
-期望：三次 `M1-… outcome: OBSERVED`、`candidate: limited_candidate`；四个探针（`confirm_again_with_the_original_quote`、`reconcile`、`reload_page`、`relogin_new_browser_context`）全部 `"equal": true`；`spent_minor: 75`；退出码 0；`$EV/dryrun/real-e2e/run-record.json` 里 `layer` 是 `"fixture-dry-run"`；`lsof` 无输出。
+期望：三次 `M1-… outcome: OBSERVED`、`candidate: limited_candidate`；四个探针（`confirm_again_with_the_original_quote`、`reconcile`、`reload_page`、`new_context_same_login_state`）全部 `"equal": true`；`spent_minor: 75`；退出码 0；`$EV/dryrun/real-e2e/run-record.json` 里 `layer` 是 `"fixture-dry-run"`；`lsof` 无输出。
 
 - [ ] **Step 6: 完整工程门禁（写 `gates.json`，只信退出码）**
 
@@ -9490,7 +9675,7 @@ node -e "require('fs').writeFileSync('$EV/gates.json', JSON.stringify({go_test:$
 cat "$EV/gates.json"
 ```
 
-期望：七项全 `0`；`sdk-unchanged.log` 为空且 `go.mod` 仍是 `public-ai/sdk/go v0.1.1`（A10：SDK 不升级；组织付款路径默认关闭已由 Task 3 的原因码 `plate_org_not_supported` 测试覆盖）。**任何一项非 0 → 停下修，不得继续声称完成。** 然后在**最终提交后的树上**重跑一次 fixture 取证（Task 5 Step 8 的命令），让浏览器证据与最终前端 SHA 对应。
+期望：七项全 `0`；`sdk-unchanged.log` 为空且 `go.mod` 仍是 `public-ai/sdk/go v0.1.1`（A10：SDK 不升级；组织付款路径默认关闭已由 Task 2A 的原因码 `plate_org_not_supported` 测试覆盖）。**任何一项非 0 → 停下修，不得继续声称完成。** 然后在**最终提交后的树上**重跑一次 fixture 取证（Task 3 Step 8 的命令），让浏览器证据与最终前端 SHA 对应。
 
 - [ ] **Step 7: 真实栈预检与验收（M1–M3）**
 
@@ -9555,13 +9740,13 @@ mkdir -p "$EV/review-pack" && cp "$WT"/fixtures/frozen-samples/v1/manifest.json 
 [ -f "$EV/review.simulated_human.v1.json" ] && node "$WT/web/e2e/review-validate.mjs" "$EV/review.simulated_human.v1.json"   # 期望：VALID (SIMULATED-HUMAN, advisory only)
 ```
 
-8b. 模式收口矩阵 `$EV/mode-matrix.md`（逐项 `disabled / not_passed / available(range)` + 原因，必须与界面、能力端点一致；`capabilities-snapshot.json` 是真实栈上读到的能力端点；没有真实栈时只用 Task 4 / Task 5 的测试输出，并写明“无真实栈快照”）：
+8b. 模式收口矩阵 `$EV/mode-matrix.md`（逐项 `disabled / not_passed / available(range)` + 原因，必须与界面、能力端点一致；`capabilities-snapshot.json` 是真实栈上读到的能力端点；没有真实栈时只用 Task 2B / Task 3 的测试输出，并写明“无真实栈快照”）：
 
 ```markdown
 | 模式 | 能力端点 | 界面 | 证据 |
 |---|---|---|---|
 | 限定保真换背景 | ready + supported_input_ids（范围=冻结样本） | 可用 / 禁用并给原因 | real-e2e 或 BLOCKED |
-| 文字生成概念图 | fidelity=not_applicable | 不宣称保真 | Task 4 `TestOrdinaryTextRun…` |
+| 文字生成概念图 | fidelity=not_applicable | 不宣称保真 | Task 2B `TestOrdinaryTextRun…` |
 | 创意换背景 / 光影场景 / 展示视频 / 参考图编辑 / 旧 first-image | disabled（reference_edit: formal_contract_unconfigured） | “未开放：还没有真实成功证据”，无按钮 | `tests/plate-lock-screen.test.tsx`、fixture 截图 `capability-matrix` |
 ```
 
@@ -9571,15 +9756,15 @@ mkdir -p "$EV/review-pack" && cp "$WT"/fixtures/frozen-samples/v1/manifest.json 
 node "$WT/web/e2e/verdict.mjs" "$EV" | tee "$EV/verdict.json"
 ```
 
-verdict 取值**只能是**推导器给出的那一个（章程 §6）：全部标准有真实证据且仅人判为 SIMULATED-HUMAN → `DONE_WITH_SIMULATION`；真实前置缺失 / 超时 / 账本不完整 → `PARTIAL`；不得自行抬高。写 `"$RUN/handoffs/HUI-2232.md"`，必须包含（缺一不可）：
+verdict 取值**只能是**推导器给出的那一个（章程 §6）：所有必需层（engineering / browser_real / fidelity / generation / export / billing_recovery / cross_app）都是 `PASS` 且仅人判为 SIMULATED-HUMAN → `DONE_WITH_SIMULATION`；其余一律 `PARTIAL`——真实前置缺失 / 超时 / 账本不完整 / 有 `not_usable_candidate` / 探针不等 / 缺 M2 / 无故障注入 / 导出不一致 / **订单与 Campaign 真实回流为 `NOT_RUN`**（无 guanlan-order 栈时这是预期结果，spec §8）→ 一律 `PARTIAL`，并把 `unmet` 清单逐条写进 handoff；不得自行抬高。写 `"$RUN/handoffs/HUI-2232.md"`，必须包含（缺一不可）：
 
-1. `verdict`（来自 `verdict.json`）与六层表（Engineering / Browser(fixture) / Browser(real) / Service-Provider / Billing / Production=`NOT_RUN`（需 Root 上线批准）/ Human=`NOT_RUN` 或 `SIMULATED-HUMAN`），**N/A / UNKNOWN / FAIL / PASS 不混写**。
+1. `verdict`（来自 `verdict.json`）与分层表（Engineering / Browser(fixture) / Browser(real) / **Fidelity / Generation / Export / Billing-Recovery** / Service-Provider / **Cross-app（订单·Campaign 回流）** / Production=`NOT_RUN`（需 Root 上线批准）/ Human=`NOT_RUN` 或 `SIMULATED-HUMAN`），**N/A / UNKNOWN / FAIL / PASS 不混写**。
 2. 验收矩阵：票的 8 条原通过条件与 12 条剩余范围（spec §11 的 A1–A12）每条一行 → 证据路径或 `UNMET` / `NEEDS_REAL_HUMAN` / `BLOCKED`。
 3. 提交列表：`git -C "$WT" log --oneline bf4ec7c..HEAD`（分支 + SHA）。
 4. 命令证据：每条给命令、退出码、关键输出、日期（来自 `$EV` 下的日志）。
 5. 费用：`charge-ledger.jsonl` 逐笔（意图 / 观测、金额、charge id、余额前后）；供应商成本只写“声明值、未核账（`supplier_expense_ledger_verified=false`）”；平台补贴与现金分项平台未返回时写 `UNKNOWN`。
-6. 遗留项逐条：组织付款 Gate 未完成、真人验收 `NEEDS_REAL_HUMAN`、`order-receipt/v1` 不含质量字段（需跨仓合同扩展，**Root 事项**）、样本是合成硬边而非实物照片、阈值首版冻结值（只能收紧）、生产上线待 Root。
-7. 给下游的接口说明：能力端点 / 视图 / `return` / `quality_bindings` 契约（Task 4 Interfaces），以及 `feature flag` 默认关。
+6. 遗留项逐条（含 `open_items`）：组织付款 Gate 未完成、订单 / Campaign 真实回流未验证（若 `cross_app` 为 `NOT_RUN`）、M3 的“新上下文”只复用登录态（不是退出重登）、真人验收 `NEEDS_REAL_HUMAN`、`order-receipt/v1` 不含质量字段（需跨仓合同扩展，**Root 事项**）、样本是合成硬边而非实物照片、阈值首版冻结值（只能收紧）、生产上线待 Root。
+7. 给下游的接口说明：能力端点 / 视图 / `return` / `quality_bindings` 契约（Task 2B Interfaces），以及 `feature flag` 默认关。
 8. 需要 Root 做的事：上线批准与部署清单（`FEATURE_BG_PLATE_LOCK`、样本目录、迁移 0020 / 0021、构建身份注入）、Linear 回写。
 
 - [ ] **Step 10: 提交仓库内改动，然后收尾清理**
@@ -9614,44 +9799,44 @@ git -C "$WT" status --short                        # 期望：无输出（工作
 
 ### spec §11 验收标准
 
-| # | 标准 | 任务 | 主要证据 |
+| # | 标准 | 任务（Task 1–4） | 主要证据 |
 |---|---|---|---|
-| A1 | 冻结样本集 9 case、清单、`-check`、阈值常量 | 1、2 | `samplegen -check`、`fidelitysamples` / `samplegen` 测试、`TestThresholdCalibration` |
-| A2 | 装载器默认关、失败关闭；`PlateCoverage` 退役；能力如实 | 1、4 | 装载层反例、`TestPlateCapabilitiesAreTruthfulAndReadOnly`、`TestPlateLockAssemblyIsOffByDefaultAndFailsClosed`、真实进程冒烟 |
-| A3 | 经正式 Task 付费，无直连旁路；旧路由 410 | 3、4 | `TestDerivePlateOncePaidLockedAndIdempotent`（远端写计数）、`TestF21…` |
-| A4 | v2 正向裁决、四值不折叠、无分数入口 | 2 | `TestF22…`、`DecodeReport` 拒绝矩阵 |
-| A5 | F01–F22 全自动化 | 1–4 | 见下表 |
-| A6 | 正常 UI 全路径含键盘 / 焦点 / 空 / 错 / 加载态，刷新重登恢复同一 job，`/start` 上传可用 | 5 | `plate-lock-screen.test.tsx`、fixture 栈 12 个浏览器场景（桌面 + 手机，**fixture**） |
-| A7 | 回流：版本与限制不丢，未保真不能升级 | 4 | `TestPlateReturnBinds…`、`…OldRequirementVersion…`、`…UnboundDerivedComposite…`（真实回流栈 Level B：无栈则 `NOT_RUN`） |
-| A8 | 真实付费隔离验收 M1–M3 + SIMULATED-HUMAN，每笔有账，成本与补贴分记 | 6 | `real-e2e/`（或如实 `BLOCKED.json`） |
-| A9 | 其它模式如实收口，UI 一致 | 4、5、6 | `TestOrdinaryTextRun…`、能力矩阵测试与截图、`mode-matrix.md` |
-| A10 | SDK 仍 v0.1.1；组织路径默认关闭 | 3、6 | `plate_org_not_supported` 测试、`sdk-unchanged.log` |
-| A11 | spec / plan / runbook / handoff（六层 + verdict） | 6 | 本文件、`docs/runbooks/hui-2232-plate-lock.md`、`handoffs/HUI-2232.md` |
-| A12 | 收尾清理 | 6 | Step 10 命令输出 |
+| A1 | 冻结样本集 9 case、清单、`-check`、阈值常量、冻结方向与底色反差（R30） | 1 | `samplegen -check`、`fidelitysamples` / `samplegen` 测试、`TestEveryFrozenDirectionContrastsWithItsSampleBackground`、`TestThresholdCalibration` |
+| A2 | 装载器默认关、失败关闭；`PlateCoverage` 退役；能力如实 | 1、2 | 装载层反例、`TestPlateCapabilitiesAreTruthfulAndReadOnly`、`TestPlateLockAssemblyIsOffByDefaultAndFailsClosed`、真实进程冒烟 |
+| A3 | 经正式 Task 付费，无直连旁路；旧路由 410 | 2 | `TestDerivePlateOncePaidLockedAndIdempotent`（远端写计数）、`TestF21…` |
+| A4 | v2 正向裁决、四值不折叠、无分数入口 | 1 | `TestF22…`、`DecodeReport` 拒绝矩阵 |
+| A5 | F01–F22 全自动化 | 1、2 | 见下表 |
+| A6 | 正常 UI 全路径含键盘 / 焦点 / 空 / 错 / 加载态，刷新重登恢复同一 job，`/start` 上传可用 | 3 | `plate-lock-screen.test.tsx`、fixture 栈 12 个浏览器场景（桌面 + 手机，**fixture**） |
+| A7 | 回流：版本与限制不丢，未保真不能升级 | 2、4 | `TestPlateReturnBinds…`、`…OldRequirementVersion…`、`…UnboundDerivedComposite…`（真实回流栈 Level B：无栈则 `cross_app = NOT_RUN`，verdict 封顶 `PARTIAL`，见 Task 4 `verdict.mjs`） |
+| A8 | 真实付费隔离验收 M1–M3 + SIMULATED-HUMAN，每笔有账，成本与补贴分记 | 4 | `real-e2e/`（或如实 `BLOCKED.json`） |
+| A9 | 其它模式如实收口，UI 一致 | 2、3、4 | `TestOrdinaryTextRun…`、能力矩阵测试与截图、`mode-matrix.md` |
+| A10 | SDK 仍 v0.1.1；组织路径默认关闭 | 2、4 | `plate_org_not_supported` 测试、`sdk-unchanged.log` |
+| A11 | spec / plan / runbook / handoff（分层 + verdict） | 4 | 本文件、`docs/runbooks/hui-2232-plate-lock.md`、`handoffs/HUI-2232.md` |
+| A12 | 收尾清理 | 4 | Step 10 命令输出 |
 
 ### 反例矩阵 F01–F22
 
-| ID | 测试（任务） |
+| ID | 测试（括号内为 任务+部分：1A/1B、2A/2B、3、4） |
 |---|---|
-| F01 / F02 / F03 | `fidelitysamples_test.go` 的 “F01 text region cut out of the mask” / “F02 fully transparent mask” / “F03 fully opaque mask”（1） |
-| F04 | `TestCreatePlateRefusesBeforeAnyRemoteCall`（3）、`TestPlateCreateRefusesBeforeAnyPaidCall/F04…`（4）、浏览器 `photo-not-in-range`（5） |
-| F05 | “F05 one original pixel changed, manifest not re-signed”（1）、`…/F05 registry says frozen but the bytes differ by one pixel`（4） |
-| F06 | `TestF06WrongPlateSizeIsNotUsableButStillRecorded`（2）、`TestF07F06UnusablePlatesAreRecordedNotRegenerated/wrong plate size`（3） |
-| F07 | `TestThresholdCalibration`（2）、`TestF07F06…/background unchanged`（3）、`TestPlateUnusableCandidate…`（4） |
-| F08 | `TestF08UndecodablePlateBytes…`（2，b / c）、`TestF08TamperedDownloadStoresNothingAndKeepsRetrying`（3，a） |
-| F09 | `TestF09SixteenConcurrentDerivationsStoreOneRecord`、`TestF09SixteenConcurrentConfirmsAndAdvancesSubmitExactlyOnce`（3）、`TestF09SixteenConcurrentPlateCreatesYieldOneRunAndOneFrozenInput`（3，store）；`-race` 见各任务 |
-| F10 | `TestF10InterruptedDownloadIsRetriedWithoutSpending`、`TestF10LostSubmitResponseRecoversThePlateRunWithoutASecondTask`（3）；共享的 Task / Bill 恢复代码继续由既有 `source_image_recovery_test.go` 等覆盖 |
-| F11 | `TestPlateStaysInsideItsOwnAccount`（4） |
-| F12 | `TestPlateReturnOfAnOldRequirementVersionIsRefused`（4） |
-| F13 / F19 | `TestPlateUnusableCandidateIsVisibleButNeverSelectableExportableOrReturnable`（4） |
-| F14 | `TestPlateCreateRefusesBeforeAnyPaidCall/F14…`（4）、`plate-lock-bff.test.ts`（5） |
-| F15 | `TestF15ChangedPriceProfileCannotReuseAnOldPlateRun`（3）；文本模式的同一校验由既有 `TestSourceQuoteExpiredCannotRepriceSameRun` 等覆盖 |
-| F16 | 装载层 “missing / manifest / hash” 反例（1）、`…/F16 rejected sample set`（4）、`TestPlateLockAssembly…`（4） |
-| F17 | `TestF17ChangedSampleSetBlocksWithoutSpendingOrDownloading`（3）；Upload 原图是否还在与派生无关（P1） |
-| F18 | `TestF18DeriveIsDeterministic`（2）、`TestF18ReopenKeepsRecordAndTwoRunsDeriveEqualBytes`（3） |
-| F20 | `TestOrdinaryTextRunNeverCarriesAFidelityClaimAndClosedModesStayClosed`（4）、控制器解码器测试（5） |
-| F21 | `TestF21RetiredModelPlateRouteNeverCallsTheModel`（4） |
-| F22 | `TestF22StateOfProperty`、`TestF22DecodeReportRejectsScoresAndInconsistentDocuments`（2） |
+| F01 / F02 / F03 | `fidelitysamples_test.go` 的 “F01 text region cut out of the mask” / “F02 fully transparent mask” / “F03 fully opaque mask”（1A） |
+| F04 | `TestCreatePlateRefusesBeforeAnyRemoteCall`（2A）、`TestPlateCreateRefusesBeforeAnyPaidCall/F04…`（2B）、浏览器 `photo-not-in-range`（3） |
+| F05 | “F05 one original pixel changed, manifest not re-signed”（1A）、`…/F05 registry says frozen but the bytes differ by one pixel`（2B） |
+| F06 | `TestF06WrongPlateSizeIsNotUsableButStillRecorded`（1B）、`TestF07F06UnusablePlatesAreRecordedNotRegenerated/wrong plate size`（2A） |
+| F07 | `TestThresholdCalibration`（1B）、`TestF07F06…/background unchanged`（2A）、`TestPlateUnusableCandidate…`（2B） |
+| F08 | `TestF08UndecodablePlateBytes…`（1B，b / c）、`TestF08TamperedDownloadStoresNothingAndKeepsRetrying`（2A，a） |
+| F09 | `TestF09SixteenConcurrentDerivationsStoreOneRecord`、`TestF09SixteenConcurrentConfirmsAndAdvancesSubmitExactlyOnce`（2A）、`TestF09SixteenConcurrentPlateCreatesYieldOneRunAndOneFrozenInput`（2A，store）；`-race` 见各任务 |
+| F10 | `TestF10InterruptedDownloadIsRetriedWithoutSpending`、`TestF10LostSubmitResponseRecoversThePlateRunWithoutASecondTask`（2A）；共享的 Task / Bill 恢复代码继续由既有 `source_image_recovery_test.go` 等覆盖 |
+| F11 | `TestPlateStaysInsideItsOwnAccount`（2B） |
+| F12 | `TestPlateReturnOfAnOldRequirementVersionIsRefused`（2B） |
+| F13 / F19 | `TestPlateUnusableCandidateIsVisibleButNeverSelectableExportableOrReturnable`（2B） |
+| F14 | `TestPlateCreateRefusesBeforeAnyPaidCall/F14…`（2B）、`plate-lock-bff.test.ts`（3） |
+| F15 | `TestF15ChangedPriceProfileCannotReuseAnOldPlateRun`（2A）；文本模式的同一校验由既有 `TestSourceQuoteExpiredCannotRepriceSameRun` 等覆盖 |
+| F16 | 装载层 “missing / manifest / hash” 反例（1A）、`…/F16 rejected sample set`（2B）、`TestPlateLockAssembly…`（2B） |
+| F17 | `TestF17ChangedSampleSetBlocksWithoutSpendingOrDownloading`（2A）；Upload 原图是否还在与派生无关（P1） |
+| F18 | `TestF18DeriveIsDeterministic`（1B）、`TestF18ReopenKeepsRecordAndTwoRunsDeriveEqualBytes`（2A） |
+| F20 | `TestOrdinaryTextRunNeverCarriesAFidelityClaimAndClosedModesStayClosed`（2B）、控制器解码器测试（3） |
+| F21 | `TestF21RetiredModelPlateRouteNeverCallsTheModel`（2B） |
+| F22 | `TestF22StateOfProperty`、`TestF22DecodeReportRejectsScoresAndInconsistentDocuments`（1B） |
 
 ### 已知的、有意保留的局限（必须原样写进 handoff，不得在界面或文档里粉饰）
 
@@ -9661,3 +9846,5 @@ git -C "$WT" status --short                        # 期望：无输出（工作
 4. `order-receipt/v1` 没有质量字段：限制只经产品侧质量绑定、视图与导出报告传递，回传前界面明示“回执不含限制说明”；向下游传递限制需跨仓合同扩展（Root 事项）。
 5. 阈值 `bg-lock-thresholds/v1` 是首版冻结值，真实模型的“白色 / 浅灰”类背景可能因接近原背景色而被判 `background_changed = FAIL`——这是保守方向，**只能有证据地收紧，不能为了让真实 run 通过而放宽**。
 6. 供应商成本只有声明值，未核账；平台补贴与现金分项取决于平台是否返回，未返回即 `UNKNOWN`。
+7. M3 的第四个探针只是“新浏览器上下文复用同一份登录态”，不是退出再登录；对应证据与 handoff 必须这样措辞。
+8. 订单 / Campaign 真实回流（A7 Level B）需要 guanlan-order 真实栈；没有则 `cross_app = NOT_RUN`，verdict 硬封顶 `PARTIAL`。组织付款 Gate（E7）不在本票范围，作为 `open_items` 如实列出，不构成通过依据。
