@@ -20,11 +20,35 @@ export type StartScreenProps = {
   sourceLabel?: string;
   returnHref?: string;
   authorizedAssets?: string[];
+  // compact: the personal start path. Only the title and the working area; the
+  // legacy status badges, step list and developer-facing lines are not shown.
+  compact?: boolean;
   children?: React.ReactNode;
 };
 
 export function StartScreen(props: StartScreenProps) {
   const assets = props.authorizedAssets ?? [];
+  if (props.compact) {
+    return (
+      <Card
+        data-entry-screen="start"
+        data-catalog={props.showsCatalog ? "true" : "false"}
+        data-scope={props.scope}
+        data-task-id={props.taskId}
+        data-task-status={props.status}
+        data-fake-output="false"
+        data-useful-proven="false"
+        data-upload-required={props.uploadRequired ? "true" : "false"}
+        data-quote={props.quoteLabel}
+      >
+        <CardHeader>
+          <CardTitle>{props.title}</CardTitle>
+          <CardDescription>选一张商品照片，写下想要的背景，确认费用后生成。商品本身不会被改动。</CardDescription>
+        </CardHeader>
+        {props.children}
+      </Card>
+    );
+  }
   return (
     <Card
       data-entry-screen="start"
@@ -66,9 +90,11 @@ export function StartScreen(props: StartScreenProps) {
       <p>{props.headline}</p>
       {props.showImage && props.outputAssetId ? <p>候选引用 {props.outputAssetId}</p> : null}
       {props.children}
-      <Button type="button" variant="secondary" disabled>
-        {props.uploadRequired ? "选择商品照片" : "已带入素材"}
-      </Button>
+      {props.uploadRequired ? null : (
+        <Button type="button" variant="secondary" disabled>
+          已带入素材
+        </Button>
+      )}
     </Card>
   );
 }
