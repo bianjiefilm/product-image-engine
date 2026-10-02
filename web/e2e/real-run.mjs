@@ -112,7 +112,7 @@ async function plateRun(index, caseId) {
     const { view, timedOut } = await waitDerived(ctx, project, runId);
     const bal1 = await balance(ctx);
     ledger.observed(label, { ...facts(view), timed_out: timedOut, balance_after: bal1 });
-    if (timedOut || !view.plate || view.plate.derivation_state === "pending") return { label, layer: LAYER, outcome: "UNKNOWN", ...facts(view), screenshots: screens };
+    if (timedOut || !view.plate || view.plate.derivation_state === "pending") return { label, case_id: caseId, background_intent: c.intents[0], layer: LAYER, outcome: "UNKNOWN", ...facts(view), screenshots: screens };
     await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 60_000 });
     screens.push(await shot(page, `${label}-result-desktop`));
     await page.setViewportSize(VIEWPORTS.mobile); screens.push(await shot(page, `${label}-result-mobile`)); await page.setViewportSize(VIEWPORTS.desktop);
@@ -126,7 +126,7 @@ async function plateRun(index, caseId) {
       assert.ok(exportCheck.image_sha_matches_view && exportCheck.report_bound_to_image && exportCheck.report_version === "product-source-quality/v2", "export must be the displayed composite with its frozen report");
     }
     const fault = index === FAULT_RUN && FAULT_LOG && fs.existsSync(FAULT_LOG) ? JSON.parse(fs.readFileSync(FAULT_LOG, "utf8")) : null;
-    return { label, layer: LAYER, outcome: "OBSERVED", ...facts(view), quote_fingerprint: before.quote.quote_fingerprint, selected, export: exportCheck, fault, balance_before: bal0, balance_after: bal1, screenshots: screens, frontend_git_sha: frontendSha };
+    return { label, case_id: caseId, background_intent: c.intents[0], layer: LAYER, outcome: "OBSERVED", ...facts(view), quote_fingerprint: before.quote.quote_fingerprint, selected, export: exportCheck, fault, balance_before: bal0, balance_after: bal1, screenshots: screens, frontend_git_sha: frontendSha };
   } finally { await ctx.close(); }
 }
 
@@ -168,8 +168,19 @@ async function textRun() {
     await confirm.click();
     const img = page.locator("figure img"); await img.first().waitFor({ timeout: WAIT_MS });
     const ok = await img.first().evaluate((i) => i.complete && i.naturalWidth > 0);
-    const bal1 = await balance(ctx); ledger.observed(label, { payment_status: "see_view", balance_after: bal1, image_loaded: ok });
-    return { label, layer: LAYER, outcome: ok ? "OBSERVED" : "UNKNOWN", image_loaded: ok, fidelity_claim: "none (ordinary concept image)", screenshot: await shot(page, `${label}-result`) };
+    // The paid facts come from the product's own run view, never from the DOM: charge count and amount must be auditable.
+    const project = urlParam(page, "project");
+    let view = null; const end = Date.now() + WAIT_MS;
+    while (project && Date.now() < end) {
+      const list = (await jget(ctx, `/api/projects/${project}/source-image-runs`)).body?.runs ?? [];
+      view = list.find((r) => r.mode === "text_generate") ?? null;
+      if (view && ["charged", "refunded", "released"].includes(view.payment?.status)) break;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    const bal1 = await balance(ctx), f = view ? facts(view) : {};
+    ledger.observed(label, { ...f, run_id: f.run_id ?? null, payment_status: f.payment_status ?? "unobserved", charged_minor: f.charged_minor ?? null, balance_after: bal1, image_loaded: ok });
+    const complete = ok && f.payment_status === "charged" && !!f.charge_id;
+    return { label, layer: LAYER, outcome: complete ? "OBSERVED" : "UNKNOWN", image_loaded: ok, ...f, balance_before: bal0, balance_after: bal1, fidelity_claim: "none (ordinary concept image)", screenshot: await shot(page, `${label}-result`) };
   } finally { await ctx.close(); }
 }
 

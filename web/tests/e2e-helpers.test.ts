@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
+import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { readStoredZip, writeStoredZip } from "../e2e/zip.mjs";
 import { ledgerProblems, openLedger, readLedger, spentMinor } from "../e2e/ledger.mjs";
@@ -54,16 +56,18 @@ describe("evidence helpers", () => {
 const PROBES = ["confirm_again_with_the_original_quote", "reconcile", "reload_page", "new_context_same_login_state"];
 const REV = "f".repeat(40);
 const GATES = { go_test: 0, go_vet: 0, go_race: 0, web_test: 0, web_tsc: 0, next_build: 0, samplegen_check: 0 };
+const CASES = ["carton-1024x1024", "handled_metal-1024x1280", "glass_bottle-768x1024"];
 const goodRun = (layer = "real") => ({
   layer, frontend_git_sha: REV, tree_dirty: false, backend_build: { vcs_revision: REV, vcs_modified: false },
   runs: [0, 1, 2].map((i) => ({
-    label: `M1-case${i}`, layer, outcome: "OBSERVED", task_id: `t${i}`, candidate_state: "limited_candidate", payment_status: "charged", charge_id: `ch${i}`,
+    label: `M1-${CASES[i]}`, case_id: CASES[i], background_intent: `intent ${i}`, layer, outcome: "OBSERVED", task_id: `t${i}`, usage_id: `u${i}`, quote_id: `q${i}`,
+    candidate_state: "limited_candidate", payment_status: "charged", charge_id: `ch${i}`, amount_minor: 25, charged_minor: 25,
     plate: { asset_id: `a${i}` }, composite_sha256: sha, selected: true,
     export: { image_sha_matches_view: true, report_bound_to_image: true, report_version: "product-source-quality/v2" },
-    fault: i === 1 ? { submits_seen: 2, dropped: [2] } : null,
+    fault: i === 1 ? { submits_seen: 2, dropped: [2], dropped_submits: [{ n: 2, usage_id: "u1", idempotency_key: "k1" }] } : null,
   })),
   probes: PROBES.map((name) => ({ name, equal: true })),
-  text_run: { label: "M2-text_generate", layer, outcome: "OBSERVED", image_loaded: true },
+  text_run: { label: "M2-text_generate", layer, outcome: "OBSERVED", image_loaded: true, run_id: "r9", usage_id: "u9", quote_id: "q9", task_id: "t9", charge_id: "ch9", amount_minor: 25, charged_minor: 25, payment_status: "charged" },
 });
 type Stage = { mutate?: (r: any) => void; ledger?: boolean; review?: boolean | "invalid"; cross?: "pass" | "blocked" | "incomplete" | "none"; gates?: Record<string, number>; layer?: string };
 function stage(o: Stage = {}) {
@@ -117,8 +121,21 @@ describe("the verdict never rises above what the evidence supports", () => {
     ["an export that differs from the displayed composite", { mutate: (r) => { r.runs[0].export.image_sha_matches_view = false; } }, "export", /^FAIL/],
     ["a dirty working tree", { mutate: (r) => { r.tree_dirty = true; } }, "browser_real", /^FAIL/],
     ["a backend build that is not the frontend revision", { mutate: (r) => { r.backend_build.vcs_revision = "0".repeat(40); } }, "browser_real", /^FAIL/],
-    ["a run skipped for budget", { mutate: (r) => { r.runs[2] = { layer: "real", label: "M1-case2", skipped: "budget" }; } }, "browser_real", /^NOT_RUN/],
+    ["a run skipped for budget", { mutate: (r) => { r.runs[2] = { layer: "real", label: "M1-glass", skipped: "budget" }; } }, "browser_real", /^NOT_RUN/],
     ["a fixture dry run", { layer: "fixture-dry-run" }, "browser_real", /^NOT_RUN/],
+    ["three runs of one frozen case", { mutate: (r) => { r.runs.forEach((x: any) => { x.case_id = CASES[0]; }); } }, "fidelity", /^UNKNOWN/],
+    ["a case that is not in the frozen plan", { mutate: (r) => { r.runs[2].case_id = "some_other_case"; } }, "generation", /^UNKNOWN/],
+    ["two runs sharing one background intent", { mutate: (r) => { r.runs[2].background_intent = r.runs[0].background_intent; } }, "fidelity", /^UNKNOWN/],
+    ["a charge that differs from the quoted amount", { mutate: (r) => { r.runs[0].charged_minor = 24; } }, "billing_recovery", /^FAIL/],
+    ["a run with no charged amount", { mutate: (r) => { r.runs[0].charged_minor = undefined; } }, "billing_recovery", /^FAIL/],
+    ["a Task id reused by two runs", { mutate: (r) => { r.runs[2].task_id = r.runs[0].task_id; } }, "billing_recovery", /^FAIL/],
+    ["a charge id reused by two runs", { mutate: (r) => { r.runs[2].charge_id = r.runs[0].charge_id; } }, "billing_recovery", /^FAIL/],
+    ["a quote id reused by the text run", { mutate: (r) => { r.text_run.quote_id = r.runs[0].quote_id; } }, "billing_recovery", /^FAIL/],
+    ["a dropped submit that belongs to another run", { mutate: (r) => { r.runs[1].fault.dropped_submits[0].usage_id = "u0"; } }, "billing_recovery", /^UNKNOWN/],
+    ["a fault log that names no submit", { mutate: (r) => { delete r.runs[1].fault.dropped_submits; } }, "billing_recovery", /^UNKNOWN/],
+    ["an M2 run that never reached a charge", { mutate: (r) => { r.text_run.payment_status = "see_view"; } }, "generation", /^UNKNOWN/],
+    ["an M2 run with no charge id", { mutate: (r) => { r.text_run.charge_id = null; } }, "generation", /^UNKNOWN/],
+    ["an M2 charge that differs from its quote", { mutate: (r) => { r.text_run.charged_minor = 1; } }, "billing_recovery", /^FAIL/],
     ["a failing engineering gate", { gates: { go_race: 1 } }, "engineering", /^FAIL/],
     ["no order / Campaign return evidence (Level B NOT_RUN)", { cross: "none" }, "cross_app", /^NOT_RUN/],
     ["a blocked return stack", { cross: "blocked" }, "cross_app", /^BLOCKED/],
@@ -137,5 +154,23 @@ describe("the verdict never rises above what the evidence supports", () => {
     const out = assess(dir);
     expect(out.layers.browser_real).toBe("BLOCKED");
     expect(out.verdict).toBe("PARTIAL");
+  });
+});
+
+describe("fault proxy attribution", () => {
+  it("logs which request (usage id, idempotency key) each dropped submit belonged to", async () => {
+    const upstream = http.createServer((req, res) => { req.resume(); req.on("end", () => { res.writeHead(200, { "content-type": "application/json" }); res.end("{}"); }); });
+    await new Promise<void>((r) => upstream.listen(32328, "127.0.0.1", () => r()));
+    const log = path.join(tmp(), "fault.json");
+    const proxy = spawn(process.execPath, [path.join(__dirname, "../e2e/fault-proxy.mjs")], { env: { ...process.env, FAULT_UPSTREAM: "http://127.0.0.1:32328", FAULT_PORT: "32329", FAULT_DROP_SUBMITS: "2", FAULT_LOG: log }, stdio: "pipe" });
+    try {
+      await new Promise<void>((r) => proxy.stdout!.once("data", () => r()));
+      const submit = (usage: string) => fetch("http://127.0.0.1:32329/internal/v1/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `key-${usage}`, billing: { usage_id: usage } }) }).then((r) => r.status, () => "dropped");
+      expect(await submit("u-first")).toBe(200);
+      expect(await submit("u-second")).toBe("dropped");
+      const seen = JSON.parse(fs.readFileSync(log, "utf8"));
+      expect(seen.dropped).toEqual([2]);
+      expect(seen.dropped_submits).toEqual([{ n: 2, usage_id: "u-second", idempotency_key: "key-u-second" }]);
+    } finally { proxy.kill(); await new Promise<void>((r) => upstream.close(() => r())); }
   });
 });

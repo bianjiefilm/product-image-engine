@@ -12,6 +12,8 @@ const isPass = (v) => typeof v === "string" && v.startsWith("PASS");
 // The four zero-cost recovery probes. The last one reuses the SAME stored login state in a
 // fresh browser context; it is NOT a sign-out / sign-in and must never be reported as one.
 export const PROBES = ["confirm_again_with_the_original_quote", "reconcile", "reload_page", "new_context_same_login_state"];
+// The three frozen cases the real run must cover, exactly once each (spec 8).
+export const PLAN_CASES = ["carton-1024x1024", "handled_metal-1024x1280", "glass_bottle-768x1024"];
 const REQUIRED = ["engineering", "browser_real", "fidelity", "generation", "export", "billing_recovery", "cross_app"];
 
 export function assess(dir) {
@@ -31,11 +33,15 @@ export function assess(dir) {
 
   const runs = Array.isArray(real?.runs) ? real.runs : [];
   const isReal = !!real && real.layer === "real" && runs.length >= 3 && runs.every((r) => r?.layer === "real" && !r.skipped);
+  const covered = isReal && runs.length === PLAN_CASES.length && PLAN_CASES.every((c) => runs.filter((r) => r.case_id === c).length === 1)
+    && new Set(runs.map((r) => r.background_intent)).size === runs.length && runs.every((r) => typeof r.background_intent === "string" && r.background_intent !== "");
+  const coverageMsg = "UNKNOWN (runs are not exactly the three frozen cases, each once, with distinct background intents)";
   const buildOk = isReal && real.tree_dirty === false && real.backend_build?.vcs_modified === false && !!real.backend_build?.vcs_revision && real.backend_build.vcs_revision === real.frontend_git_sha;
   const observed = isReal && runs.every((r) => r.outcome === "OBSERVED");
   const none = blocked ? "BLOCKED" : "NOT_RUN";
 
   const fidelity = !isReal ? none
+    : !covered ? coverageMsg
     : !observed ? "UNKNOWN (a limited-fidelity run is not OBSERVED)"
     : runs.some((r) => r.candidate_state === "not_usable_candidate") ? `FAIL (${runs.filter((r) => r.candidate_state === "not_usable_candidate").length} not_usable_candidate)`
     : runs.every((r) => r.candidate_state === "limited_candidate") ? "PASS (limited_candidate, frozen synthetic samples only)"
@@ -43,10 +49,13 @@ export function assess(dir) {
 
   const m1Ok = observed && runs.every((r) => r.task_id && r.plate?.asset_id);
   const text = real?.text_run;
+  const chargedOnce = (r) => r?.payment_status === "charged" && !!r.charge_id && Number.isFinite(Number(r.amount_minor)) && Number(r.amount_minor) > 0 && r.charged_minor != null && Number(r.charged_minor) === Number(r.amount_minor);
   const generation = !isReal ? none
+    : !covered ? coverageMsg
     : !m1Ok ? "UNKNOWN (an M1 run has no Task id or plate asset)"
     : !text ? "UNKNOWN (M2 text_generate not run)"
     : text.layer !== "real" || text.outcome !== "OBSERVED" || text.image_loaded !== true ? "UNKNOWN (M2 image not observed)"
+    : text.payment_status !== "charged" || !text.charge_id ? "UNKNOWN (M2 run has no observed charge)"
     : "PASS (3 plates + 1 text image produced and loaded)";
 
   const limited = runs.filter((r) => r.candidate_state === "limited_candidate");
@@ -57,12 +66,22 @@ export function assess(dir) {
     : "FAIL (an export differs from the displayed composite or lacks its report)";
 
   const probes = Array.isArray(real?.probes) ? real.probes : [];
+  const paid = text ? [...runs, text] : runs;
+  const reused = ["usage_id", "quote_id", "task_id", "charge_id"].filter((k) => { const v = paid.map((r) => r?.[k]).filter(Boolean); return new Set(v).size !== v.length; });
+  // The dropped Task submit must be the faulted run's own request, not just any submit the proxy happened to count.
+  const faulted = runs.filter((r) => r.fault?.dropped?.length > 0);
+  const faultTied = faulted.some((r) => r.usage_id && r.fault.dropped_submits?.some((d) => d.usage_id === r.usage_id));
   const billing = !isReal ? none
+    : !covered ? coverageMsg
     : !ledgerOk ? "UNKNOWN (ledger incomplete)"
     : probes.some((p) => p.equal !== true) ? "FAIL (a recovery probe changed usage / quote / Task / charge / balance)"
     : PROBES.some((n) => !probes.some((p) => p.name === n)) ? "UNKNOWN (a recovery probe is missing)"
     : !runs.every((r) => r.payment_status === "charged" && r.charge_id) ? "UNKNOWN (a run is not charged exactly once)"
-    : !runs.some((r) => r.fault?.dropped?.length > 0) ? "UNKNOWN (fault injection was not exercised)"
+    : !paid.every(chargedOnce) ? "FAIL (a charged amount is missing or differs from its quoted amount)"
+    : reused.length > 0 ? `FAIL (${reused.join(", ")} reused by more than one paid run)`
+    : !text ? "UNKNOWN (M2 charge not recorded)"
+    : !faulted.length ? "UNKNOWN (fault injection was not exercised)"
+    : !faultTied ? "UNKNOWN (the dropped submit is not tied to the faulted run's own request)"
     : "PASS (supplier cost declared, not audited)";
 
   const cross = crossBlocked ? "BLOCKED"
