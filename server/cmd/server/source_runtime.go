@@ -65,16 +65,20 @@ func assemblePlateLock(svc *sourceflow.Service, cfg config.Config) {
 	bi := buildinfo.Read()
 	svc.Build = platelock.Build{VCSRevision: bi.VCSRevision, VCSModified: bi.VCSModified}
 	svc.PlateEnabled = cfg.BgPlateLockEnabled
-	if !cfg.BgPlateLockEnabled {
-		return
-	}
+	// The frozen set is loaded even when the flag is off: turning the flag off
+	// only closes new work, and runs that were already paid must still be derived
+	// by recovery. A missing or rejected set only reports a reason while enabled.
 	if strings.TrimSpace(cfg.FidelitySamplesDir) == "" {
-		svc.SamplesReason = "sample_set_unconfigured"
+		if cfg.BgPlateLockEnabled {
+			svc.SamplesReason = "sample_set_unconfigured"
+		}
 		return
 	}
 	set, err := fidelitysamples.Load(cfg.FidelitySamplesDir)
 	if err != nil {
-		svc.SamplesReason = "sample_set_invalid"
+		if cfg.BgPlateLockEnabled {
+			svc.SamplesReason = "sample_set_invalid"
+		}
 		log.Printf("product-image-server: frozen sample set rejected, background_plate_lock stays closed: %v", err)
 		return
 	}

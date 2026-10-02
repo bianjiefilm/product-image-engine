@@ -636,7 +636,8 @@ func TestPlateLockAssemblyIsOffByDefaultAndFailsClosed(t *testing.T) {
 		wantSet     bool
 		wantReason  string
 	}{
-		{"flag off ignores a valid directory", false, good, false, false, ""},
+		{"flag off still loads a valid set so paid runs can be recovered", false, good, false, true, ""},
+		{"flag off with a broken set stays quiet", false, broken, false, false, ""},
 		{"flag on without a directory", true, "", true, false, "sample_set_unconfigured"},
 		{"flag on with a broken set", true, broken, true, false, "sample_set_invalid"},
 		{"flag on with the frozen set", true, good, true, true, ""},
