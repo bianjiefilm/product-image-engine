@@ -30,6 +30,7 @@ import (
 	"github.com/bianjiefilm/product-image-engine/server/internal/handoff"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/receiptdoc"
+	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
 
@@ -329,7 +330,16 @@ func (s *Server) handleListOutputs(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []store.ProjectOutput{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"outputs": list})
+	bindings, err := s.St.ListOutputQualities(r.Context(), proj.TenantID, projID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", "读取成果质量绑定失败")
+		return
+	}
+	views := []map[string]any{}
+	for _, q := range bindings {
+		views = append(views, qualityBindingView(q))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"outputs": list, "quality_bindings": views})
 }
 
 // handleBindingReturnTarget 解析"返回来源"跳转地址(登记表白名单内的 launch target)。
@@ -360,7 +370,13 @@ func (s *Server) handleBindingReturnTarget(w http.ResponseWriter, r *http.Reques
 			"来源应用未登记可返回的跳转目标("+err.Error()+");来源不可用不影响本工程继续编辑")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"url": url})
+	views := []map[string]any{}
+	if bound, err := s.St.ListOutputQualities(r.Context(), p.Tenant(), binding.ProjectID); err == nil {
+		for _, q := range bound {
+			views = append(views, qualityBindingView(q))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"url": url, "quality_bindings": views})
 }
 
 func (s *Server) handleGetBinding(w http.ResponseWriter, r *http.Request) {
@@ -540,6 +556,13 @@ func (s *Server) bindingOutputContext(ctx context.Context, tenant, projID string
 // RegisterAsset 平台登记 → 落 kind=result 行(唯一键冲突时重读幂等返回)。
 // 返回 (输出, 是否幂等命中既有)。调用方负责工程租户门控;enrich 可为 nil。
 func (s *Server) registerOutputBytes(ctx context.Context, tenant, projID, fileName, contentType string, data []byte, enrich outputContextEnricher) (store.ProjectOutput, bool, *apiErr) {
+	return s.registerOutputBytesFor(ctx, tenant, projID, fileName, contentType, data, enrich, "")
+}
+
+// registerOutputBytesFor is registerOutputBytes plus one extra door: bytes that
+// are a plate-lock derived composite are refused here unless the caller is the
+// return action of exactly the run that derived them (plateRun).
+func (s *Server) registerOutputBytesFor(ctx context.Context, tenant, projID, fileName, contentType string, data []byte, enrich outputContextEnricher, plateRun string) (store.ProjectOutput, bool, *apiErr) {
 	if len(data) == 0 {
 		return store.ProjectOutput{}, false, &apiErr{http.StatusBadRequest, "invalid_request", "data_b64 必须是非空 base64"}
 	}
@@ -570,6 +593,14 @@ func (s *Server) registerOutputBytes(ctx context.Context, tenant, projID, fileNa
 		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
 	} else if hit {
 		return store.ProjectOutput{}, false, &apiErr{http.StatusConflict, "source_output_owned", "该素材属于原生成记录，请从原记录选择或导出"}
+	}
+	// A plate-lock derived composite only enters outputs through the server-side
+	// return action of its own run, which also records its quality binding.
+	if owner, hit, err := s.St.PlateDerivationOwnsSHA(ctx, tenant, projID, shaHex); err != nil {
+		log.Printf("store error: %v", err)
+		return store.ProjectOutput{}, false, &apiErr{http.StatusInternalServerError, "internal", "服务内部错误"}
+	} else if hit && owner != plateRun {
+		return store.ProjectOutput{}, false, &apiErr{http.StatusConflict, "source_output_owned", "该素材属于原生成记录，请从原记录选择、导出或回传"}
 	}
 	// 同一份未保真模型字节不能改登记成可回执成果。
 	if hit, err := s.St.UndeliverableModelSHA(ctx, tenant, projID, shaHex); err != nil {
@@ -639,6 +670,26 @@ func (s *Server) handleSendReceipt(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"receipt": existing, "duplicate": true})
 		return
 	}
+	quality, hasQuality, qerr := s.St.GetOutputQuality(ctx, p.Tenant(), outputID)
+	if qerr != nil {
+		writeStoreErr(w, qerr)
+		return
+	}
+	if hasQuality && (quality.CandidateState != si.CandidateLimited || quality.ResultSHA256 != out.ResultSHA256) {
+		rejectUnusableCandidate(w)
+		return
+	}
+	if !hasQuality {
+		// A derived composite without its quality binding (an interrupted return)
+		// must be completed through the return action first, never receipted.
+		if _, owned, oerr := s.St.PlateDerivationOwnsSHA(ctx, p.Tenant(), projID, out.ResultSHA256); oerr != nil {
+			writeStoreErr(w, oerr)
+			return
+		} else if owned {
+			rejectUnusableCandidate(w)
+			return
+		}
+	}
 	if reports, rerr := s.St.ListFidelityReportsByOutput(ctx, p.Tenant(), outputID); rerr != nil {
 		writeStoreErr(w, rerr)
 		return
@@ -696,6 +747,9 @@ func (s *Server) handleSendReceipt(w http.ResponseWriter, r *http.Request) {
 	// 构造 order-receipt/v1(费用事实只读既有账本,绝不触发扣费)。
 	eventID := "wr-" + hexSha(tenantEventSeed(p.Tenant(), projID, outputID, out.ResultSHA256))
 	runID := out.PlatformTaskID
+	if hasQuality {
+		runID = quality.RunID
+	}
 	if runID == "" {
 		runID = "manual-" + out.ID
 	}
@@ -709,7 +763,7 @@ func (s *Server) handleSendReceipt(w http.ResponseWriter, r *http.Request) {
 			AssetRef: out.PlatformAssetID, SHA256: out.ResultSHA256,
 			SizeBytes: out.ResultSize, MediaType: out.MediaType,
 		}},
-		BillingFactRefs: s.billingFactRefs(ctx, out),
+		BillingFactRefs: s.receiptBillingRefs(ctx, out, quality, hasQuality),
 		OccurredAt:      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 	}
 	if err := receipt.Validate(); err != nil {
@@ -774,6 +828,15 @@ func (s *Server) billingFactRefs(ctx context.Context, out store.ProjectOutput) [
 		}
 	}
 	return refs
+}
+
+// receiptBillingRefs: a quality-bound output cites the one original charge it
+// was derived from; anything else keeps the read-only ledger lookup.
+func (s *Server) receiptBillingRefs(ctx context.Context, out store.ProjectOutput, q store.OutputQuality, bound bool) []string {
+	if bound {
+		return []string{q.OriginalChargeID}
+	}
+	return s.billingFactRefs(ctx, out)
 }
 
 func tenantEventSeed(parts ...string) string {

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
+	"github.com/bianjiefilm/product-image-engine/server/internal/fidelitysamples/sampletest"
 	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 	pc "github.com/bianjiefilm/public-ai/sdk/go/platformconsumer"
@@ -618,4 +620,40 @@ func TestSourceRuntimeRealServeTimeoutDoesNotCloseStore(t *testing.T) {
 	close(release)
 	sourceAwait(t, handlerDone, "fixture handler not released")
 	sourceAwait(t, requestDone, "timeout did not close HTTP connection")
+}
+
+func TestPlateLockAssemblyIsOffByDefaultAndFailsClosed(t *testing.T) {
+	good := sampletest.Dir(t)
+	broken := sampletest.Copy(t)
+	if e := os.Remove(filepath.Join(broken, "masks", "carton-1024x1024.png")); e != nil {
+		t.Fatal(e)
+	}
+	for _, tc := range []struct {
+		name        string
+		flag        bool
+		dir         string
+		wantEnabled bool
+		wantSet     bool
+		wantReason  string
+	}{
+		{"flag off ignores a valid directory", false, good, false, false, ""},
+		{"flag on without a directory", true, "", true, false, "sample_set_unconfigured"},
+		{"flag on with a broken set", true, broken, true, false, "sample_set_invalid"},
+		{"flag on with the frozen set", true, good, true, true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := sourceRuntimeConfig()
+			c.BgPlateLockEnabled, c.FidelitySamplesDir = tc.flag, tc.dir
+			svc, e := newSourceRuntime(c, sourceRuntimeStore(t))
+			if e != nil || svc == nil {
+				t.Fatal(svc, e)
+			}
+			if svc.PlateEnabled != tc.wantEnabled || (svc.Samples != nil) != tc.wantSet || svc.SamplesReason != tc.wantReason {
+				t.Fatalf("enabled=%v set=%v reason=%q", svc.PlateEnabled, svc.Samples != nil, svc.SamplesReason)
+			}
+			if ready, _ := svc.PlateReady("personal"); ready {
+				t.Fatal("the joined recovery runtime is not started here, so the mode can never be ready")
+			}
+		})
+	}
 }

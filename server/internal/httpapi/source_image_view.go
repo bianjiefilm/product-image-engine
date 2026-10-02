@@ -48,6 +48,12 @@ func sourceView(r si.Run) map[string]any {
 	if r.Output != nil && !r.Deleted {
 		view["output"] = map[string]any{"asset_id": r.Output.AssetID, "reference_id": r.Output.ReferenceID, "sha256": r.Output.SHA256, "content_type": r.Output.ContentType, "size_bytes": strconv.FormatInt(r.Output.SizeBytes, 10), "width_px": 1024, "height_px": 1024, "association_verified": true}
 	}
+	if r.Intent.Mode == si.ModePlateLock {
+		// The Upload asset is only the unverified model plate. The result is the
+		// derived composite under "plate"; never advertise the raw asset.
+		view["output"] = nil
+		view["fidelity"] = "frozen_sample_only"
+	}
 	return view
 }
 
