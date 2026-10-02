@@ -84,6 +84,12 @@ func (s *Service) CreatePlate(ctx context.Context, actor Actor, project string, 
 	return s.RecoverQuote(ctx, r)
 }
 
+const (
+	maxPlateExcluded = 500
+	plateQuietAfter  = 8
+	plateQuietDelay  = 15 * time.Minute
+)
+
 type plateBackoff struct {
 	until time.Time
 	tries int
@@ -259,7 +265,17 @@ func (s *Service) settlePlate(ctx context.Context, observed si.Run) {
 // derivePending retries derivations the loop owes, with per-run backoff so a
 // persistently failing download is not hammered once a second.
 func (s *Service) derivePending(ctx context.Context) {
-	runs, e := s.Store.ListPlateRunsAwaitingDerivation(ctx, 3)
+	// Runs still backing off are excluded in the query itself, so a few runs that
+	// keep failing can never occupy the whole window and starve newer ones.
+	var waiting []string
+	now := s.now()
+	s.plateRetry.Range(func(k, v any) bool {
+		if now.Before(v.(plateBackoff).until) && len(waiting) < maxPlateExcluded {
+			waiting = append(waiting, k.(string))
+		}
+		return true
+	})
+	runs, e := s.Store.ListPlateRunsAwaitingDerivation(ctx, 3, waiting)
 	if e != nil {
 		return
 	}
@@ -277,6 +293,11 @@ func (s *Service) derivePending(ctx context.Context) {
 				tries = prev.tries + 1
 			}
 			delay := time.Duration(min(1<<uint(min(tries, 6)), 60)) * time.Second
+			if tries >= plateQuietAfter {
+				// Persistently failing (hash mismatch, dead host): stop re-downloading up to
+				// 16 MiB every minute. An explicit Reconcile still derives it at any time.
+				delay = plateQuietDelay
+			}
 			s.plateRetry.Store(r.ID, plateBackoff{until: s.now().Add(delay), tries: tries})
 			if errors.Is(e, context.Canceled) {
 				return

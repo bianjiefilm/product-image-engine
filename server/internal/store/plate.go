@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
 )
@@ -107,12 +108,22 @@ func nullBytes(b []byte) any {
 }
 
 // ListPlateRunsAwaitingDerivation lists plate runs whose original output is
-// attached but that have no derivation record yet.
-func (s *Store) ListPlateRunsAwaitingDerivation(ctx context.Context, limit int) ([]si.Run, error) {
-	if limit <= 0 || limit > 10 {
+// attached but that have no derivation record yet. Runs named in exclude are
+// skipped so a caller that is backing off from failing runs still reaches newer
+// ones instead of re-reading the same oldest rows forever.
+func (s *Store) ListPlateRunsAwaitingDerivation(ctx context.Context, limit int, exclude []string) ([]si.Run, error) {
+	if limit <= 0 || limit > 10 || len(exclude) > 500 {
 		return nil, si.ErrInvalid
 	}
-	rows, e := s.db.QueryContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE deleted=0 AND phase='succeeded' AND json_extract(observation_json,'$.Output') IS NOT NULL AND id IN (SELECT run_id FROM product_plate_inputs) AND id NOT IN (SELECT run_id FROM product_plate_derivations) ORDER BY updated_at,id LIMIT ?`, limit)
+	q := `SELECT ` + sourceColumns + ` FROM product_source_runs WHERE deleted=0 AND phase='succeeded' AND json_extract(observation_json,'$.Output') IS NOT NULL AND id IN (SELECT run_id FROM product_plate_inputs) AND id NOT IN (SELECT run_id FROM product_plate_derivations)`
+	args := make([]any, 0, len(exclude)+1)
+	if len(exclude) > 0 {
+		q += ` AND id NOT IN (?` + strings.Repeat(`,?`, len(exclude)-1) + `)`
+		for _, id := range exclude {
+			args = append(args, id)
+		}
+	}
+	rows, e := s.db.QueryContext(ctx, q+` ORDER BY updated_at,id LIMIT ?`, append(args, limit)...)
 	if e != nil {
 		return nil, e
 	}

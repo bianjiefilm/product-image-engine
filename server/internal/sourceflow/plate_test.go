@@ -8,8 +8,10 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
 	fs "github.com/bianjiefilm/product-image-engine/server/internal/fidelitysamples"
@@ -25,7 +27,8 @@ type plateAssets struct {
 	output    si.Output
 	body      []byte
 	tamper    func([]byte) []byte
-	failNext  int // the next N downloads fail as if the connection broke
+	failNext  int             // the next N downloads fail as if the connection broke
+	failRuns  map[string]bool // runs whose download never succeeds (persistent outage or tamper)
 	downloads int
 	verifies  int
 }
@@ -38,10 +41,13 @@ func (a *plateAssets) Verify(context.Context, si.Run) (si.Output, error) {
 }
 func (a *plateAssets) Reference(context.Context, si.Outbox) (string, error) { return "active", nil }
 func (a *plateAssets) Release(context.Context, si.Outbox) error             { return nil }
-func (a *plateAssets) Download(context.Context, si.Run) (io.ReadCloser, error) {
+func (a *plateAssets) Download(_ context.Context, r si.Run) (io.ReadCloser, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.downloads++
+	if a.failRuns[r.ID] {
+		return nil, si.ErrUnavailable
+	}
 	if a.failNext > 0 {
 		a.failNext--
 		return nil, si.ErrUnavailable
@@ -306,7 +312,7 @@ func TestF08TamperedDownloadStoresNothingAndKeepsRetrying(t *testing.T) {
 	if _, ok, _ := f.store.GetPlateDerivation(t.Context(), r.ID); ok {
 		t.Fatal("a derivation was stored from bytes that failed verification")
 	}
-	waiting, e := f.store.ListPlateRunsAwaitingDerivation(t.Context(), 5)
+	waiting, e := f.store.ListPlateRunsAwaitingDerivation(t.Context(), 5, nil)
 	if e != nil || len(waiting) != 1 || waiting[0].ID != r.ID {
 		t.Fatal("the run must still be owed a derivation", waiting, e)
 	}
@@ -316,6 +322,58 @@ func TestF08TamperedDownloadStoresNothingAndKeepsRetrying(t *testing.T) {
 	}
 	if f.task.Submits != 1 || f.bill.UsageCommits != 1 {
 		t.Fatal("retrying a derivation must not spend again")
+	}
+}
+
+func TestDerivePendingIsNotStarvedByPermanentlyFailingRuns(t *testing.T) {
+	f := newPlateFixture(t, "carton-1024x1024")
+	f.svc.OutputRecoveryReady = true
+	plate := gradientPlate(1024, 1024)
+	f.assets.failRuns = map[string]bool{}
+	var all []si.Run
+	for _, k := range []string{"run-a", "run-b", "run-c", "run-d"} {
+		all = append(all, f.succeeded(t, k, plate))
+	}
+	// The loop lists oldest first (updated_at, id): the three smallest ids are the
+	// stuck ones and the largest is the healthy run queued behind them.
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+	bad, healthy := all[:3], all[3]
+	for _, r := range bad {
+		f.assets.failRuns[r.ID] = true
+	}
+	ctx := t.Context()
+	f.svc.derivePending(ctx) // the three oldest fail and enter backoff
+	f.svc.derivePending(ctx) // still backing off: the newer healthy run must be reached now
+	if d, ok, e := f.store.GetPlateDerivation(ctx, healthy.ID); e != nil || !ok || d.CandidateState != si.CandidateLimited {
+		t.Fatal("a healthy run behind three failing ones was never derived by the loop", ok, d.CandidateState, e)
+	}
+	for _, r := range bad {
+		if _, ok, _ := f.store.GetPlateDerivation(ctx, r.ID); ok {
+			t.Fatal("a failing run must stay owed, not be derived")
+		}
+	}
+	if f.task.Submits != 4 || f.bill.UsageCommits != 4 {
+		t.Fatal("retrying derivations must not spend again", f.task.Submits, f.bill.UsageCommits)
+	}
+}
+
+func TestDerivePendingStopsHammeringAfterRepeatedFailures(t *testing.T) {
+	f := newPlateFixture(t, "carton-1024x1024")
+	f.svc.OutputRecoveryReady = true
+	f.assets.failRuns = map[string]bool{}
+	r := f.succeeded(t, "stuck-only", gradientPlate(1024, 1024))
+	f.assets.failRuns[r.ID] = true
+	ctx := t.Context()
+	for i := 0; i < 12; i++ {
+		f.svc.derivePending(ctx)
+		f.now = f.now.Add(61 * time.Second)
+	}
+	before := f.assets.downloads
+	f.svc.derivePending(ctx)
+	f.now = f.now.Add(61 * time.Second)
+	f.svc.derivePending(ctx)
+	if f.assets.downloads != before {
+		t.Fatalf("a run that kept failing is still retried every minute (%d -> %d downloads)", before, f.assets.downloads)
 	}
 }
 
