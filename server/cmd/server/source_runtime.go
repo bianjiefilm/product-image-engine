@@ -4,14 +4,19 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/bianjiefilm/product-image-engine/server/internal/buildinfo"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
+	"github.com/bianjiefilm/product-image-engine/server/internal/fidelitysamples"
+	"github.com/bianjiefilm/product-image-engine/server/internal/platelock"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/sourceflow"
 	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
@@ -47,7 +52,37 @@ func sourceRuntimeWithHTTP(cfg config.Config, st *store.Store, h *http.Client) (
 	if cfg.SourceDownloadHosts == "" {
 		reason = "source_download_hosts_unconfigured"
 	}
-	return &sourceflow.Service{OutputRecoveryReason: reason, Store: st, Auth: &sourceflow.Authorizer{Store: st, Context: clients.Context, AppID: cfg.AppID}, Bill: clients.Bill, Tasks: clients.Tasks, Assets: sourceRuntimeAssets{AssetPort: clients.Assets, outputConfigured: cfg.SourceDownloadHosts != ""}, Profile: sourceflow.NewProfile(cfg)}, nil
+	svc := &sourceflow.Service{OutputRecoveryReason: reason, Store: st, Auth: &sourceflow.Authorizer{Store: st, Context: clients.Context, AppID: cfg.AppID}, Bill: clients.Bill, Tasks: clients.Tasks, Assets: sourceRuntimeAssets{AssetPort: clients.Assets, outputConfigured: cfg.SourceDownloadHosts != ""}, Profile: sourceflow.NewProfile(cfg)}
+	assemblePlateLock(svc, cfg)
+	return svc, nil
+}
+
+// assemblePlateLock wires the optional limited-fidelity mode. It never makes the
+// process fatal: a missing or rejected sample set only closes the mode, with a
+// stable reason that capabilities report. The flag and set are immutable while
+// serving.
+func assemblePlateLock(svc *sourceflow.Service, cfg config.Config) {
+	bi := buildinfo.Read()
+	svc.Build = platelock.Build{VCSRevision: bi.VCSRevision, VCSModified: bi.VCSModified}
+	svc.PlateEnabled = cfg.BgPlateLockEnabled
+	// The frozen set is loaded even when the flag is off: turning the flag off
+	// only closes new work, and runs that were already paid must still be derived
+	// by recovery. A missing or rejected set only reports a reason while enabled.
+	if strings.TrimSpace(cfg.FidelitySamplesDir) == "" {
+		if cfg.BgPlateLockEnabled {
+			svc.SamplesReason = "sample_set_unconfigured"
+		}
+		return
+	}
+	set, err := fidelitysamples.Load(cfg.FidelitySamplesDir)
+	if err != nil {
+		if cfg.BgPlateLockEnabled {
+			svc.SamplesReason = "sample_set_invalid"
+		}
+		log.Printf("product-image-server: frozen sample set rejected, background_plate_lock stays closed: %v", err)
+		return
+	}
+	svc.Samples = set
 }
 
 type sourceRuntimeAssets struct {

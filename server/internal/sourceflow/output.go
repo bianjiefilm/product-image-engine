@@ -107,6 +107,11 @@ func (s *Service) Select(ctx context.Context, actor Actor, project, id string) (
 	if r.Deleted || r.Output == nil {
 		return r, si.ErrConflict
 	}
+	if r.Intent.Mode == si.ModePlateLock {
+		if e = s.requireLimitedCandidate(ctx, r); e != nil {
+			return r, e
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	r, e = s.claimOutput(ctx, r)
@@ -151,7 +156,9 @@ func (s *Service) OpenOutput(ctx context.Context, actor Actor, project, id strin
 	if e != nil {
 		return nil, e
 	}
-	if r.Deleted || r.Output == nil || si.ValidateReadyOutput(r, *r.Output) != nil {
+	// A plate-lock run's own Upload asset is the unverified model plate. Only the
+	// derived, quality-judged composite may ever be shown (LoadPlate).
+	if r.Intent.Mode == si.ModePlateLock || r.Deleted || r.Output == nil || si.ValidateReadyOutput(r, *r.Output) != nil {
 		return nil, si.ErrConflict
 	}
 	if nilPort(s.Bill) || nilPort(s.Assets) {

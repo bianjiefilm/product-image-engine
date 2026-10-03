@@ -134,8 +134,17 @@ type sourceHTTPFixture struct {
 	token   string
 }
 
-func newSourceHTTPFixture(t *testing.T) *sourceHTTPFixture {
-	f := newFixture(t, func(c *config.Config) { c.TextToImageEnabled = true })
+func newSourceHTTPFixture(t *testing.T) *sourceHTTPFixture { return newSourceHTTPFixtureWith(t, nil) }
+
+// newSourceHTTPFixtureWith lets a test add config (for example an Upload stub)
+// on top of the shared source-image wiring.
+func newSourceHTTPFixtureWith(t *testing.T, mutate func(*config.Config)) *sourceHTTPFixture {
+	f := newFixture(t, func(c *config.Config) {
+		c.TextToImageEnabled = true
+		if mutate != nil {
+			mutate(c)
+		}
+	})
 	sourceDB := filepath.Join(t.TempDir(), "source-http.db")
 	if e := f.st.Close(); e != nil {
 		t.Fatal(e)

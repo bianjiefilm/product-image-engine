@@ -6,6 +6,13 @@
   --muted: #66707d;
   --accent: #2563eb;
   --danger: #b91c1c;
+  /* HUI-2232: semantic state colours. Painuo tokens are not in this tree yet;
+     when they land, only these variables change. */
+  --focus: #1d4ed8;
+  --info-bg: #eff6ff; --info-fg: #1e3a8a; --info-border: #bfdbfe;
+  --ok-bg: #ecfdf3; --ok-fg: #166534; --ok-border: #86efac;
+  --warn-bg: #fffbeb; --warn-fg: #92400e; --warn-border: #fcd34d;
+  --danger-bg: #fef2f2; --danger-fg: #991b1b; --danger-border: #fecaca;
 }
 * { box-sizing: border-box; }
 body {

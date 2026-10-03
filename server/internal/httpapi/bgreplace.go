@@ -1,17 +1,14 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"image/png"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
@@ -372,7 +369,13 @@ func (s *Server) closeBgModel(w http.ResponseWriter, r *http.Request, job store.
 }
 
 func (s *Server) readBgOriginal(ctx context.Context, p platform.Principal, job store.BgJob) ([]byte, error) {
-	in, err := s.St.GetInput(ctx, p.Tenant(), job.ProjectID, job.InputID)
+	return s.readInputOriginal(ctx, p, p.Tenant(), job.ProjectID, job.InputID)
+}
+
+// readInputOriginal reads the bytes behind a project input from Upload and
+// proves them against the asset's ready status, size and SHA-256.
+func (s *Server) readInputOriginal(ctx context.Context, p platform.Principal, tenant, project, input string) ([]byte, error) {
+	in, err := s.St.GetInput(ctx, tenant, project, input)
 	if err != nil || strings.TrimSpace(in.PlatformAssetID) == "" || s.Uploads == nil {
 		return nil, errors.New("原图缺失")
 	}
@@ -384,7 +387,7 @@ func (s *Server) readBgOriginal(ctx context.Context, p platform.Principal, job s
 	if meta.Status != "" && !strings.EqualFold(meta.Status, "ready") {
 		return nil, errors.New("原图缺失")
 	}
-	local, lerr := s.St.GetPhotoAssetByAssetID(ctx, p.Tenant(), in.PlatformAssetID)
+	local, lerr := s.St.GetPhotoAssetByAssetID(ctx, tenant, in.PlatformAssetID)
 	if lerr == nil {
 		if !strings.EqualFold(meta.SHA256, local.SHA256) || (meta.SizeBytes > 0 && meta.SizeBytes != local.SizeBytes) {
 			return nil, errors.New("原图缺失")
@@ -483,254 +486,12 @@ func (s *Server) handleLockBgReplace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(saved, already)})
 }
 
+// handleModelPlate is permanently retired. It called the image model directly,
+// outside Billing hold/charge and the Task owner, so it must never become
+// reachable. Limited-fidelity background replacement now runs through the
+// priced source-image-runs flow (mode background_plate_lock).
 func (s *Server) handleModelPlate(w http.ResponseWriter, r *http.Request) {
-	p, _ := principalFrom(r.Context())
-	job, ok := s.loadBgJob(w, r)
-	if !ok {
-		return
-	}
-	if job.Origin == bgreplace.OriginModelPlate && job.OutputAssetID != "" {
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
-		return
-	}
-	if job.Mode != string(bgreplace.ModeFidelity) {
-		writeErr(w, http.StatusUnprocessableEntity, "creative_cannot_model_plate", "创意模式不能走保真模型背景")
-		return
-	}
-	if job.QuoteStatus != bgreplace.QuoteConfirmed {
-		writeErr(w, http.StatusConflict, "quote_blocked", bgreplace.ErrQuoteUnconfirmed.Error())
-		return
-	}
-	if job.PlatformTaskID != "" {
-		writeErr(w, http.StatusConflict, "lock_after_submit", "已提交的任务不能再锁定")
-		return
-	}
-	if job.JobStatus == bgreplace.StatusUnknown || job.JobStatus == bgreplace.StatusQuotaInsufficient {
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(job, true)})
-		return
-	}
-	if job.JobStatus != bgreplace.StatusQuoted && job.JobStatus != bgreplace.StatusGenerationUnavailable && job.JobStatus != bgreplace.StatusFailed {
-		writeErr(w, http.StatusConflict, "lock_after_submit", "已提交的任务不能再锁定")
-		return
-	}
-	if !s.Cfg.BgModelReady() {
-		writeErr(w, http.StatusConflict, "config_missing", "配置缺失")
-		return
-	}
-	var req struct {
-		MaskPNGBase64 string `json:"mask_png_base64"`
-	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 24<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_request", "模型背景请求只能带主体蒙版")
-		return
-	}
-	mask, err := decodeLockedPNG(req.MaskPNGBase64)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_request", "主体蒙版不是 PNG")
-		return
-	}
-	original, err := s.readBgOriginal(r.Context(), p, job)
-	if err != nil {
-		writeErr(w, http.StatusConflict, "original_missing", "原图缺失")
-		return
-	}
-	if err := bgreplace.MaskReady(original, mask); err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "lock_rejected", err.Error())
-		return
-	}
-	cfg, err := png.DecodeConfig(bytes.NewReader(original))
-	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "lock_rejected", "图片不是 PNG")
-		return
-	}
-	if s.PlateCoverage == nil {
-		writeErr(w, http.StatusUnprocessableEntity, "coverage_rejected", "没有已冻结的主体覆盖")
-		return
-	}
-	evidence, err := bgreplace.VerifyCoverage(original, mask, *s.PlateCoverage)
-	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "coverage_rejected", err.Error())
-		return
-	}
-	amount, amountKnown, err := plateHoldMinor(quoteFromJob(job))
-	if err != nil {
-		writeErr(w, http.StatusConflict, "quote_blocked", "报价没有可冻结的金额")
-		return
-	}
-	proj, err := s.St.GetProject(r.Context(), p.Tenant(), job.ProjectID)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	payer, err := serverPayer(p, proj)
-	if err != nil || strings.TrimSpace(payer.AccountRef) == "" {
-		writeErr(w, http.StatusConflict, "quote_blocked", "报价没有付款主体")
-		return
-	}
-	size := imagemodel.CanvasSize(cfg.Width, cfg.Height)
-	if size == "" {
-		size = "1024x1024"
-	}
-	params, err := json.Marshal(struct {
-		Prompt string `json:"prompt"`
-	}{Prompt: bgreplace.ModelPlatePrompt(job.BackgroundIntent)})
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", "保存模型背景参数失败")
-		return
-	}
-	taskKey, pricing := plateSubmissionID(job, bgreplace.ImageSHA(original), bgreplace.ImageSHA(mask), evidence.CoverageSHA256, s.Cfg.BgModelName, size, amount)
-	plate := store.PlateExecution{
-		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
-		Request: store.PlateRequest{
-			PayerID: payer.AccountRef, QuoteID: job.Fingerprint,
-			TaskIdempotencyKey: taskKey, PricingVersion: pricing,
-			AmountMinor: amount, BillingPassed: quoteFromJob(job).BillingPassed, StoredAmountKnown: amountKnown,
-			OriginalHash: bgreplace.ImageSHA(original), MaskHash: bgreplace.ImageSHA(mask), CoverageHash: evidence.CoverageSHA256,
-			Model: s.Cfg.BgModelName, Provider: plateRecordProvider, Size: size, ParamsJSON: string(params),
-			SampleID: evidence.SampleID, Mask: mask,
-		},
-	}
-	won, err := s.claimModelPlate(r.Context(), plate)
-	if errors.Is(err, store.ErrConflict) || (err == nil && !won) {
-		s.replyPlateNotClaimed(w, r, job)
-		return
-	}
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	if job.JobStatus == bgreplace.StatusFailed {
-		job.JobStatus = bgreplace.StatusQuoted
-		if err := s.St.UpdateBgJob(r.Context(), job); err != nil {
-			_ = s.St.UpdatePlateTask(r.Context(), job.TenantID, job.ProjectID, job.ID, "unknown", "", "")
-			writeStoreErr(w, err)
-			return
-		}
-	}
-	result, err := imagemodel.Generate(r.Context(), s.ImageHTTP, imagemodel.Request{
-		Endpoint:   s.Cfg.BgModelURL,
-		Credential: s.Cfg.BgModelCredential,
-		Model:      s.Cfg.BgModelName,
-		Prompt:     bgreplace.ModelPlatePrompt(job.BackgroundIntent),
-		Size:       size,
-	})
-	if err != nil {
-		note := scrubModelSecret(err.Error(), s.Cfg.BgModelCredential)
-		if supplierHTTPRejected(err) {
-			s.stopPlateAttempt(w, r, job, bgreplace.StatusFailed, note, true)
-			return
-		}
-		s.stopPlateAttempt(w, r, job, bgreplace.StatusUnknown, note, false)
-		return
-	}
-	if !result.HostLive || result.BillingPassed {
-		s.stopPlateAttempt(w, r, job, bgreplace.StatusUnknown, "回环地址不能算供应商出图", false)
-		return
-	}
-	fitted, err := bgreplace.FitPlate(result.Bytes, cfg.Width, cfg.Height)
-	if err != nil {
-		s.stopPlateAttempt(w, r, job, bgreplace.StatusFailed, err.Error(), false)
-		return
-	}
-	locked, err := bgreplace.LockSubject(original, fitted, mask)
-	if err != nil {
-		s.stopPlateAttempt(w, r, job, bgreplace.StatusFailed, err.Error(), false)
-		return
-	}
-	checks, err := bgreplace.SubjectPixelChecks(original, locked, mask)
-	if err != nil {
-		s.stopPlateAttempt(w, r, job, bgreplace.StatusFailed, err.Error(), false)
-		return
-	}
-	rawChecks, err := json.Marshal(checks)
-	if err != nil {
-		_ = s.St.UpdatePlateTask(r.Context(), job.TenantID, job.ProjectID, job.ID, "unknown", "", "")
-		writeErr(w, http.StatusInternalServerError, "internal", "保存商品检查失败")
-		return
-	}
-	pending := job.Pending
-	pending = bgreplace.AppendPending(pending, result.UsageNote)
-	pending = bgreplace.AppendPending(pending, bgreplace.ModelPlateNotice)
-	pending = bgreplace.AppendPending(pending, bgreplace.RealGenerationIncomplete)
-	saved, already, err := s.St.SaveBgPlateBytes(r.Context(), store.BgModelBytes{
-		TenantID: job.TenantID, ProjectID: job.ProjectID, JobID: job.ID,
-		MediaType: "image/png", Bytes: locked, Pending: pending,
-	}, s.Cfg.BgModelName, string(rawChecks))
-	if err != nil {
-		_ = s.St.UpdatePlateTask(r.Context(), job.TenantID, job.ProjectID, job.ID, "unknown", "", "")
-		writeStoreErr(w, err)
-		return
-	}
-	if err := s.St.UpdatePlateTask(r.Context(), job.TenantID, job.ProjectID, job.ID, "completed", "", ""); err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(saved, already)})
-}
-
-// plateRecordProvider is stored on the execution only. This slice still calls the configured image endpoint and does not submit a platform task.
-const plateRecordProvider = "xingmo"
-
-// plateHoldMinor copies a positive minor amount when the confirmed quote has one.
-// This quote has no amount field. BillingPassed false stores 0, which means no hold.
-func plateHoldMinor(q bgreplace.Quote) (int64, bool, error) {
-	if q.BillingPassed {
-		return 0, false, errors.New("计费标记为通过，但报价没有金额")
-	}
-	return 0, false, nil
-}
-
-func plateSubmissionID(job store.BgJob, originalHash, maskHash, coverageHash, model, size string, amount int64) (string, string) {
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		job.TenantID, job.ProjectID, job.ID, job.Fingerprint,
-		originalHash, maskHash, coverageHash, model, size, strconv.FormatInt(amount, 10),
-	}, "\n")))
-	digest := hex.EncodeToString(sum[:])
-	return "plate-task-" + digest, "plate-pricing-" + digest
-}
-
-func supplierHTTPRejected(err error) bool {
-	return err != nil && strings.HasPrefix(err.Error(), "供应商拒绝: http_")
-}
-
-func (s *Server) claimModelPlate(ctx context.Context, plate store.PlateExecution) (bool, error) {
-	prepared, err := s.St.PreparePlateExecution(ctx, plate)
-	if err != nil {
-		return false, err
-	}
-	if err := s.St.ConfirmPlateExecution(ctx, plate.TenantID, plate.ProjectID, plate.JobID, prepared.Fingerprint); err != nil {
-		return false, err
-	}
-	return s.St.ClaimPlateExecution(ctx, plate.TenantID, plate.ProjectID, plate.JobID)
-}
-
-func (s *Server) replyPlateNotClaimed(w http.ResponseWriter, r *http.Request, job store.BgJob) {
-	latest, err := s.St.GetBgJob(r.Context(), job.TenantID, job.ProjectID, job.ID)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	if latest.Origin == bgreplace.OriginModelPlate && latest.OutputAssetID != "" {
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.bgView(latest, true)})
-		return
-	}
-	writeErr(w, http.StatusConflict, "plate_in_flight", "模型背景正在提交，不能再次调用")
-}
-
-func (s *Server) stopPlateAttempt(w http.ResponseWriter, r *http.Request, job store.BgJob, status, note string, release bool) {
-	if release {
-		if err := s.St.ReleasePlateClaim(r.Context(), job.TenantID, job.ProjectID, job.ID); err != nil {
-			_ = s.St.UpdatePlateTask(r.Context(), job.TenantID, job.ProjectID, job.ID, "unknown", "", "")
-			s.closeBgModel(w, r, job, bgreplace.StatusUnknown, note)
-			return
-		}
-		s.closeBgModel(w, r, job, status, note)
-		return
-	}
-	_ = s.St.UpdatePlateTask(r.Context(), job.TenantID, job.ProjectID, job.ID, "unknown", "", "")
-	s.closeBgModel(w, r, job, status, note)
+	writeErr(w, http.StatusGone, "direct_supplier_route_retired", "该入口已停用：限定保真换背景改走报价、确认后的正式生成流程")
 }
 
 func decodeLockedPNG(raw string) ([]byte, error) {

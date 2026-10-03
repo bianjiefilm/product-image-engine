@@ -15,6 +15,12 @@ type Config struct {
 	SourcePricingVersion   string // PRODUCT_SOURCE_PRICING_VERSION, explicit only
 	SourceDownloadHosts    string // PRODUCT_SOURCE_DOWNLOAD_HOSTS, exact OSS origins
 
+	// --- HUI-2232 C2: limited-fidelity background_plate_lock (default off) ---
+	// The mode additionally needs the source runtime above, a personal payer and a
+	// frozen sample set that loads and verifies. It never reads a browser claim.
+	BgPlateLockEnabled bool   // FEATURE_BG_PLATE_LOCK
+	FidelitySamplesDir string // PRODUCT_FIDELITY_SAMPLES_DIR: directory holding manifest.json
+
 	Addr          string // PRODUCT_SERVER_ADDR,默认 127.0.0.1:18220
 	DBPath        string // PRODUCT_DB_PATH,默认 ./data/product-image.db
 	InternalToken string // PRODUCT_INTERNAL_TOKEN:web BFF → Go server 内部凭据
@@ -122,6 +128,8 @@ func Load() Config {
 		SourceOrgImagesEnabled: getBoolEnv("FEATURE_SOURCE_ORG_IMAGES", false),
 		SourcePricingVersion:   os.Getenv("PRODUCT_SOURCE_PRICING_VERSION"),
 		SourceDownloadHosts:    os.Getenv("PRODUCT_SOURCE_DOWNLOAD_HOSTS"),
+		BgPlateLockEnabled:     getBoolEnv("FEATURE_BG_PLATE_LOCK", false),
+		FidelitySamplesDir:     os.Getenv("PRODUCT_FIDELITY_SAMPLES_DIR"),
 		Addr:                   getEnv("PRODUCT_SERVER_ADDR", "127.0.0.1:18220"),
 		DBPath:                 getEnv("PRODUCT_DB_PATH", "./data/product-image.db"),
 		InternalToken:          os.Getenv("PRODUCT_INTERNAL_TOKEN"),

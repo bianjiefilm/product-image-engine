@@ -19,6 +19,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"FEATURE_BG_REPLACE", "FEATURE_BG_CREATIVE", "PRODUCT_BG_MODEL_CREDENTIAL", "PRODUCT_BG_MODEL_URL", "PRODUCT_BG_MODEL",
 		"TEXT_IMAGE_FIXTURE_REGISTER", "PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", "PRODUCT_TEXT_IMAGE_MODEL_URL", "PRODUCT_TEXT_IMAGE_MODEL",
 		"FEATURE_LIGHT_SCENE", "FEATURE_LIGHT_CREATIVE", "PRODUCT_LIGHT_MODEL_CREDENTIAL", "PRODUCT_LIGHT_MODEL_URL",
+		"FEATURE_BG_PLATE_LOCK", "PRODUCT_FIDELITY_SAMPLES_DIR",
 	} {
 		t.Setenv(k, "")
 	}
@@ -233,5 +234,16 @@ func TestSourceConfigDefaultsAndExplicitFlags(t *testing.T) {
 	t.Setenv("FEATURE_SOURCE_IMAGES", "garbage")
 	if Load().SourceImagesEnabled {
 		t.Fatal("invalid source flag must remain closed")
+	}
+}
+
+func TestPlateLockDefaultsOffAndReadsItsOwnEnv(t *testing.T) {
+	setEnvs(t, nil)
+	if c := Load(); c.BgPlateLockEnabled || c.FidelitySamplesDir != "" {
+		t.Fatalf("plate lock must default off and unconfigured: %+v", c)
+	}
+	setEnvs(t, map[string]string{"FEATURE_BG_PLATE_LOCK": "1", "PRODUCT_FIDELITY_SAMPLES_DIR": "/opt/samples"})
+	if c := Load(); !c.BgPlateLockEnabled || c.FidelitySamplesDir != "/opt/samples" {
+		t.Fatalf("%+v", c)
 	}
 }

@@ -115,9 +115,12 @@ func sourceOnConn(ctx context.Context, c *sql.Conn, scope si.Scope, id string) (
 	return scanSource(c.QueryRowContext(ctx, `SELECT `+sourceColumns+` FROM product_source_runs WHERE id=? AND `+sourceScopeSQL, args...))
 }
 func (s *Store) CreateSourceRun(ctx context.Context, in si.Intent) (si.Run, bool, error) {
-	return s.createSourceRun(ctx, in, false)
+	return s.createSourceRun(ctx, in, false, nil)
 }
-func (s *Store) createSourceRun(ctx context.Context, in si.Intent, projectCheck bool) (out si.Run, duplicate bool, err error) {
+
+// createSourceRun's extra hook runs inside the creating transaction, only when
+// a new run row was inserted (never for a duplicate request key).
+func (s *Store) createSourceRun(ctx context.Context, in si.Intent, projectCheck bool, extra func(c *sql.Conn, runID string, now int64) error) (out si.Run, duplicate bool, err error) {
 	fp, err := si.Fingerprint(in)
 	if err != nil {
 		return out, false, err
@@ -147,6 +150,11 @@ func (s *Store) createSourceRun(ctx context.Context, in si.Intent, projectCheck 
 		_, e = c.ExecContext(ctx, `INSERT INTO product_source_runs(id,owner,app_id,user_id,tenant_id,project_id,payer_account_id,principal_account_id,request_key,fingerprint,intent_json,usage_key,task_key,business_ref,created_at,updated_at,events_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, si.Owner, in.Scope.AppID, in.Scope.UserID, in.Scope.TenantID, in.Scope.ProjectID, in.Scope.PayerAccountID, in.Scope.PrincipalAccountID, in.RequestKey, fp, string(raw), "product-image:usage:"+id, "product-image:task:"+id, "product-image:run:"+id, now, now, string(events))
 		if e != nil {
 			return e
+		}
+		if extra != nil {
+			if e = extra(c, id, now); e != nil {
+				return e
+			}
 		}
 		out, e = sourceOnConn(ctx, c, in.Scope, id)
 		return e

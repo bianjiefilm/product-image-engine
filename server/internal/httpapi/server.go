@@ -13,8 +13,8 @@ import (
 	"sync"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/appregistry"
-	"github.com/bianjiefilm/product-image-engine/server/internal/bgreplace"
 	"github.com/bianjiefilm/product-image-engine/server/internal/billassemble"
+	"github.com/bianjiefilm/product-image-engine/server/internal/buildinfo"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
 	"github.com/bianjiefilm/product-image-engine/server/internal/imagetmpl"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
@@ -51,9 +51,9 @@ type Server struct {
 	// ImageHTTP 只发给已配置的图像端点。nil 时由调用方自建超时客户端。
 	// 测试用它替换传输，避免真的拨号。
 	ImageHTTP *http.Client
-	// PlateCoverage 是服务端冻结的主体覆盖样本，不从浏览器读取。
-	// 为空表示没有已授权样本，模型背景不会出图。
-	PlateCoverage *bgreplace.CoverageSample
+	// ReadOriginal replaces the Upload read of a project input's bytes. Tests set
+	// it; production leaves it nil and uses the verified Upload read.
+	ReadOriginal func(ctx context.Context, p platform.Principal, tenant, project, input string) ([]byte, error)
 
 	// batchSubmitSem 批量提交进程内信号量(HUI-1704 拍板:并发上限 4,超出排队)。
 	// 惰性初始化;semMu 仅保护初始化。
@@ -104,7 +104,7 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/projects/{id}/first-image/refresh", s.guard(true, s.handleRefreshFirstImage))
 
 	// Source ownership is independent of legacy creation flags.
-	for _, path := range []string{"source-image-capabilities", "source-image-runs", "source-image-runs/by-request", "source-image-runs/{runId}", "source-image-runs/{runId}/confirm", "source-image-runs/{runId}/reconcile", "source-image-runs/{runId}/cancel", "source-image-runs/{runId}/select", "source-image-runs/{runId}/output", "source-image-runs/{runId}/content", "source-image-runs/{runId}/export"} {
+	for _, path := range []string{"source-image-capabilities", "source-image-runs", "source-image-runs/by-request", "source-image-runs/{runId}", "source-image-runs/{runId}/confirm", "source-image-runs/{runId}/reconcile", "source-image-runs/{runId}/cancel", "source-image-runs/{runId}/select", "source-image-runs/{runId}/output", "source-image-runs/{runId}/content", "source-image-runs/{runId}/export", "source-image-runs/{runId}/return"} {
 		mux.Handle("/api/v1/projects/{id}/"+path, s.guard(true, s.handleSourceResource))
 	}
 
@@ -335,10 +335,21 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	if s.TplBuiltins != nil {
 		tplBuiltins = len(s.TplBuiltins.List())
 	}
+	bi := buildinfo.Read()
+	plateReady, plateReason := false, "plate_lock_disabled"
+	if s.Source != nil {
+		plateReady, plateReason = s.Source.PlateReady("personal")
+	}
 	body := map[string]any{
 		"ok":    len(fatal) == 0,
 		"fatal": fatal,
+		// The code identity behind this response, recorded in acceptance evidence.
+		"build": map[string]any{"vcs_revision": bi.VCSRevision, "vcs_modified": bi.VCSModified},
 		"gates": map[string]any{
+			"plate_lock": map[string]any{
+				"enabled": s.Cfg.BgPlateLockEnabled, "usable": plateReady, "reason": plateReason,
+				"samples_loaded": s.Source != nil && s.Source.Samples != nil,
+			},
 			"identity":   map[string]any{"configured": true, "base_url_configured": s.Cfg.IdentityBaseURL != ""},
 			"generation": map[string]any{"enabled": s.Cfg.GenerationEnabled, "usable": genSt == 0, "reason": genMsg},
 			"billing":    map[string]any{"enabled": s.Cfg.BillingEnabled, "usable": billSt == 0, "reason": billMsg},

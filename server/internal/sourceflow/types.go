@@ -3,10 +3,13 @@ package sourceflow
 import (
 	"context"
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
+	"github.com/bianjiefilm/product-image-engine/server/internal/fidelitysamples"
+	"github.com/bianjiefilm/product-image-engine/server/internal/platelock"
 	si "github.com/bianjiefilm/product-image-engine/server/internal/sourceimage"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -50,6 +53,15 @@ type Service struct {
 	Assets               AssetPort
 	Profile              Profile
 	Now                  func() time.Time
+
+	// Plate-lock wiring. All of it is assembled by cmd/server and immutable
+	// while serving; nothing here can be changed by a request.
+	PlateEnabled  bool                 // FEATURE_BG_PLATE_LOCK
+	Samples       *fidelitysamples.Set // nil unless the frozen set loaded and verified
+	SamplesReason string               // why Samples is nil: sample_set_unconfigured | sample_set_invalid
+	Build         platelock.Build      // recorded in every report
+	plateLocks    sync.Map             // run id -> *sync.Mutex (in-process derive single flight)
+	plateRetry    sync.Map             // run id -> plateBackoff
 }
 type Profile struct {
 	Enabled, OrgEnabled                               bool
