@@ -41,3 +41,44 @@
   border: 1px solid #e4e4e7;
 }
 .warn { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+
+/* ---- HUI-2232: accessible primitives. Colours come from the semantic
+   variables in globals.css so a token source can replace them in one place. ---- */
+.btn:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .link:focus-visible, .checkRow input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.alert { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 10px 0; display: grid; gap: 4px; line-height: 1.5; }
+.alertTitle { font-size: 14px; }
+.alert_info { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-border); }
+.alert_ok { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-border); }
+.alert_warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-border); }
+.alert_danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
+.field { display: grid; gap: 4px; margin: 12px 0; }
+.fieldLabel { font-weight: 600; color: var(--text); margin: 0; }
+.fieldHint { margin: 0; color: var(--muted); font-size: 13px; }
+.fieldError { margin: 0; color: var(--danger-fg); font-size: 13px; }
+.field textarea, .field select, .field input[type="text"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--card); color: var(--text); }
+.skeleton { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--border), var(--bg), var(--border)); background-size: 200% 100%; animation: skeleton 1.4s ease-in-out infinite; margin: 8px 0; }
+@keyframes skeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+.stepper { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; padding: 0; margin: 12px 0; }
+.step { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.stepNo { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); font-size: 12px; background: var(--card); }
+.stepDone { color: var(--ok-fg); }
+.stepDone .stepNo { background: var(--ok-bg); border-color: var(--ok-border); }
+.stepNow { color: var(--text); font-weight: 600; }
+.stepNow .stepNo { background: var(--accent); border-color: var(--accent); color: #fff; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.checkRow { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; }
+.checkRow input { margin-top: 3px; width: 18px; height: 18px; }
+.axisList { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.axisList li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--border); padding: 4px 0; }
+.stateOK { color: var(--ok-fg); font-weight: 600; }
+.stateBad { color: var(--danger-fg); font-weight: 600; }
+.stateWait { color: var(--warn-fg); font-weight: 600; }
+.stateNA { color: var(--muted); }
+.resultImg { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.link { color: var(--accent); }
+@media (max-width: 480px) { .actions > * { width: 100%; } .btn { min-height: 44px; } }

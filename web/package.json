@@ -6,7 +6,9 @@
     "dev": "next dev -p 18320",
     "build": "next build",
     "start": "next start -p 18320",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e:fixture": "node e2e/fixture-run.mjs",
+    "e2e:real": "node e2e/real-run.mjs"
   },
   "dependencies": {
     "next": "^15.3.0",
@@ -17,6 +19,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "playwright-core": "1.63.0",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0"
   }

@@ -272,17 +272,6 @@ export function BackgroundReplacePanel({
     if (data?.job) setActive(data.job as Job);
   }
 
-  async function modelPlate() {
-    if (!active || !maskFile) return;
-    const mask = await fileBase64(maskFile);
-    const data = await send(
-      `/api/projects/${projectId}/background-replacements/${active.id}/model-plate`,
-      "POST",
-      { mask_png_base64: mask }
-    );
-    if (data?.job) setActive(data.job as Job);
-  }
-
   async function inspect() {
     const body: Record<string, unknown> = { ...axes, similarity_only: similarityOnly };
     if (similarity.trim() !== "") {
@@ -415,22 +404,6 @@ export function BackgroundReplacePanel({
               onClick={() => void lockSubject()}
             >
               锁定主体并换背景
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              data-testid="bg-model-plate"
-              disabled={
-                busy ||
-                !active ||
-                stale ||
-                active.quote_status !== "confirmed" ||
-                (active.job_status !== "quoted" && active.job_status !== "generation_unavailable") ||
-                !maskFile
-              }
-              onClick={() => void modelPlate()}
-            >
-              用模型生成背景并锁定主体
             </Button>
           </>
         ) : null}

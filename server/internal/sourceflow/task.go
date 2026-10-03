@@ -255,5 +255,12 @@ func (s *Service) Reconcile(ctx context.Context, actor Actor, project, id string
 			return r, e
 		}
 	}
-	return s.Advance(ctx, r.ID)
+	out, e := s.Advance(ctx, r.ID)
+	if e == nil {
+		s.settlePlate(ctx, out)
+		if again, readErr := s.Store.GetSourceRun(ctx, out.Intent.Scope, out.ID); readErr == nil {
+			out = again
+		}
+	}
+	return out, e
 }

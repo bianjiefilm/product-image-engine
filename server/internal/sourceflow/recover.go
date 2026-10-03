@@ -30,6 +30,8 @@ func (s *Service) recoveryPass(ctx context.Context) error {
 			_, _ = s.ObserveOutput(ctx, observed)
 		}
 	}
+	// Plate-lock derivation is local work on an already attached, paid output.
+	s.derivePending(ctx)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

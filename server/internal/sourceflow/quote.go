@@ -169,6 +169,11 @@ func (s *Service) Confirm(ctx context.Context, actor Actor, project, id, quoteID
 	if r.Quote == nil || quoteID != r.Quote.QuoteID || hash != si.QuoteHash(*r.Quote) || r.Deleted || r.CancelRequested {
 		return r, si.ErrConflict
 	}
+	// Turning the plate-lock flag off closes NEW commitments. A run already
+	// confirmed keeps recovering and replaying; an unconfirmed quote cannot start.
+	if r.Intent.Mode == si.ModePlateLock && r.ConfirmationHash == "" && !s.PlateEnabled {
+		return r, si.ErrUnconfigured
+	}
 	if r.ConfirmationHash == "" && (s.now().Unix() < r.Quote.QuotedAtUnix || s.now().Unix() >= r.Quote.ExpiresAtUnix) {
 		return r, si.ErrConflict
 	}

@@ -78,7 +78,9 @@ describe("背景替换诚实文案", () => {
     expect(panel).not.toContain("计费已通过");
     expect(panel).not.toContain("生产出图已经通过");
     expect(panel).toContain("锁定主体并换背景");
-    expect(panel).toContain("用模型生成背景并锁定主体");
+    // The direct model-plate trigger is retired: it bypassed priced Task execution.
+    expect(panel).not.toContain("用模型生成背景并锁定主体");
+    expect(panel).not.toContain("/model-plate");
     expect(panel).toContain("subjectLockPreview");
     expect(panel).toContain("modelPlatePreview");
     expect(panel).toContain("/content");

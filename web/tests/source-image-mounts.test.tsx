@@ -21,7 +21,10 @@ beforeEach(()=>{hooks.states=0;hooks.project=false;hooks.effects=[];vi.unstubAll
 describe("normal actual page mounts and legacy read-only",()=>{
   it("both real page factories mount source creation and legacy historyOnly",()=>{
     for(const page of [StartPage,ProjectPage]) {hooks.states=0;hooks.project=page === ProjectPage; const tree=nodes(page());
-      expect(tree.filter(n=>n.type === SourceImagePanel)).toHaveLength(1);
+      // One ordinary text panel and one limited-fidelity panel per page; never two of the same mode.
+      const panels=tree.filter(n=>n.type === SourceImagePanel);
+      expect(panels.filter(n=>(n.props.mode ?? "text_generate") === "text_generate")).toHaveLength(1);
+      expect(panels.filter(n=>n.props.mode === "background_plate_lock")).toHaveLength(1);
       const legacy=tree.filter(n=>n.type === TextImagePanel); expect(legacy).toHaveLength(1); expect(legacy[0].props.historyOnly).toBe(true);
     }
   });
@@ -39,7 +42,7 @@ describe("normal actual page mounts and legacy read-only",()=>{
   it("new personal project is an explicit separate 1024-square local action and double click coalesces",async()=>{
     const calls:Array<[string,RequestInit|undefined]>=[];
     vi.stubGlobal("fetch",async(u:string,i?:RequestInit)=>{calls.push([u,i]); if(u === "/api/auth/session") return Response.json({principal:{user_id:"usr_a",account_id:"acct_a"}});
-      if(u.includes("capabilities")) return Response.json({modes:[{mode:"text_generate",can_quote:false,can_confirm:false,ready:false,disabled:true,reason:"source_unconfigured",model:"qwen-image-2.0",size:"1024*1024",fidelity:"not_applicable",visual_quality:"unknown"},{mode:"reference_edit",ready:false,disabled:true,reason:"formal_contract_unconfigured"},{mode:"background_plate_lock",ready:false,disabled:true,reason:"formal_contract_unconfigured"}],historical_read:true,automatic_output_recovery_ready:false});
+      if(u.includes("capabilities")) return Response.json({modes:[{mode:"text_generate",can_quote:false,can_confirm:false,ready:false,disabled:true,reason:"source_unconfigured",model:"qwen-image-2.0",size:"1024*1024",fidelity:"not_applicable",visual_quality:"unknown"},{mode:"reference_edit",ready:false,disabled:true,reason:"formal_contract_unconfigured"},{mode:"background_plate_lock",ready:false,disabled:true,can_quote:false,can_confirm:false,reason:"plate_lock_disabled",size:"1024*1024",model:"qwen-image-2.0",claim:"frozen_synthetic_sample_only",fidelity:"frozen_sample_only",visual_quality:"unknown",supported_input_ids:[],supported_inputs:[]}],historical_read:true,automatic_output_recovery_ready:false});
       if(u.includes("source-image-runs")) return Response.json({runs:[],next_cursor:""});
       return Response.json({project:{id:"proj_a"}});
     });

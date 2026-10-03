@@ -119,6 +119,12 @@ func sourceReadRequest(w http.ResponseWriter, r *http.Request, allowed ...string
 // The HTTP contract is a recursively closed object: this segment accepts only
 // exact scalar strings (or an empty action object), never arbitrary params.
 func sourceBody(w http.ResponseWriter, r *http.Request, keys ...string) (map[string]string, bool) {
+	return sourceBodyFor(w, r, func(map[string]json.RawMessage) []string { return keys })
+}
+
+// sourceBodyFor lets the closed key set depend on the body's own "mode" while
+// still rejecting every unlisted key, duplicate key and non-string value.
+func sourceBodyFor(w http.ResponseWriter, r *http.Request, pick func(map[string]json.RawMessage) []string) (map[string]string, bool) {
 	if _, e := sourceQuery(r); e != nil {
 		writeErr(w, 400, "invalid_request", "查询参数不支持")
 		return nil, false
@@ -128,16 +134,24 @@ func sourceBody(w http.ResponseWriter, r *http.Request, keys ...string) (map[str
 		writeErr(w, 400, "invalid_request", "请求体超过限制或读取失败")
 		return nil, false
 	}
-	if len(raw) == 0 && len(keys) == 0 {
-		return map[string]string{}, true
-	}
-	typ, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if e != nil || typ != "application/json" {
-		writeErr(w, 400, "invalid_request", "请求体必须是 JSON")
-		return nil, false
-	}
 	var obj map[string]json.RawMessage
-	if platform.DecodeSourceJSON(raw, &obj) != nil || obj == nil || len(obj) != len(keys) {
+	if len(raw) == 0 {
+		if keys := pick(nil); len(keys) == 0 {
+			return map[string]string{}, true
+		}
+	} else {
+		typ, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if e != nil || typ != "application/json" {
+			writeErr(w, 400, "invalid_request", "请求体必须是 JSON")
+			return nil, false
+		}
+		if platform.DecodeSourceJSON(raw, &obj) != nil || obj == nil {
+			writeErr(w, 400, "invalid_request", "请求体字段不合法")
+			return nil, false
+		}
+	}
+	keys := pick(obj)
+	if len(obj) != len(keys) {
 		writeErr(w, 400, "invalid_request", "请求体字段不合法")
 		return nil, false
 	}
@@ -189,13 +203,15 @@ func (s *Server) handleSourceResource(w http.ResponseWriter, r *http.Request) {
 		s.handleSourceContent(w, r)
 	case "export":
 		s.handleSourceExport(w, r)
+	case "return":
+		s.handleSourceReturn(w, r)
 	default:
 		s.handleSourceGet(w, r)
 	}
 }
 func (s *Server) sourceResult(w http.ResponseWriter, r *http.Request, run si.Run, e error) {
 	if e == nil {
-		writeJSON(w, 200, s.sourceRuntimeView(run))
+		writeJSON(w, 200, s.sourceRuntimeView(r.Context(), run))
 		return
 	}
 	status, code, msg := 503, "source_unavailable", "正式服务暂时不可用，原请求状态待核实"
@@ -206,6 +222,10 @@ func (s *Server) sourceResult(w http.ResponseWriter, r *http.Request, run si.Run
 		status, code, msg = 403, "forbidden", "工程当前不允许此操作"
 	case errors.Is(e, si.ErrInvalid):
 		status, code, msg = 400, "invalid_request", "请求不合法"
+	case errors.Is(e, si.ErrNotFrozen):
+		status, code, msg = 422, "sample_not_frozen", "这张照片不在已验证范围内，不能使用限定保真换背景"
+	case errors.Is(e, si.ErrNotUsable):
+		status, code, msg = 409, unusableCandidateCode, unusableCandidateMsg
 	case errors.Is(e, si.ErrConflict):
 		status, code, msg = 409, "conflict", "原请求事实与本次操作冲突"
 	case errors.Is(e, si.ErrUnconfigured):
@@ -273,14 +293,23 @@ func (s *Server) handleSourceCapabilities(w http.ResponseWriter, r *http.Request
 	} else if !ready {
 		reason = runtimeReason
 	}
-	writeJSON(w, 200, map[string]any{"modes": []any{map[string]any{"mode": "text_generate", "can_quote": canQuote, "can_confirm": canConfirm, "authorization_reason": authorizationReason, "runtime_reason": runtimeReason, "ready": ready, "disabled": !ready, "reason": reason, "size": "1024*1024", "model": "qwen-image-2.0", "fidelity": "not_applicable", "visual_quality": "unknown"}, map[string]any{"mode": "background_plate_lock", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}, map[string]any{"mode": "reference_edit", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}}, "historical_read": true, "automatic_output_recovery_ready": s.Source.OutputRecoveryReady})
+	writeJSON(w, 200, map[string]any{"modes": []any{map[string]any{"mode": "text_generate", "can_quote": canQuote, "can_confirm": canConfirm, "authorization_reason": authorizationReason, "runtime_reason": runtimeReason, "ready": ready, "disabled": !ready, "reason": reason, "size": "1024*1024", "model": "qwen-image-2.0", "fidelity": "not_applicable", "visual_quality": "unknown"}, s.plateCapability(r.Context(), auth, project), map[string]any{"mode": "reference_edit", "ready": false, "disabled": true, "reason": "formal_contract_unconfigured"}}, "historical_read": true, "automatic_output_recovery_ready": s.Source.OutputRecoveryReady})
 }
 func (s *Server) handleSourceCreate(w http.ResponseWriter, r *http.Request) {
 	if !sourceMethod(w, r, http.MethodPost) {
 		return
 	}
-	body, ok := sourceBody(w, r, "request_key", "mode", "prompt", "size")
+	body, ok := sourceBodyFor(w, r, func(obj map[string]json.RawMessage) []string {
+		if string(obj["mode"]) == `"`+si.ModePlateLock+`"` {
+			return []string{"request_key", "mode", "input_id", "background_intent"}
+		}
+		return []string{"request_key", "mode", "prompt", "size"}
+	})
 	if !ok || !s.sourceService(w, r) {
+		return
+	}
+	if body["mode"] == si.ModePlateLock {
+		s.handleSourcePlateCreate(w, r, body)
 		return
 	}
 	actor, _ := sourceActor(r)
@@ -364,7 +393,7 @@ func (s *Server) handleSourceList(w http.ResponseWriter, r *http.Request) {
 	}
 	views := []any{}
 	for _, run := range runs {
-		views = append(views, s.sourceRuntimeView(run))
+		views = append(views, s.sourceRuntimeView(r.Context(), run))
 	}
 	cursor := ""
 	if nextID != "" {
@@ -478,9 +507,12 @@ func (s *Server) sourceRuntimeReason() string {
 }
 
 // Readiness is transport metadata, never a Run observation or stored fact.
-func (s *Server) sourceRuntimeView(run si.Run) map[string]any {
+func (s *Server) sourceRuntimeView(ctx context.Context, run si.Run) map[string]any {
 	view := sourceView(run)
 	view["automatic_output_recovery_ready"] = s.Source != nil && s.Source.OutputRecoveryReady
 	view["automatic_output_recovery_reason"] = s.sourceRuntimeReason()
+	if run.Intent.Mode == si.ModePlateLock {
+		view["plate"] = s.plateView(ctx, run)
+	}
 	return view
 }

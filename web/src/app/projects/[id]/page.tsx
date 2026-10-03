@@ -10,6 +10,7 @@ import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 import { LightScenePanel } from "@/components/light-scene/Panel";
 import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
 import { TextImagePanel } from "@/components/text-image/Panel";
+import { PhotoUpload } from "@/components/plate-lock/PhotoUpload";
 import { SourceImagePanel } from "@/components/source-image/Panel";
 
 interface Project {
@@ -289,6 +290,8 @@ export default function ProjectDetailPage() {
   // 成功后把返回的资产引用挂接到本工程(同内容重传走幂等,不重复登记)。
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  // Bumped whenever a photo is attached so the plate-lock panel re-reads which inputs it supports.
+  const [plateReload, setPlateReload] = useState(0);
 
   async function uploadPhoto(e: React.FormEvent) {
     e.preventDefault();
@@ -333,6 +336,7 @@ export default function ProjectDetailPage() {
       );
       setPhotoFile(null);
       await load();
+      setPlateReload((k) => k + 1);
     } finally {
       setPhotoBusy(false);
     }
@@ -737,6 +741,14 @@ export default function ProjectDetailPage() {
         }}
       />
 
+      <SourceImagePanel
+        mode="background_plate_lock"
+        projectId={id ?? ""}
+        returnEnabled={!!binding}
+        reloadKey={plateReload}
+        onReturned={() => void load()}
+        uploadSlot={<PhotoUpload projectId={id ?? ""} onAttached={() => setPlateReload((k) => k + 1)} />}
+      />
       <SourceImagePanel projectId={id ?? ""} />
       <TextImagePanel projectId={id ?? ""} historyOnly />
 

@@ -11,7 +11,7 @@ import (
 // live Context proof; this owned transaction checks original project ownership
 // and archive/deletion again before even replaying or creating an intent.
 func (s *Store) CreateSourceRunForProject(ctx context.Context, in si.Intent) (si.Run, bool, error) {
-	return s.createSourceRun(ctx, in, true)
+	return s.createSourceRun(ctx, in, true, nil)
 }
 func sourceProjectActive(ctx context.Context, c *sql.Conn, scope si.Scope) error {
 	var tenant, creator, status string
