@@ -84,12 +84,37 @@ type plateFixture struct {
 	assets *plateAssets
 }
 
+func TestPlateFixtureLoadsTheFrozenSetOnce(t *testing.T) {
+	a := newPlateFixture(t, "carton-1024x1024")
+	b := newPlateFixture(t, "carton-1024x1024")
+	if a.set != b.set || a.c != b.c || a.c.CaseID != "carton-1024x1024" {
+		t.Fatal("frozen sample set must be loaded once and shared across plate fixtures")
+	}
+}
+
+// frozenPlateOnce keeps the committed sample set. Load verifies every mask
+// pixel-by-pixel; doing that once per test blows the 10 minute -race budget.
+// Mutating tests must use sampletest.Copy and must not write into this set.
+var (
+	frozenPlateOnce sync.Once
+	frozenPlateSet  *fs.Set
+	frozenPlateErr  error
+)
+
+func frozenPlateSamples(t *testing.T) *fs.Set {
+	t.Helper()
+	frozenPlateOnce.Do(func() {
+		frozenPlateSet, frozenPlateErr = fs.Load(sampletest.Dir(t))
+	})
+	if frozenPlateErr != nil {
+		t.Fatal(frozenPlateErr)
+	}
+	return frozenPlateSet
+}
+
 func newPlateFixture(t *testing.T, caseID string) *plateFixture {
 	t.Helper()
-	set, err := fs.Load(sampletest.Dir(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := frozenPlateSamples(t)
 	var c *fs.LoadedCase
 	for _, x := range set.Cases() {
 		if x.CaseID == caseID {
