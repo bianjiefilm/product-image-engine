@@ -113,7 +113,16 @@ async function plateRun(index, caseId) {
     const bal1 = await balance(ctx);
     ledger.observed(label, { ...facts(view), timed_out: timedOut, balance_after: bal1 });
     if (timedOut || !view.plate || view.plate.derivation_state === "pending") return { label, case_id: caseId, background_intent: c.intents[0], layer: LAYER, outcome: "UNKNOWN", ...facts(view), screenshots: screens };
-    await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 60_000 });
+    // If the confirm response was lost (fault leg), the backend recovers along the
+    // original key but the panel keeps the idempotent confirm armed ("状态待核实").
+    // A person clicks that same button again; the driver does exactly that, once,
+    // and only while the button is actually there.
+    const resultShown = await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 15_000 }).then(() => true).catch(() => false);
+    if (!resultShown) {
+      const again = page.getByTestId("plate-confirm");
+      if (await again.isVisible().catch(() => false)) await again.click().catch(() => {});
+      await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 60_000 });
+    }
     screens.push(await shot(page, `${label}-result-desktop`));
     await page.setViewportSize(VIEWPORTS.mobile); screens.push(await shot(page, `${label}-result-mobile`)); await page.setViewportSize(VIEWPORTS.desktop);
     let exportCheck = null, selected = false;
