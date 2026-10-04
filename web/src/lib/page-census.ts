@@ -1,6 +1,7 @@
-// HUI-2620 第一片：只给 pageAccounts() 里已经记账的用户路由做普查。
+// HUI-2620：只给 pageAccounts() 里已经记账的用户路由做普查。
 // 一条路由一条。surface 只按路径和模式编号归类。
-// 半成品标记只扫该 page 文件，不读 layout、组件或同目录其它文件。
+// 半成品标记只扫该 page 文件，不读 layout、组件或同目录其它文件。每种至多一次。
+// 第二片在原有五个标记后追加 raw button、raw input、raw table、bare hex。
 // token、状态、响应式、无障碍、截图都不测。不改页面，不改 page-map。
 // 这一片不能把 HUI-2620、HUI-2627、HUI-2596、HUI-2232 或 HUI-2619 标 Done。
 
@@ -17,7 +18,17 @@ export const surfaceList = ["portal", "work", "editor", "public", "admin"] as co
 
 export type Surface = (typeof surfaceList)[number];
 
-export const markerKindList = ["TODO", "FIXME", "inline style", "接口说明", "架构说明"] as const;
+export const markerKindList = [
+  "TODO",
+  "FIXME",
+  "inline style",
+  "接口说明",
+  "架构说明",
+  "raw button",
+  "raw input",
+  "raw table",
+  "bare hex",
+] as const;
 
 export type Marker = (typeof markerKindList)[number];
 
@@ -56,17 +67,21 @@ export function scanMarkers(source: string): Marker[] {
   if (/(?:^|[^A-Za-z0-9_])style\s*=/.test(source)) found.push("inline style");
   if (source.includes("接口说明")) found.push("接口说明");
   if (source.includes("架构说明")) found.push("架构说明");
+  if (/(?:^|[^A-Za-z0-9_])<button/.test(source)) found.push("raw button");
+  if (/(?:^|[^A-Za-z0-9_])<input/.test(source)) found.push("raw input");
+  if (/(?:^|[^A-Za-z0-9_])<table/.test(source)) found.push("raw table");
+  if (/(?:^|[^A-Za-z0-9_])#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])/.test(source)) found.push("bare hex");
   return found;
 }
 
 const markerBook: readonly { route: string; markers: readonly Marker[] }[] = [
   { route: "/", markers: [] },
-  { route: "/login", markers: ["inline style"] },
+  { route: "/login", markers: ["inline style", "raw button", "raw input"] },
   { route: "/start", markers: [] },
-  { route: "/projects", markers: ["inline style"] },
-  { route: "/projects/[id]", markers: ["inline style"] },
-  { route: "/batches", markers: ["inline style"] },
-  { route: "/handoff", markers: ["inline style"] },
+  { route: "/projects", markers: ["inline style", "raw button", "raw input", "raw table"] },
+  { route: "/projects/[id]", markers: ["inline style", "raw button", "raw input", "raw table"] },
+  { route: "/batches", markers: ["inline style", "raw button", "raw input", "raw table"] },
+  { route: "/handoff", markers: ["inline style", "raw button", "raw input", "raw table"] },
 ];
 
 function sameMarkers(recorded: readonly Marker[], scanned: readonly Marker[]): boolean {
