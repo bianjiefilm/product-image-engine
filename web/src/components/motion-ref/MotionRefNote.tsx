@@ -10,8 +10,6 @@ export function MotionRefNote({ projectId }: { projectId?: string }) {
   const [closed, setClosed] = useState<boolean | null>(null);
   const [rows, setRows] = useState<MotionDeclaration[]>([]);
   const [revisionID, setRevisionID] = useState("");
-  const [price, setPrice] = useState("");
-  const [color, setColor] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -102,33 +100,39 @@ export function MotionRefNote({ projectId }: { projectId?: string }) {
             <input value={revisionID} onChange={(e) => setRevisionID(e.target.value)} />
           </label>
           <button type="button" disabled={busy} onClick={() => void declare()}>形成引用</button>
-          {rows.map((row) => {
-            const copy = safeCopy(row);
-            return (
-              <article key={row.id || row.revision_id}>
-                <p>{copy}</p>
-                <p>资产 {row.asset_id}</p>
-                <p>内容哈希 {row.content_hash}</p>
-                <p>修订 {row.revision_id}</p>
-                <p>摘要 {row.digest}</p>
-                <p>商品重生成 {row.product_regeneration ? "是" : "否"}，模型调用 {row.model_call_count ?? 0}</p>
-                <label>
-                  价格
-                  <input value={price} onChange={(e) => setPrice(e.target.value)} />
-                </label>
-                <label>
-                  颜色
-                  <input value={color} onChange={(e) => setColor(e.target.value)} />
-                </label>
-                <button type="button" disabled={busy || !row.id} onClick={() => void record("price", price, row.id || "")}>只记录价格</button>
-                <button type="button" disabled={busy || !row.id} onClick={() => void record("color", color, row.id || "")}>只记录颜色</button>
-              </article>
-            );
-          })}
+          {rows.map((row) => (
+            <MotionRefRow key={row.id || row.revision_id} row={row} busy={busy} onRecord={record} />
+          ))}
         </div>
       ) : null}
       {notice ? <p role="alert">{notice}</p> : null}
     </section>
+  );
+}
+
+function MotionRefRow({ row, busy, onRecord }: { row: MotionDeclaration; busy: boolean; onRecord: (name: "price" | "color", value: string, id: string) => Promise<void> }) {
+  const [price, setPrice] = useState("");
+  const [color, setColor] = useState("");
+  const copy = safeCopy(row);
+  return (
+    <article>
+      <p>{copy}</p>
+      <p>资产 {row.asset_id}</p>
+      <p>内容哈希 {row.content_hash}</p>
+      <p>修订 {row.revision_id}</p>
+      <p>摘要 {row.digest}</p>
+      <p>商品重生成 {row.product_regeneration ? "是" : "否"}，模型调用 {row.model_call_count ?? 0}</p>
+      <label>
+        价格
+        <input value={price} onChange={(e) => setPrice(e.target.value)} />
+      </label>
+      <label>
+        颜色
+        <input value={color} onChange={(e) => setColor(e.target.value)} />
+      </label>
+      <button type="button" disabled={busy || !row.id} onClick={() => void onRecord("price", price, row.id || "")}>只记录价格</button>
+      <button type="button" disabled={busy || !row.id} onClick={() => void onRecord("color", color, row.id || "")}>只记录颜色</button>
+    </article>
   );
 }
 
