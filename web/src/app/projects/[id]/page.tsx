@@ -12,6 +12,7 @@ import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
 import { TextImagePanel } from "@/components/text-image/Panel";
 import { PhotoUpload } from "@/components/plate-lock/PhotoUpload";
 import { RecoveryStrip } from "@/components/recovery/RecoveryStrip";
+import { MotionRefNote } from "@/components/motion-ref/MotionRefNote";
 import { RevisionRail } from "@/components/revision/RevisionRail";
 import { SourceImagePanel } from "@/components/source-image/Panel";
 
@@ -771,6 +772,7 @@ export default function ProjectDetailPage() {
         railSlot={
           <>
             <RevisionRail projectId={id ?? ""} />
+            <MotionRefNote projectId={id ?? ""} />
             <RecoveryStrip projectId={id ?? ""} />
             {id ? <SubjectFidelityPanel projectId={id} /> : null}
           </>

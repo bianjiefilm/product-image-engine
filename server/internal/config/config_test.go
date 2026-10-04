@@ -20,7 +20,7 @@ func setEnvs(t *testing.T, kv map[string]string) {
 		"TEXT_IMAGE_FIXTURE_REGISTER", "PRODUCT_TEXT_IMAGE_MODEL_CREDENTIAL", "PRODUCT_TEXT_IMAGE_MODEL_URL", "PRODUCT_TEXT_IMAGE_MODEL",
 		"FEATURE_LIGHT_SCENE", "FEATURE_LIGHT_CREATIVE", "PRODUCT_LIGHT_MODEL_CREDENTIAL", "PRODUCT_LIGHT_MODEL_URL",
 		"FEATURE_BG_PLATE_LOCK", "PRODUCT_FIDELITY_SAMPLES_DIR",
-		"FEATURE_SELECTIVE_REVISION",
+		"FEATURE_SELECTIVE_REVISION", "FEATURE_MOTION_PRODUCT",
 	} {
 		t.Setenv(k, "")
 	}
@@ -58,7 +58,7 @@ func TestDefaultsAreSafe(t *testing.T) {
 		c.BgReplaceEnabled || c.BgCreativeEnabled || c.BgRealModelConfigured() || c.BgModelName != "" || c.BgModelReady() ||
 		c.TextImageFixtureRegister || c.TextImageModelConfigured() || c.TextImageModelName != "" ||
 		c.LightSceneEnabled || c.LightCreativeEnabled || c.LightRealModelConfigured() ||
-		c.SelectiveRevisionEnabled {
+		c.SelectiveRevisionEnabled || c.MotionProductEnabled {
 		t.Fatal("全部登记制/能力开关默认必须全 off")
 	}
 	if len(c.FatalProblems()) == 0 {

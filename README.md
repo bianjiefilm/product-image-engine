@@ -111,6 +111,7 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `PRODUCT_LIGHT_MODEL_CREDENTIAL` | 默认空 | 真实光影模型凭证是否已配置。空则生成失败关闭并标明真实出图未完成;值不回传、不入库 |
 | `FEATURE_SUBJECT_FIDELITY` | 默认 0 | 主体保真记录开关(HUI-1698;off 时路由不注册=404;on 也只记录保护范围与检查,不调用生成、不扣费,真实生成保真保持待确认) |
 | `FEATURE_SELECTIVE_REVISION` | 默认 0 | 锁定商品后的局部修改(HUI-2596;off 时路由不注册=404;on 也不调用供应商,真实供应商局部编辑仍是 UNKNOWN) |
+| `FEATURE_MOTION_PRODUCT` | 默认 0 | 已采用商品的 Motion 引用(HUI-2746;off 时路由不注册=404;on 也只形成引用声明,不生成视频、不调用供应商;未核验不是动态广告;HUI-2732 未完成时不批量重跑) |
 | `FEATURE_SHOWCASE_VIDEO` | 默认 1 | 已有产品图发起展示视频(HUI-1702;off 时路由不注册=404;运镜只有 360 度或场景运镜;没有真实视频供应商时失败或待确认,不播放静图或假视频,不扣费) |
 
 Web(`web`,样例 `deploy/web.env.example`):
@@ -163,6 +164,10 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 展示视频计费未接通 | 文案 **计费待确认**,`billing_passed=false`,`production_authorized=false`,不扣真实费用 |
 | `FEATURE_SUBJECT_FIDELITY=0` | **404** 主体保真路由不注册(不可见) |
 | `FEATURE_SELECTIVE_REVISION=0` | **404** 局部修改路由不注册(不可见) |
+| `FEATURE_MOTION_PRODUCT=0` | **404** Motion 引用路由不注册(不可见) |
+| Motion 引用未采用或未核验 | **409** `not_adopted` / `not_a_dynamic_ad`，文案写明还没生成成片，不能当成动态广告 |
+| Motion 引用改价格或颜色 | 只记录参数，`product_regeneration=false`，`model_call_count=0`，主体哈希不变 |
+| Motion 引用批量重跑 | **409** `batch_rerun_unproven`。HUI-2732 未完成，不能证明其他变体执行次数为 0 时不重跑 |
 | 局部修改未确认影响范围 | **409** `impact_unacknowledged`，不落版本、不调用供应商 |
 | 局部修改 failed/unknown 或新 Brief | 不覆盖已采用版本；导出和下游引用必须点名版本，且不重新上传 |
 | 主体保真请求自报通过/授权 | **400** `invalid_request`(结论只由服务端计算) |

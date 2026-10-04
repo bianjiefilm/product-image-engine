@@ -230,6 +230,15 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/showcase-videos/{jobId}/claim", s.guard(true, s.handleClaimShowcaseVideo))
 	}
 
+	// 已采用商品的 Motion 引用(HUI-2746)。关闭时路由不注册。
+	// 只形成引用声明。不生成视频，不调用供应商，未核验不能当成动态广告。
+	if s.Cfg.MotionProductEnabled {
+		mux.Handle("POST /api/v1/projects/{id}/motion-refs", s.guard(true, s.handleCreateMotionRef))
+		mux.Handle("GET /api/v1/projects/{id}/motion-refs", s.guard(true, s.handleListMotionRefs))
+		mux.Handle("POST /api/v1/projects/{id}/motion-refs/batch-rerun", s.guard(true, s.handleMotionBatchRerun))
+		mux.Handle("POST /api/v1/projects/{id}/motion-refs/{refId}/parameters", s.guard(true, s.handleMotionParameter))
+	}
+
 	// 锁定后的局部修改(HUI-2596)。关闭时路由不注册。
 	// 没有供应商密钥时不调用模型，只锁回主体像素。
 	if s.Cfg.SelectiveRevisionEnabled {
