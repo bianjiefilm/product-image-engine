@@ -164,6 +164,10 @@ async function textRun() {
   const label = "M2-text_generate"; const { ctx, page } = await session(label);
   try {
     await page.goto(`${WEB}/start`);
+    // The text panel creates its own project inside quote(); the URL never carries
+    // ?project=. Remember today's projects so the paid facts can be read from the
+    // product's own run view of the newly created one, never from the DOM.
+    const known = new Set(((await jget(ctx, "/api/projects")).body?.projects ?? []).map((p) => p.id));
     await page.locator("summary", { hasText: "普通文字生成" }).click();
     // matches SourceImagePanel.tsx today: "创建个人普通图工程（1024×1024）" (the text panel is unchanged by Task 3)
     await page.getByRole("button", { name: /创建个人普通图工程/ }).click();
@@ -192,7 +196,12 @@ async function textRun() {
       while (Date.now() < endImg && !(ok = await img.first().evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))) await new Promise((r) => setTimeout(r, 1000));
     }
     // The paid facts come from the product's own run view, never from the DOM: charge count and amount must be auditable.
-    const project = urlParam(page, "project");
+    let project = null; const endProject = Date.now() + 120_000;
+    while (!project && Date.now() < endProject) {
+      const list = (await jget(ctx, "/api/projects")).body?.projects ?? [];
+      project = list.map((p) => p.id).find((id) => !known.has(id)) ?? urlParam(page, "project") ?? null;
+      if (!project) await new Promise((r) => setTimeout(r, 3000));
+    }
     let view = null; const end = Date.now() + WAIT_MS;
     while (project && Date.now() < end) {
       const list = (await jget(ctx, `/api/projects/${project}/source-image-runs`)).body?.runs ?? [];
