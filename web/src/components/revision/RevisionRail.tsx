@@ -274,7 +274,7 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
         return;
       }
       const again = data?.downstream?.requires_reupload === true;
-      setDownNote(again ? "这一版还不能直接沿用，需要重新准备文件。" : `已把 ${label} 送出，不用重新上传。`);
+      setDownNote(again ? "这一版还不能直接沿用，需要重新准备文件。" : `只返回了 ${label} 的本地引用，没有上传文件。数字人、AiCut 和矩阵都还没收到。`);
     } finally {
       setBusy(false);
     }
