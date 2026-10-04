@@ -28,7 +28,12 @@ const page = ctx.pages()[0] ?? (await ctx.newPage());
 const jget = async (p) => { const r = await ctx.request.get(WEB + p); return { status: r.status(), body: await r.json().catch(() => null), headers: r.headers() }; };
 const jpost = async (p, body) => { const r = await ctx.request.post(WEB + p, { data: body, headers: { origin: WEB, "content-type": "application/json" } }); return { status: r.status(), body: await r.json().catch(() => null) }; };
 const captured = [];
-page.on("response", (res) => { if (res.request().method() === "POST" && res.url().includes("/revisions")) captured.push({ url: res.url().replace(WEB, ""), status: res.status(), body: res.json().catch?.() ?? null }); });
+page.on("response", async (res) => {
+  if (res.request().method() === "POST" && res.url().includes("/revisions")) {
+    const body = await res.json().catch(() => null);
+    captured.push({ url: res.url().replace(WEB, ""), status: res.status(), body });
+  }
+});
 const balance = async () => (await jget("/api/billing/balance")).body;
 const state = async () => (await jget(`/api/projects/${PROJECT}/revisions`));
 const flush = async (label) => { const c = captured.splice(0, captured.length); save(`revisions-post-${label}.json`, c); return c; };
