@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import styles from "@/components/ui/ui.module.css";
 import { Button } from "@/components/ui/button";
 import { PlateLockScreen } from "@/components/plate-lock/PlateLockScreen";
 import { SourceImageController, sourceImageAPI, canConfirm, formatMinor, requestState, sourcePath, sourceSegment, pendingHintKey, parseSourceJSON, SourceHTTPError, sourceWritesDenied } from "@/lib/source-image";
@@ -27,7 +29,7 @@ export function SourceImageScreen(p: ScreenProps) {
       {v.payment.status === "refunded" ? <p>原退款记录 {v.payment.refund_id || "编号待核实"}；{v.payment.refund_amount_minor === null ? "退款金额待核实" : formatMinor(v.payment.refund_amount_minor)}</p> : null}
       <p>当前费用{v.payment.refresh_status === "unknown" ? "待核实":"未刷新"}；核验时间{v.payment.last_verified_at === null ? "未知":expiry(v.payment.last_verified_at)}。图片出现不代表最新费用通过。</p>
       <div className="row"><Button type="button" variant="outline" disabled={!!p.busy} onClick={p.onRefresh}>读取同一记录</Button><Button type="button" variant="outline" disabled={!!p.busy || writeDenied || v.deleted} onClick={()=>p.onAction?.("reconcile")}>恢复原任务</Button><Button type="button" variant="outline" disabled={!!p.busy || writeDenied || v.cancel_requested || v.deleted} onClick={()=>p.onAction?.("cancel")}>请求取消原任务</Button></div>
-      {output ? <><p>原输出当前可用性待核实；打开或导出时会再次检查原账单与素材权限。</p><figure><img alt="普通概念图，视觉质量待核实" src={sourcePath(p.projectID,v.run_id,"content")} style={{maxWidth:"100%"}} /><figcaption>原输出 1024×1024；视觉质量待核实</figcaption></figure><div className="row"><Button type="button" disabled={!!p.busy || writeDenied || v.selected || v.payment.status !== "charged"} onClick={()=>p.onAction?.("select")}>{v.selected ? "已选择原输出":"选择原输出"}</Button><a href={sourcePath(p.projectID,v.run_id,"export")}>导出原图与事实报告</a><Button type="button" variant="outline" disabled={!!p.busy || writeDenied} onClick={p.onArmDelete}>删除输出展示</Button></div></> : null}
+      {output ? <><p>原输出当前可用性待核实；打开或导出时会再次检查原账单与素材权限。</p><figure><img className={styles.resultImg} alt="普通概念图，视觉质量待核实" src={sourcePath(p.projectID,v.run_id,"content")} /><figcaption>原输出 1024×1024；视觉质量待核实 · 主体保真不适用 · {v.selected ? "已选定" : "尚未选定"}</figcaption></figure><div className="row"><Button type="button" disabled={!!p.busy || writeDenied || v.selected || v.payment.status !== "charged"} onClick={()=>p.onAction?.("select")}>{v.selected ? "已选择原输出":"选择原输出"}</Button><a href={sourcePath(p.projectID,v.run_id,"export")}>导出原图与事实报告</a><Button type="button" variant="outline" disabled={!!p.busy || writeDenied} onClick={p.onArmDelete}>删除输出展示</Button></div></> : null}
       {v.output && !v.deleted && !output ? <Button type="button" variant="outline" disabled={!!p.busy || writeDenied} onClick={p.onArmDelete}>删除输出展示</Button> : null}
       {v.output && !v.deleted && p.deleteArmed ? <p>确认隐藏原输出并申请释放原引用。不会退款，也不代表物理文件已删除。<Button type="button" disabled={!!p.busy || writeDenied} onClick={()=>p.onAction?.("deleteOutput")}>确认删除输出展示</Button></p> : null}
       {v.deleted ? <p>输出已隐藏，引用清理待核实；没有退款或物理删除完成承诺。</p> : null}
@@ -49,8 +51,8 @@ async function principal(ensure:()=>void): Promise<{userID:string;accountID:stri
 }
 // A lease binds async validation to the panel that dispatched it, before controller scope exists.
 type PanelLease={generation:number;project:string};
-export type SourceImagePanelProps={projectId?:string;mode?:SourceModeName;returnEnabled?:boolean;reloadKey?:number;uploadSlot?:React.ReactNode;onReturned?:()=>void};
-export function SourceImagePanel({projectId,mode="text_generate",returnEnabled=false,reloadKey=0,uploadSlot,onReturned}:SourceImagePanelProps) {
+export type SourceImagePanelProps={projectId?:string;mode?:SourceModeName;returnEnabled?:boolean;reloadKey?:number;uploadSlot?:React.ReactNode;materialsSlot?:ReactNode;railSlot?:ReactNode;onReturned?:()=>void};
+export function SourceImagePanel({projectId,mode="text_generate",returnEnabled=false,reloadKey=0,uploadSlot,materialsSlot,railSlot,onReturned}:SourceImagePanelProps) {
   const plateMode=mode === "background_plate_lock", runParam=plateMode ? "plate_run" : "source_run";
   const controller=useRef<SourceImageController | null>(null); if(!controller.current) controller.current=new SourceImageController(sourceImageAPI,undefined,undefined,mode);
   const c=controller.current;
@@ -154,7 +156,7 @@ export function SourceImagePanel({projectId,mode="text_generate",returnEnabled=f
   const belongs=(v:SourceRunView)=>sameScope && v.project_id === s!.projectID && v.payment.payer_user_id === s!.userID && (v.payment.payer_source !== "personal" || v.payment.payer_account_id === s!.accountID);
   const view=c.view && belongs(c.view) ? c.view:null;
   const local=(work:()=>void)=>{if(current(rendered))work();};
-  if(plateMode)return <PlateLockScreen view={view} capabilities={sameScope ? c.capabilities:null} nowUnix={Math.floor(Date.now()/1000)} projectID={displayed} loading={!loaded && !!displayed} busy={busy && !!operationRunning.current} background={background} inputId={inputId} notice={notice} returnEnabled={returnEnabled} returnAck={ack} returnNotice={returnNotice} uploadSlot={uploadSlot}
+  if(plateMode)return <PlateLockScreen view={view} capabilities={sameScope ? c.capabilities:null} nowUnix={Math.floor(Date.now()/1000)} projectID={displayed} loading={!loaded && !!displayed} busy={busy && !!operationRunning.current} background={background} inputId={inputId} notice={notice} returnEnabled={returnEnabled} returnAck={ack} returnNotice={returnNotice} uploadSlot={uploadSlot} materialsSlot={materialsSlot} railSlot={railSlot}
     onBackground={v=>local(()=>setBackground(v))} onInput={v=>local(()=>setInputId(v))} onQuote={()=>void operate(quote)} onConfirm={()=>void operate(l=>step(l,()=>c.confirm()))}
     onRefresh={()=>void operate(l=>step(l,()=>c.action("reconcile")))} onSelect={()=>void operate(l=>step(l,()=>c.action("select")))} onReturnAck={v=>local(()=>setAck(v))} onReturn={()=>void operate(returnToSource)}
     onNew={()=>local(()=>{try {if(operationRunning.current)throw new Error("pending");c.newRequest();hint(rendered);setReturnNotice("");setAck(false);setNotice("");repaint();}catch {setNotice("上一步还没有结束，请稍候。");}})} />;

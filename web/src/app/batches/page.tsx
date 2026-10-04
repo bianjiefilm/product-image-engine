@@ -238,15 +238,21 @@ export default function BatchesPage() {
   }
 
   return (
-    <div>
+    <div className="list-workspace" data-layout="list">
       <div className="card">
         <div className="row" style={{ alignItems: "center" }}>
           <h2 style={{ flex: 1, margin: 0 }}>批量生成</h2>
           <Link className="link" href="/projects">
             返回工程列表
           </Link>
+          <Link className="link" href="/start">做单张</Link>
         </div>
         <form onSubmit={create} style={{ marginTop: 12 }}>
+          <div className="media-actions">
+            <button className="primary" type="submit" disabled={creating}>
+              {creating ? "建批中…" : `建批(${files.length} 个文件)`}
+            </button>
+          </div>
           <div className="row">
             <div>
               <label>批次名称</label>
@@ -318,11 +324,6 @@ export default function BatchesPage() {
               </div>
             </div>
           ) : null}
-          <div style={{ marginTop: 12 }}>
-            <button className="primary" type="submit" disabled={creating}>
-              {creating ? "建批中…" : `建批(${files.length} 个文件)`}
-            </button>
-          </div>
         </form>
         {error ? <div className="banner">{error}</div> : null}
         {note ? <div className="banner">{note}</div> : null}

@@ -243,11 +243,14 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
             输入版本 {active.input_version} · 模式 {modeLabel[active.mode] ?? active.mode} · 保护区域{" "}
             {active.protected_region} · 状态 {statusLabel[active.job_status] ?? active.job_status}
           </p>
-          <p className="muted">
-            版本 {active.input_version}
-            {active.output_version ? ` / ${active.output_version}` : ""} · 模型 {active.model_ref || "无"} ·
-            模型指纹 {active.model_fingerprint || "无"} · 任务指纹 {active.fingerprint || "无"}
-          </p>
+          <details data-technical="true">
+            <summary>记录明细</summary>
+            <p className="muted">
+              版本 {active.input_version}
+              {active.output_version ? ` / ${active.output_version}` : ""} · 模型 {active.model_ref || "无"} ·
+              模型指纹 {active.model_fingerprint || "无"} · 任务指纹 {active.fingerprint || "无"}
+            </p>
+          </details>
           <p>
             对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}{" "}
             {active.output_version || ""}
@@ -262,6 +265,8 @@ export function LightScenePanel({ projectId, inputs }: { projectId: string; inpu
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => act("select")}>
               选定此候选
             </Button>
+            <a className="link" href="#compare">并排比较</a>
+            <a className="link" href="#revision">只改这里</a>
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => act("export")}>
               导出同一版本
             </Button>

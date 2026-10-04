@@ -414,10 +414,14 @@ export function BackgroundReplacePanel({
             输入版本 {active.input_version} · 模式 {modeLabel[active.mode] ?? active.mode} · 保护范围{" "}
             {active.protected_region} · 状态 {active.job_status}
           </p>
-          <p>
-            模型 {active.model_ref || "未记录"} · 任务 {active.platform_task_id || "未记录"} · 资产{" "}
-            {active.output_asset_id || "未记录"} {active.output_version || ""} · 费用 {active.fee_ref || active.billing_label || BILLING_PENDING}
-          </p>
+          <p>费用 {active.fee_ref || active.billing_label || BILLING_PENDING}</p>
+          <details data-technical="true">
+            <summary>记录明细</summary>
+            <p>
+              模型 {active.model_ref || "未记录"} · 任务 {active.platform_task_id || "未记录"} · 资产{" "}
+              {active.output_asset_id || "未记录"} {active.output_version || ""}
+            </p>
+          </details>
           <p>
             对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}。允许用途:
             {(active.allowed_uses ?? []).join("、") || "预览"}。
@@ -475,6 +479,8 @@ export function BackgroundReplacePanel({
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void act("select")}>
               选定此候选
             </Button>
+            <a className="link" href="#compare">并排比较</a>
+            <a className="link" href="#revision">只改这里</a>
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void act("export")}>
               导出同一版本
             </Button>

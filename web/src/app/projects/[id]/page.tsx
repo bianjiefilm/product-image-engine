@@ -11,6 +11,8 @@ import { LightScenePanel } from "@/components/light-scene/Panel";
 import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
 import { TextImagePanel } from "@/components/text-image/Panel";
 import { PhotoUpload } from "@/components/plate-lock/PhotoUpload";
+import { RecoveryStrip } from "@/components/recovery/RecoveryStrip";
+import { RevisionRail } from "@/components/revision/RevisionRail";
 import { SourceImagePanel } from "@/components/source-image/Panel";
 
 interface Project {
@@ -366,7 +368,7 @@ export default function ProjectDetailPage() {
       setBalance(`不可用:${data?.error?.message ?? `HTTP ${res.status}`}`);
       return;
     }
-    setBalance(`余额 ¥${data?.balance_cny}(account ${data?.account_id})`);
+    setBalance(typeof data?.balance_cny === "string" || typeof data?.balance_cny === "number" ? `余额 ¥${data.balance_cny}` : "费用待确认");
   }
 
   // ---- 来源面板动作(HUI-1745 I1) ------------------------------------------
@@ -539,18 +541,21 @@ export default function ProjectDetailPage() {
 
   if (loadError) {
     return (
-      <div className="card">
-        <div className="banner">{loadError}</div>
-        <Link className="link" href="/projects">
-          ← 返回工程列表
-        </Link>
-      </div>
+      <section id="recovery" className="card" aria-label="出错与恢复">
+        <h2>这个工程没有打开</h2>
+        <div className="banner" role="alert">{loadError}</div>
+        <p className="muted">不会重新做图，也不会再扣一次。</p>
+        <div className="media-actions">
+          <Link className="link" href="/projects">返回工程列表</Link>
+          <Link className="link" href="/start">开始做产品图</Link>
+        </div>
+      </section>
     );
   }
   if (!project) return <div className="card muted">加载中…</div>;
 
-  return (
-    <div>
+  const benchMaterials = (
+    <>
       <div className="card">
         <div className="row" style={{ alignItems: "center" }}>
           <h2 style={{ flex: 1, margin: 0 }}>{project.name}</h2>
@@ -574,8 +579,13 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="card">
-        <h2>基本信息(用途/尺寸)</h2>
+        <h2>简报</h2>
         <form onSubmit={save}>
+          <div className="media-actions">
+            <button className="primary" type="submit" disabled={saving}>
+              {saving ? "保存中…" : "保存简报"}
+            </button>
+          </div>
           <div className="row">
             <div>
               <label>名称</label>
@@ -628,20 +638,30 @@ export default function ProjectDetailPage() {
               />
             </div>
           </div>
-          <div style={{ marginTop: 12 }}>
-            <button className="primary" type="submit" disabled={saving}>
-              {saving ? "保存中…" : "保存"}
-            </button>
-          </div>
         </form>
         {notice ? <div className="banner warn">{notice}</div> : null}
       </div>
 
       <div className="card">
-        <h2>已选输入(平台素材引用)</h2>
+        <h2>商品素材</h2>
         {inputs.length === 0 ? (
           <p className="muted">尚未挂接素材。</p>
         ) : (
+          <ul className="asset-strip">
+            {inputs.map((i) => (
+              <li key={i.id}>
+                <img alt={i.snapshot_name || "商品素材"} src={`/api/projects/${id}/inputs/${i.id}/content`} />
+                <div>{i.snapshot_name || "未命名素材"}</div>
+                <a href={`/api/projects/${id}/inputs/${i.id}/content`} target="_blank" rel="noreferrer">查看</a>
+                {" "}
+                <button type="button" onClick={() => removeInput(i.id)}>移除</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <details>
+          <summary>素材引用</summary>
+        {inputs.length === 0 ? null : (
           <table>
             <thead>
               <tr>
@@ -674,7 +694,13 @@ export default function ProjectDetailPage() {
             </tbody>
           </table>
         )}
+        </details>
         <form onSubmit={uploadPhoto} style={{ marginTop: 12 }}>
+          <div className="media-actions">
+            <button className="primary" type="submit" disabled={!photoFile || photoBusy}>
+              {photoBusy ? "上传中…" : "上传并挂接"}
+            </button>
+          </div>
           <div className="row">
             <div>
               <label>上传产品照片(jpeg/png/webp,服务端核验)</label>
@@ -684,13 +710,10 @@ export default function ProjectDetailPage() {
                 onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
               />
             </div>
-            <div style={{ flex: 0 }}>
-              <button type="submit" disabled={!photoFile || photoBusy}>
-                {photoBusy ? "上传中…" : "上传并挂接"}
-              </button>
-            </div>
           </div>
         </form>
+        <details>
+          <summary>已有素材引用</summary>
         <form onSubmit={addInput} style={{ marginTop: 12 }}>
           <div className="row">
             <div>
@@ -731,8 +754,30 @@ export default function ProjectDetailPage() {
           上传经本产品 BFF 受限中继:服务端核验格式/大小/用途并做内容幂等(同内容重传不重复登记);
           也可直接粘贴平台素材引用保存(跨应用图片为经授权的版本引用,经平台设施解析,不读其他应用数据库)。
         </p>
+        </details>
       </div>
+    </>
+  );
 
+  return (
+    <div>
+      <SourceImagePanel
+        mode="background_plate_lock"
+        projectId={id ?? ""}
+        returnEnabled={!!binding}
+        reloadKey={plateReload}
+        onReturned={() => void load()}
+        materialsSlot={benchMaterials}
+        railSlot={
+          <>
+            <RevisionRail projectId={id ?? ""} />
+            <RecoveryStrip projectId={id ?? ""} />
+            {id ? <SubjectFidelityPanel projectId={id} /> : null}
+          </>
+        }
+        uploadSlot={<PhotoUpload projectId={id ?? ""} onAttached={() => setPlateReload((k) => k + 1)} />}
+      />
+      <div className="media-follow">
       <BackgroundReplacePanel
         projectId={id ?? ""}
         inputs={inputs.map((item) => ({ id: item.id, snapshot_name: item.snapshot_name }))}
@@ -741,14 +786,6 @@ export default function ProjectDetailPage() {
         }}
       />
 
-      <SourceImagePanel
-        mode="background_plate_lock"
-        projectId={id ?? ""}
-        returnEnabled={!!binding}
-        reloadKey={plateReload}
-        onReturned={() => void load()}
-        uploadSlot={<PhotoUpload projectId={id ?? ""} onAttached={() => setPlateReload((k) => k + 1)} />}
-      />
       <SourceImagePanel projectId={id ?? ""} />
       <TextImagePanel projectId={id ?? ""} historyOnly />
 
@@ -781,8 +818,6 @@ export default function ProjectDetailPage() {
               <tr>
                 <th>版本</th>
                 <th>状态</th>
-                <th>平台任务</th>
-                <th>资产</th>
                 <th>创建时间</th>
               </tr>
             </thead>
@@ -790,9 +825,7 @@ export default function ProjectDetailPage() {
               {versions.map((v) => (
                 <tr key={v.id}>
                   <td>v{v.version_no}</td>
-                  <td>{v.status}</td>
-                  <td>{v.platform_task_id || "—"}</td>
-                  <td>{v.platform_asset_id || "—"}</td>
+                  <td>{v.status === "adopted" ? "已采用" : v.status || "未采用"}</td>
                   <td className="muted">{v.created_at}</td>
                 </tr>
               ))}
@@ -801,7 +834,7 @@ export default function ProjectDetailPage() {
         )}
         <div className="row" style={{ marginTop: 12 }}>
           <div style={{ flex: 0 }}>
-            <button onClick={submitGeneration}>提交生成(占位)</button>
+            <button className="primary" onClick={submitGeneration}>提交生成</button>
           </div>
           <div style={{ flex: 0 }}>
             <button onClick={loadBalance}>读取费用事实</button>
@@ -814,8 +847,6 @@ export default function ProjectDetailPage() {
           生成能力与计费开关默认关闭;失败时这里只会展示真实原因,不会伪造成功。
         </p>
       </div>
-
-      {id ? <SubjectFidelityPanel projectId={id} /> : null}
 
       {binding && bindingAgg ? (
         <div className="card">
@@ -1127,6 +1158,7 @@ export default function ProjectDetailPage() {
           )}
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

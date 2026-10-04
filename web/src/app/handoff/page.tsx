@@ -131,33 +131,32 @@ export default function HandoffPage() {
           </Link>
         </div>
         <p className="muted" style={{ marginTop: 4 }}>
-          粘贴来源应用(订单 / 活动 / 独立)下发的交接文档。接受只会创建或恢复工程;
-          生成始终由本应用的开关独立控制,绝不因交接自动调用收费模型。
+          粘贴来源应用下发的交接文档。接受只会创建或恢复工程，不会因此自动做图或扣费。
         </p>
         <form onSubmit={accept} style={{ marginTop: 12 }}>
+          <div className="media-actions">
+            <button className="primary" type="submit" disabled={accepting}>
+              {accepting ? "接受中…" : "接受交接"}
+            </button>
+          </div>
           <div>
-            <label>交接文档(order-handoff/v1 JSON)</label>
+            <label>交接文档</label>
             <textarea
               rows={10}
               value={docText}
               onChange={(e) => setDocText(e.target.value)}
-              placeholder='{"schema_version":"order-handoff/v1", …}'
+              placeholder="把交接文档贴在这里"
               required
             />
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <div>
-              <label>制作 purpose(用途,进入绑定唯一键)</label>
+              <label>用途</label>
               <input
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
                 required
               />
-            </div>
-            <div style={{ flex: 0, alignSelf: "flex-end" }}>
-              <button className="primary" type="submit" disabled={accepting}>
-                {accepting ? "接受中…" : "接受交接"}
-              </button>
             </div>
           </div>
         </form>
@@ -223,8 +222,15 @@ export default function HandoffPage() {
           </table>
 
           {result.pending_snapshot && result.diff ? (
-            <div style={{ marginTop: 12 }}>
-              <h3>新版需求待采用(不可变新快照;采用前不覆盖任何人工编辑)</h3>
+            <div id="compare" style={{ marginTop: 12 }}>
+              <h3>新版需求待采用</h3>
+              <p className="muted">这里并排的是需求文字，不是成片。成片比较在工程里。</p>
+              <div className="media-actions">
+                <button className="primary" onClick={adopt} disabled={adopting}>
+                  {adopting ? "采用中…" : "确认差异并采用新版"}
+                </button>
+                {result.project ? <Link className="link" href={`/projects/${result.project.id}#compare`}>去工程里并排看图</Link> : null}
+              </div>
               <table>
                 <thead>
                   <tr>
@@ -235,7 +241,7 @@ export default function HandoffPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td>handoff</td>
+                    <td>交接单</td>
                     <td>{result.diff?.old?.handoff_id ?? "—"}</td>
                     <td>{result.diff?.new?.handoff_id ?? "—"}</td>
                   </tr>
@@ -251,14 +257,7 @@ export default function HandoffPage() {
                   </tr>
                 </tbody>
               </table>
-              <div className="row" style={{ marginTop: 8 }}>
-                <div style={{ flex: 0 }}>
-                  <button className="primary" onClick={adopt} disabled={adopting}>
-                    {adopting ? "采用中…" : "确认差异并采用新版"}
-                  </button>
-                </div>
-                {adoptMsg ? <span className="muted">{adoptMsg}</span> : null}
-              </div>
+              {adoptMsg ? <p className="muted">{adoptMsg}</p> : null}
             </div>
           ) : null}
         </div>

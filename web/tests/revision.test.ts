@@ -17,4 +17,18 @@ describe("局部修改费用只展示服务端整数分", () => {
     expect(src).not.toMatch(/centsBackground|IncrementalCostCents|simplify_background/);
     expect(src).not.toMatch(/\+\s*(20|40)/);
   });
+
+  it("下游成功句只说明本地引用，不说已经送出", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/components/revision/RevisionRail.tsx"), "utf8");
+    const lines = src.split("\n");
+    const index = lines.findIndex((item) => item.includes("requires_reupload"));
+    const note = lines.slice(index, index + 2).join("\n");
+    expect(note).toContain("这一版还不能直接沿用，需要重新准备文件。");
+    expect(note).toContain("只返回了");
+    expect(note).toContain("本地引用");
+    expect(note).toContain("没有上传文件");
+    expect(note).toContain("数字人、AiCut 和矩阵都还没收到");
+    expect(note).not.toContain("已送出");
+    expect(note).not.toContain("已经收到");
+  });
 });
