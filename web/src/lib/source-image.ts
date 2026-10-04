@@ -53,6 +53,11 @@ const text = (v: unknown, max = 256): string => {
   return v;
 };
 const id = (v: unknown, empty = false): string => { if (empty && v === "") return ""; if (!sourceSegment(v)) throw new Error("invalid_source_response"); return v; };
+// Platform task-source capture names references "task-source:v1:<task_id>:(input|output)";
+// the colons are load-bearing evidence, so reference fields accept that exact shape on top
+// of the plain segment alphabet (real-stack contract, HUI-2232 M1).
+const TASK_SOURCE_REFERENCE = /^task-source:v1:[A-Za-z0-9_-]+:(input|output)$/;
+const referenceId = (v: unknown, empty = false): string => { if (typeof v === "string" && TASK_SOURCE_REFERENCE.test(v)) return v; return id(v, empty); };
 const bool = (v: unknown): boolean => { if (typeof v !== "boolean") throw new Error("invalid_source_response"); return v; };
 const integer = (v: unknown): number => { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw new Error("invalid_source_response"); return v; };
 const object = (v: unknown): Record<string,unknown> => { if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("invalid_source_response"); return v as Record<string,unknown>; };
@@ -108,7 +113,7 @@ export function decodePlate(v: unknown): PlateView {
   if (p.background_intent !== undefined) out.background_intent = text(p.background_intent, 800);
   if (p.blocked_reason !== undefined) out.blocked_reason = id(p.blocked_reason);
   if (p.canvas !== undefined) { const c = object(p.canvas); out.canvas = { width_px: integer(c.width_px), height_px: integer(c.height_px) }; }
-  if (p.plate_task !== undefined) { const t = object(p.plate_task); out.plate_task = { task_id: id(t.task_id, true), asset_id: id(t.asset_id), reference_id: id(t.reference_id), sha256: text(t.sha256, 64) }; }
+  if (p.plate_task !== undefined) { const t = object(p.plate_task); out.plate_task = { task_id: id(t.task_id, true), asset_id: id(t.asset_id), reference_id: referenceId(t.reference_id), sha256: text(t.sha256, 64) }; }
   if (p.verdicts !== undefined) { const d = object(p.verdicts); out.verdicts = { fidelity: member(d.fidelity, ["PASS", "FAIL", "UNKNOWN"]), generation: member(d.generation, ["PASS", "FAIL", "UNKNOWN"]), billing: member(d.billing, ["PASS", "FAIL", "UNKNOWN"]), human_usefulness: member(d.human_usefulness, ["NOT_RUN"]) as "NOT_RUN" }; }
   if (p.axes !== undefined) out.axes = arrayOf(p.axes, 24, x => { const a = object(x); return { name: id(a.name), state: member(a.state, AXIS_STATES) as PlateAxisState, machine_checked: bool(a.machine_checked), evidence: text(a.evidence, 512) }; });
   if (p.limits !== undefined) out.limits = arrayOf(p.limits, 12, x => text(x, 512));
@@ -125,7 +130,7 @@ export function decodeSourceRun(v: unknown): SourceRunView {
   const modeName=member(r.mode,["text_generate","background_plate_lock"]) as SourceModeName;
   let output: SourceOutput | null=null;
   if(modeName === "background_plate_lock" && r.output !== null) throw new Error("invalid_source_response");
-  if(r.output !== null) { const o=object(r.output); output={ asset_id:id(o.asset_id), reference_id:id(o.reference_id), sha256:text(o.sha256), content_type:member(o.content_type,["image/png"]), size_bytes:minor(o.size_bytes), width_px:integer(o.width_px), height_px:integer(o.height_px), association_verified:bool(o.association_verified) }; if(!/^[0-9a-f]{64}$/.test(output.sha256) || output.width_px !== 1024 || output.height_px !== 1024 || !output.association_verified || BigInt(output.size_bytes) < 1n || BigInt(output.size_bytes)>16777216n) throw new Error("invalid_source_response"); }
+  if(r.output !== null) { const o=object(r.output); output={ asset_id:id(o.asset_id), reference_id:referenceId(o.reference_id), sha256:text(o.sha256), content_type:member(o.content_type,["image/png"]), size_bytes:minor(o.size_bytes), width_px:integer(o.width_px), height_px:integer(o.height_px), association_verified:bool(o.association_verified) }; if(!/^[0-9a-f]{64}$/.test(output.sha256) || output.width_px !== 1024 || output.height_px !== 1024 || !output.association_verified || BigInt(output.size_bytes) < 1n || BigInt(output.size_bytes)>16777216n) throw new Error("invalid_source_response"); }
   const result: SourceRunView={ run_id:id(r.run_id), project_id:id(r.project_id), request_key:text(r.request_key), owner_version:member(r.owner_version,["product_source_v1"]), mode:modeName, model:member(r.model,["qwen-image-2.0"]), provider:member(r.provider,["modelxing-qwen-image-2.0-v1"]), size:member(r.size,["1024*1024"]), quantity:member(r.quantity,["1"]), phase:member(r.phase,["intent","usage_pending","quote_pending","quoted","quote_expired","confirmed","task_submit_pending","task_linked","output_ready","settlement_pending","succeeded","not_dispatched","cancel_pending","provider_unknown","asset_pending","settlement_unknown","review_required","canceled","cancelled","failed","output_deleted"]), task_id:id(r.task_id,true), selected:bool(r.selected), deleted:bool(r.deleted), cancel_requested:bool(r.cancel_requested), confirmed:bool(r.confirmed), payment, quote:r.quote === null ? null : decodeQuote(r.quote), output, snapshot_updated_at:integer(r.snapshot_updated_at), fidelity:member(r.fidelity,modeName === "text_generate" ? ["not_applicable"] : ["frozen_sample_only"]) as SourceRunView["fidelity"], visual_quality:member(r.visual_quality,["unknown"]), human_adoption:member(r.human_adoption,["NOT_RUN"]), automatic_output_recovery_ready:bool(r.automatic_output_recovery_ready), content_availability:member(r.content_availability,["not_checked"]) };
   if (!result.run_id.startsWith("sir_") || result.deleted && (result.output !== null || result.selected)) throw new Error("invalid_source_response");
   if(modeName === "background_plate_lock") result.plate=decodePlate(r.plate); else if(r.plate !== undefined) throw new Error("invalid_source_response");
