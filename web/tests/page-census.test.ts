@@ -29,6 +29,10 @@ function rescan(source: string): Marker[] {
   if (/(?:^|[^A-Za-z0-9_])style\s*=/.test(source)) found.push("inline style");
   if (source.includes("接口说明")) found.push("接口说明");
   if (source.includes("架构说明")) found.push("架构说明");
+  if (/(?:^|[^A-Za-z0-9_])<button/.test(source)) found.push("raw button");
+  if (/(?:^|[^A-Za-z0-9_])<input/.test(source)) found.push("raw input");
+  if (/(?:^|[^A-Za-z0-9_])<table/.test(source)) found.push("raw table");
+  if (/(?:^|[^A-Za-z0-9_])#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])/.test(source)) found.push("bare hex");
   return found;
 }
 
@@ -145,8 +149,18 @@ describe("stack 与未测量字段", () => {
 });
 
 describe("半成品标记", () => {
-  it("只认 TODO、FIXME、inline style 和两个字面量，顺序固定", () => {
-    expect([...markerKindList]).toEqual(["TODO", "FIXME", "inline style", "接口说明", "架构说明"]);
+  it("九类标记顺序固定，每种至多一次", () => {
+    expect([...markerKindList]).toEqual([
+      "TODO",
+      "FIXME",
+      "inline style",
+      "接口说明",
+      "架构说明",
+      "raw button",
+      "raw input",
+      "raw table",
+      "bare hex",
+    ]);
     expect(scanMarkers("")).toEqual([]);
     expect(scanMarkers("// TODO: later")).toEqual(["TODO"]);
     expect(scanMarkers("FIXME")).toEqual(["FIXME"]);
@@ -155,7 +169,8 @@ describe("半成品标记", () => {
     expect(scanMarkers("MYTODO")).toEqual([]);
     expect(scanMarkers("FIXMES")).toEqual([]);
     expect(scanMarkers('<main style={{ maxWidth: 960 }}>')).toEqual(["inline style"]);
-    expect(scanMarkers("<button style={btnStyle}>")).toEqual(["inline style"]);
+    expect(scanMarkers("<button style={btnStyle}>")).toEqual(["inline style", "raw button"]);
+    expect(scanMarkers("<button></button><button>")).toEqual(["raw button"]);
     expect(scanMarkers("style = {btnStyle}")).toEqual(["inline style"]);
     expect(scanMarkers("lifestyle=1")).toEqual([]);
     expect(scanMarkers("styleName")).toEqual([]);
@@ -174,15 +189,38 @@ describe("半成品标记", () => {
     expect(scanMarkers("style={{}}\nstyle={btn}")).toEqual(["inline style"]);
   });
 
+  it("内存字符串按字面量区分四类新标记", () => {
+    expect(scanMarkers("(<buttonish)")).toEqual(["raw button"]);
+    expect(rescan("(<buttonish)")).toEqual(["raw button"]);
+    expect(scanMarkers("<buttons")).toEqual(["raw button"]);
+    expect(rescan("<buttons")).toEqual(["raw button"]);
+    expect(scanMarkers("<buttoned")).toEqual(["raw button"]);
+    expect(rescan("<buttoned")).toEqual(["raw button"]);
+    expect(scanMarkers("<Button")).toEqual([]);
+    expect(rescan("<Button")).toEqual([]);
+    expect(scanMarkers("</button")).toEqual([]);
+    expect(rescan("</button")).toEqual([]);
+    expect(scanMarkers("#fff")).toEqual(["bare hex"]);
+    expect(rescan("#fff")).toEqual(["bare hex"]);
+    expect(scanMarkers("/* #fff */")).toEqual(["bare hex"]);
+    expect(rescan("/* #fff */")).toEqual(["bare hex"]);
+    expect(scanMarkers("#ffff")).toEqual([]);
+    expect(rescan("#ffff")).toEqual([]);
+    expect(scanMarkers("#11223344")).toEqual([]);
+    expect(rescan("#11223344")).toEqual([]);
+    expect(scanMarkers("TODOS")).toEqual([]);
+    expect(rescan("TODOS")).toEqual([]);
+  });
+
   it("记下的命中和重新扫描该页面文件一致", () => {
     const want = new Map<string, Marker[]>([
       ["/", []],
-      ["/login", ["inline style"]],
+      ["/login", ["inline style", "raw button", "raw input"]],
       ["/start", []],
-      ["/projects", ["inline style"]],
-      ["/projects/[id]", ["inline style"]],
-      ["/batches", ["inline style"]],
-      ["/handoff", ["inline style"]],
+      ["/projects", ["inline style", "raw button", "raw input", "raw table"]],
+      ["/projects/[id]", ["inline style", "raw button", "raw input", "raw table"]],
+      ["/batches", ["inline style", "raw button", "raw input", "raw table"]],
+      ["/handoff", ["inline style", "raw button", "raw input", "raw table"]],
     ]);
     const census = pageCensus();
     expect(census).toHaveLength(want.size);
