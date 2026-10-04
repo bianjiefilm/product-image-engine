@@ -110,6 +110,7 @@ cd web && npm test                # vitest:BFF 三态(鉴权失败/服务不可�
 | `FEATURE_LIGHT_CREATIVE` | 默认 0 | 创意光影路径;还需图像模型凭证和生成任务服务可用,否则界面保持关闭 |
 | `PRODUCT_LIGHT_MODEL_CREDENTIAL` | 默认空 | 真实光影模型凭证是否已配置。空则生成失败关闭并标明真实出图未完成;值不回传、不入库 |
 | `FEATURE_SUBJECT_FIDELITY` | 默认 0 | 主体保真记录开关(HUI-1698;off 时路由不注册=404;on 也只记录保护范围与检查,不调用生成、不扣费,真实生成保真保持待确认) |
+| `FEATURE_SELECTIVE_REVISION` | 默认 0 | 锁定商品后的局部修改(HUI-2596;off 时路由不注册=404;on 也不调用供应商,真实供应商局部编辑仍是 UNKNOWN) |
 | `FEATURE_SHOWCASE_VIDEO` | 默认 1 | 已有产品图发起展示视频(HUI-1702;off 时路由不注册=404;运镜只有 360 度或场景运镜;没有真实视频供应商时失败或待确认,不播放静图或假视频,不扣费) |
 
 Web(`web`,样例 `deploy/web.env.example`):
@@ -161,6 +162,9 @@ Web(`web`,样例 `deploy/web.env.example`):
 | 展示视频没有真实视频供应商 | 任务状态 `failed` 或 `unknown`(待确认),不播放静图或假视频,失败不能改成成功 |
 | 展示视频计费未接通 | 文案 **计费待确认**,`billing_passed=false`,`production_authorized=false`,不扣真实费用 |
 | `FEATURE_SUBJECT_FIDELITY=0` | **404** 主体保真路由不注册(不可见) |
+| `FEATURE_SELECTIVE_REVISION=0` | **404** 局部修改路由不注册(不可见) |
+| 局部修改未确认影响范围 | **409** `impact_unacknowledged`，不落版本、不调用供应商 |
+| 局部修改 failed/unknown 或新 Brief | 不覆盖已采用版本；导出和下游引用必须点名版本，且不重新上传 |
 | 主体保真请求自报通过/授权 | **400** `invalid_request`(结论只由服务端计算) |
 | 未授权的真实生成 | 结论 **unknown**(待确认),`exact_product=false`,不扣费 |
 | 文字或结构检查失败 | 结论 **fail**,保持候选,不回执为已验证商品图 |
