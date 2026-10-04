@@ -8,6 +8,7 @@ import { StartScreen } from "@/components/first-image/StartScreen";
 import { PhotoUpload } from "@/components/plate-lock/PhotoUpload";
 import { TextImagePanel } from "@/components/text-image/Panel";
 import { RecoveryStrip } from "@/components/recovery/RecoveryStrip";
+import { MotionRefNote } from "@/components/motion-ref/MotionRefNote";
 import { RevisionRail } from "@/components/revision/RevisionRail";
 import { SourceImagePanel } from "@/components/source-image/Panel";
 import { Button } from "@/components/ui/button";
@@ -368,6 +369,7 @@ export default function StartClient() {
           railSlot={
             <>
               <RevisionRail projectId={projectId || undefined} />
+              <MotionRefNote projectId={projectId || undefined} />
               <RecoveryStrip projectId={projectId || undefined} />
             </>
           }
@@ -438,6 +440,7 @@ export default function StartClient() {
           quoted={quotedFlag}
         />
         <RevisionRail projectId={projectId || undefined} />
+        <MotionRefNote projectId={projectId || undefined} />
         <RecoveryStrip projectId={projectId || undefined} />
         </>
       )}
