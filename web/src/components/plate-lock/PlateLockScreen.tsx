@@ -104,7 +104,7 @@ export function PlateLockScreen(p: PlateScreenProps) {
             </figure>
           ) : (
             <div className={styles.stageEmpty}>
-              <p>{p.loading ? "正在读取……" : v && pl?.derivation_state === "pending" ? "正在生成背景并检查商品……" : "结果会显示在这里。选照片、写背景、确认费用，步骤没有增加。"}</p>
+              <p>{p.loading ? "正在读取……" : v && v.confirmed && pl?.derivation_state === "pending" ? "正在生成背景并检查商品……" : "结果会显示在这里。选照片、写背景、确认费用，步骤没有增加。"}</p>
             </div>
           )}
           {resultReady ? (

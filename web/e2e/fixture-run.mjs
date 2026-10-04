@@ -110,7 +110,9 @@ async function main() {
     await shot(page, "quote", vp);
     await page.keyboard.press("Enter");
     await page.locator('[data-testid="plate-result"][data-candidate="limited_candidate"]').waitFor({ timeout: 40000 });
-    assert.ok(await page.locator('[data-testid="plate-result"] img').evaluate((img) => img.complete && img.naturalWidth > 0), "the result image really loads");
+    // The composite lives in the stage figure next to the checks section (media-first
+    // layout), so address the image by its stable alt text, not by the section.
+    assert.ok(await page.getByRole("img", { name: "换背景后的商品图" }).evaluate((img) => img.complete && img.naturalWidth > 0), "the result image really loads");
     assert.ok(await page.getByText("商品像素与原图完全一致").first().isVisible());
     assert.ok(await page.getByText("使用限制").first().isVisible());
     await page.getByTestId("plate-select").click();
