@@ -91,6 +91,10 @@ type Config struct {
 	// off 时路由不注册=404。on 也只记录保护范围与检查,真实生成保真保持待确认。
 	SubjectFidelityEnabled bool // FEATURE_SUBJECT_FIDELITY,默认 off
 
+	// --- HUI-2596:锁定商品，只改这里 ---
+	// off 时路由不注册=404。on 也不调用供应商；局部修改使用确定性底板并锁回主体。
+	SelectiveRevisionEnabled bool // FEATURE_SELECTIVE_REVISION,默认 off
+
 	// --- HUI-1701 FEAT-0202:文字描述生成入口 ---
 	// 默认开放入口,方便只写文字开始。没有真实供应商时只记失败或待确认,不出图、不扣费。
 	TextToImageEnabled bool // FEATURE_TEXT_TO_IMAGE,默认 on
@@ -173,7 +177,8 @@ func Load() Config {
 		LightModelCredential: os.Getenv("PRODUCT_LIGHT_MODEL_CREDENTIAL"),
 		LightModelURL:        os.Getenv("PRODUCT_LIGHT_MODEL_URL"),
 
-		SubjectFidelityEnabled: getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
+		SubjectFidelityEnabled:   getBoolEnv("FEATURE_SUBJECT_FIDELITY", false),
+		SelectiveRevisionEnabled: getBoolEnv("FEATURE_SELECTIVE_REVISION", false),
 
 		TextToImageEnabled:       getBoolEnv("FEATURE_TEXT_TO_IMAGE", true),
 		TextImageFixtureRegister: getBoolEnv("TEXT_IMAGE_FIXTURE_REGISTER", false),

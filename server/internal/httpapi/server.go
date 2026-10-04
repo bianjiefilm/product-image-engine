@@ -230,6 +230,23 @@ func (s *Server) Router() http.Handler {
 		mux.Handle("POST /api/v1/projects/{id}/showcase-videos/{jobId}/claim", s.guard(true, s.handleClaimShowcaseVideo))
 	}
 
+	// 锁定后的局部修改(HUI-2596)。关闭时路由不注册。
+	// 没有供应商密钥时不调用模型，只锁回主体像素。
+	if s.Cfg.SelectiveRevisionEnabled {
+		mux.Handle("POST /api/v1/projects/{id}/revisions/intent", s.guard(true, s.handleRevisionIntent))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/plan", s.guard(true, s.handleRevisionPlan))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/outcome", s.guard(true, s.handleRevisionOutcome))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/briefs", s.guard(true, s.handleRevisionBrief))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/rollback", s.guard(true, s.handleRevisionRollback))
+		mux.Handle("GET /api/v1/projects/{id}/revisions/compare", s.guard(true, s.handleRevisionCompare))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/{label}/adopt", s.guard(true, s.handleRevisionAdopt))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/{label}/export", s.guard(true, s.handleRevisionExport))
+		mux.Handle("POST /api/v1/projects/{id}/revisions/{label}/downstream", s.guard(true, s.handleRevisionDownstream))
+		mux.Handle("GET /api/v1/projects/{id}/revisions/{label}/content", s.guard(true, s.handleRevisionContent))
+		mux.Handle("GET /api/v1/projects/{id}/revisions", s.guard(true, s.handleListRevisions))
+		mux.Handle("POST /api/v1/projects/{id}/revisions", s.guard(true, s.handleCreateRevision))
+	}
+
 	// 主体保真记录(HUI-1698 / FEAT-0199):不调用生成、不扣费。
 	// FEATURE_SUBJECT_FIDELITY off → 路由不注册 = 404 不可见。
 	if s.Cfg.SubjectFidelityEnabled {
