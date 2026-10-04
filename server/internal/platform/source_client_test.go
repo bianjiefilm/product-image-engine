@@ -291,6 +291,28 @@ func TestSourceDecodeOutputOriginalReference(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestSourceDecodeTaskAcceptsPlatformUppercaseStatus(t *testing.T) {
+	r := sourceWireRun()
+	var m map[string]any
+	json.Unmarshal(sourceTaskJSON(r), &m)
+	m["status"] = "SUCCEEDED"
+	m["phase"] = "succeeded"
+	m["hold_id"] = "hold-a"
+	m["charge_id"] = "charge-a"
+	m["output_ready"] = true
+	m["provider_result_received"] = true
+	out := map[string]any{"asset_id": "asset-a", "reference_id": "ref-a", "project_id": "project-a", "content_type": "image/png", "sha256": strings.Repeat("a", 64), "size_bytes": 1024}
+	b, _ := json.Marshal(out)
+	m["result_json"] = string(b)
+	raw, _ := json.Marshal(m)
+	f, e := decodeSourceTask(raw, r)
+	if e != nil {
+		t.Fatalf("platform uppercase SUCCEEDED must decode: %v", e)
+	}
+	if f.Status != "succeeded" || f.Output == nil || f.Output.AssetID != "asset-a" {
+		t.Fatalf("bad fact: %+v", f)
+	}
+}
 func TestSourceWireAssetOwnerAndActiveReference(t *testing.T) {
 	r := sourceWireRun()
 	o := si.Output{AssetID: "asset-a", ReferenceID: "ref-a", ProjectID: "project-a", AppID: "product-image", PrincipalType: "user", PrincipalID: "usr-a", SHA256: strings.Repeat("a", 64), ContentType: "image/png", SizeBytes: 1024}
