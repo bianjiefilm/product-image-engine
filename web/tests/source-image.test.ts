@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SourceImageController, SourceHTTPError, formatMinor, canConfirm, requestState, decodeSourceRun, pendingHintKey } from "@/lib/source-image";
-import { quoted, sourceAPIFixture, scope, capabilities } from "./source-image-fixture";
+import { quoted, plateDone, sourceAPIFixture, scope, capabilities } from "./source-image-fixture";
 
 function controller(calls: string[]) {
   const api = sourceAPIFixture(calls);
@@ -111,6 +111,15 @@ describe("formal source explicit controller", () => {
   });
   it("actual output_deleted phase remains readable after the explicit tombstone action",()=>{
     const r=quoted();r.deleted=true;r.phase="output_deleted";expect(decodeSourceRun(r).deleted).toBe(true);expect(requestState(r)).toContain("引用清理待核实");
+  });
+  it("platform task-source reference ids (with colons) decode in plate_task and output", () => {
+    const ref = "task-source:v1:tsk_723bc44347877c91f8c26fcc:output";
+    const plate = plateDone();
+    plate.plate!.plate_task = { task_id: "task_a", asset_id: "asset_a", reference_id: ref, sha256: "a".repeat(64) };
+    expect(decodeSourceRun(plate).plate!.plate_task?.reference_id).toBe(ref);
+    const text = quoted();
+    text.output = { asset_id: "asset_a", reference_id: ref, sha256: "a".repeat(64), content_type: "image/png", size_bytes: "52341", width_px: 1024, height_px: 1024, association_verified: true };
+    expect(decodeSourceRun(text).output?.reference_id).toBe(ref);
   });
   it("a reloaded key hint cannot reconstruct an absent original tuple into a POST", async () => {
     const calls:string[]=[]; const {c,api}=controller(calls);

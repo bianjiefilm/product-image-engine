@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"sync"
 	"time"
 
@@ -258,7 +259,12 @@ func (s *Service) settlePlate(ctx context.Context, observed si.Run) {
 		observed = next
 	}
 	if observed.Output != nil && observed.Phase == "succeeded" {
-		_, _ = s.DerivePlate(ctx, observed.ID)
+		if _, e := s.DerivePlate(ctx, observed.ID); e != nil {
+			// A derivation failure on a charged run must never be invisible: the
+			// loop retries with backoff, and without this line nothing anywhere
+			// would say why a paid run never becomes a candidate.
+			log.Printf("sourceflow: plate derive %s: %v", observed.ID, e)
+		}
 	}
 }
 
@@ -287,6 +293,7 @@ func (s *Service) derivePending(ctx context.Context) {
 			continue
 		}
 		if _, e := s.DerivePlate(ctx, r.ID); e != nil {
+			log.Printf("sourceflow: plate derive retry %s: %v", r.ID, e)
 			b, _ := s.plateRetry.Load(r.ID)
 			tries := 1
 			if prev, ok := b.(plateBackoff); ok {

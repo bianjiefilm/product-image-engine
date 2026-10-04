@@ -418,7 +418,9 @@ func decodeSourceTask(raw []byte, r si.Run) (si.TaskFact, error) {
 			return si.TaskFact{}, si.ErrInvariant
 		}
 	}
-	f := si.TaskFact{HoldID: sourceString(m, "hold_id"), ChargeID: sourceString(m, "charge_id"), ReleaseID: sourceString(m, "release_id"), ID: sourceString(m, "task_id"), IdempotencyKey: r.TaskKey, Phase: sourceString(m, "phase"), Status: sourceString(m, "status"), Provider: r.Intent.Provider, Capability: r.Intent.Capability, Scope: s, Quote: *q}
+	// Platform canonical status/phase are UPPERCASE (e.g. "SUCCEEDED"); the
+	// internal enum is lowercase, so normalize at the decode boundary.
+	f := si.TaskFact{HoldID: sourceString(m, "hold_id"), ChargeID: sourceString(m, "charge_id"), ReleaseID: sourceString(m, "release_id"), ID: sourceString(m, "task_id"), IdempotencyKey: r.TaskKey, Phase: strings.ToLower(sourceString(m, "phase")), Status: strings.ToLower(sourceString(m, "status")), Provider: r.Intent.Provider, Capability: r.Intent.Capability, Scope: s, Quote: *q}
 	if f.ID == "" || f.Phase == "" || r.TaskID != "" && r.TaskID != f.ID {
 		return f, si.ErrInvariant
 	}

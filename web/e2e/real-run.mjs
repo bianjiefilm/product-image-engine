@@ -113,7 +113,16 @@ async function plateRun(index, caseId) {
     const bal1 = await balance(ctx);
     ledger.observed(label, { ...facts(view), timed_out: timedOut, balance_after: bal1 });
     if (timedOut || !view.plate || view.plate.derivation_state === "pending") return { label, case_id: caseId, background_intent: c.intents[0], layer: LAYER, outcome: "UNKNOWN", ...facts(view), screenshots: screens };
-    await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 60_000 });
+    // If the confirm response was lost (fault leg), the backend recovers along the
+    // original key but the panel keeps the idempotent confirm armed ("状态待核实").
+    // A person clicks that same button again; the driver does exactly that, once,
+    // and only while the button is actually there.
+    const resultShown = await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 15_000 }).then(() => true).catch(() => false);
+    if (!resultShown) {
+      const again = page.getByTestId("plate-confirm");
+      if (await again.isVisible().catch(() => false)) await again.click().catch(() => {});
+      await page.locator('[data-testid="plate-result"]').waitFor({ timeout: 60_000 });
+    }
     screens.push(await shot(page, `${label}-result-desktop`));
     await page.setViewportSize(VIEWPORTS.mobile); screens.push(await shot(page, `${label}-result-mobile`)); await page.setViewportSize(VIEWPORTS.desktop);
     let exportCheck = null, selected = false;
@@ -155,6 +164,10 @@ async function textRun() {
   const label = "M2-text_generate"; const { ctx, page } = await session(label);
   try {
     await page.goto(`${WEB}/start`);
+    // The text panel creates its own project inside quote(); the URL never carries
+    // ?project=. Remember today's projects so the paid facts can be read from the
+    // product's own run view of the newly created one, never from the DOM.
+    const known = new Set(((await jget(ctx, "/api/projects")).body?.projects ?? []).map((p) => p.id));
     await page.locator("summary", { hasText: "普通文字生成" }).click();
     // matches SourceImagePanel.tsx today: "创建个人普通图工程（1024×1024）" (the text panel is unchanged by Task 3)
     await page.getByRole("button", { name: /创建个人普通图工程/ }).click();
@@ -166,10 +179,29 @@ async function textRun() {
     if (!DRY && spentMinor(readLedger(ledger.file)) + amount > BUDGET) return { label, skipped: "budget", would_spend_minor: amount };
     ledger.intent(label, { expected_amount_minor: String(amount), balance_before: bal0 });
     await confirm.click();
-    const img = page.locator("figure img"); await img.first().waitFor({ timeout: WAIT_MS });
-    const ok = await img.first().evaluate((i) => i.complete && i.naturalWidth > 0);
+    // The text panel never polls a confirmed run on its own; the person reads the
+    // finished record back with 读取同一记录. The driver does exactly that person
+    // action on a timer instead of waiting passively for the image.
+    const img = page.locator("figure img");
+    const endWait = Date.now() + WAIT_MS;
+    while (Date.now() < endWait && !(await img.first().isVisible().catch(() => false))) {
+      const refresh = page.getByRole("button", { name: "读取同一记录" });
+      if (await refresh.isEnabled().catch(() => false)) await refresh.click({ timeout: 4000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    const shown = await img.first().isVisible().catch(() => false);
+    let ok = false;
+    if (shown) {
+      const endImg = Date.now() + 60_000;
+      while (Date.now() < endImg && !(ok = await img.first().evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))) await new Promise((r) => setTimeout(r, 1000));
+    }
     // The paid facts come from the product's own run view, never from the DOM: charge count and amount must be auditable.
-    const project = urlParam(page, "project");
+    let project = null; const endProject = Date.now() + 120_000;
+    while (!project && Date.now() < endProject) {
+      const list = (await jget(ctx, "/api/projects")).body?.projects ?? [];
+      project = list.map((p) => p.id).find((id) => !known.has(id)) ?? urlParam(page, "project") ?? null;
+      if (!project) await new Promise((r) => setTimeout(r, 3000));
+    }
     let view = null; const end = Date.now() + WAIT_MS;
     while (project && Date.now() < end) {
       const list = (await jget(ctx, `/api/projects/${project}/source-image-runs`)).body?.runs ?? [];
