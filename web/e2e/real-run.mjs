@@ -175,8 +175,22 @@ async function textRun() {
     if (!DRY && spentMinor(readLedger(ledger.file)) + amount > BUDGET) return { label, skipped: "budget", would_spend_minor: amount };
     ledger.intent(label, { expected_amount_minor: String(amount), balance_before: bal0 });
     await confirm.click();
-    const img = page.locator("figure img"); await img.first().waitFor({ timeout: WAIT_MS });
-    const ok = await img.first().evaluate((i) => i.complete && i.naturalWidth > 0);
+    // The text panel never polls a confirmed run on its own; the person reads the
+    // finished record back with 读取同一记录. The driver does exactly that person
+    // action on a timer instead of waiting passively for the image.
+    const img = page.locator("figure img");
+    const endWait = Date.now() + WAIT_MS;
+    while (Date.now() < endWait && !(await img.first().isVisible().catch(() => false))) {
+      const refresh = page.getByRole("button", { name: "读取同一记录" });
+      if (await refresh.isEnabled().catch(() => false)) await refresh.click({ timeout: 4000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    const shown = await img.first().isVisible().catch(() => false);
+    let ok = false;
+    if (shown) {
+      const endImg = Date.now() + 60_000;
+      while (Date.now() < endImg && !(ok = await img.first().evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))) await new Promise((r) => setTimeout(r, 1000));
+    }
     // The paid facts come from the product's own run view, never from the DOM: charge count and amount must be auditable.
     const project = urlParam(page, "project");
     let view = null; const end = Date.now() + WAIT_MS;
