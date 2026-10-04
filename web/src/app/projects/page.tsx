@@ -79,10 +79,12 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div>
+    <div className="list-workspace" data-layout="list">
       <div className="card">
         <div className="row" style={{ alignItems: "center" }}>
           <h2 style={{ flex: 1, margin: 0 }}>我的制作工程</h2>
+          <Link className="link" href="/start">开始做产品图</Link>
+          <Link className="link" href="/batches">批量</Link>
           <Link className="link" href="/handoff">
             接受跨应用交接
           </Link>
@@ -172,7 +174,7 @@ export default function ProjectsPage() {
         {projects === null ? (
           <span className="muted">加载中…</span>
         ) : projects.length === 0 ? (
-          <span className="muted">还没有工程,点右上角「新建工程」开始。</span>
+          <span className="muted">还没有工程。<Link className="link" href="/start">去开始做产品图</Link></span>
         ) : (
           <table>
             <thead>

@@ -7,6 +7,8 @@ import { ConsumePanel } from "@/components/billing/ConsumePanel";
 import { StartScreen } from "@/components/first-image/StartScreen";
 import { PhotoUpload } from "@/components/plate-lock/PhotoUpload";
 import { TextImagePanel } from "@/components/text-image/Panel";
+import { RecoveryStrip } from "@/components/recovery/RecoveryStrip";
+import { RevisionRail } from "@/components/revision/RevisionRail";
 import { SourceImagePanel } from "@/components/source-image/Panel";
 import { Button } from "@/components/ui/button";
 import { canGenerate, completionLevels, presentQuote, quoteFingerprint } from "@/lib/consume";
@@ -363,6 +365,12 @@ export default function StartClient() {
           mode="background_plate_lock"
           projectId={projectId || undefined}
           reloadKey={reloadKey}
+          railSlot={
+            <>
+              <RevisionRail projectId={projectId || undefined} />
+              <RecoveryStrip projectId={projectId || undefined} />
+            </>
+          }
           uploadSlot={
             <PhotoUpload
               projectId={projectId || undefined}
@@ -381,6 +389,19 @@ export default function StartClient() {
           }
         />
       ) : (
+        <>
+        <div className="media-actions">
+          {projectId ? (
+            <Button type="button" onClick={() => generate()} disabled={busy || heldForFunds}>
+              用已授权素材生成
+            </Button>
+          ) : null}
+          {projectId ? (
+            <Button type="button" variant="outline" onClick={refreshTask} disabled={busy}>
+              刷新同一任务
+            </Button>
+          ) : null}
+        </div>
         <ConsumePanel
           payerDisplay={quotedPayer || payerDisplay}
           presentation={quotedPresentation || presentQuote({})}
@@ -416,17 +437,10 @@ export default function StartClient() {
           quoteOrigin={quoteOrigin}
           quoted={quotedFlag}
         />
+        <RevisionRail projectId={projectId || undefined} />
+        <RecoveryStrip projectId={projectId || undefined} />
+        </>
       )}
-      {projectId && sourced ? (
-        <Button type="button" onClick={() => generate()} disabled={busy || heldForFunds}>
-          用已授权素材生成
-        </Button>
-      ) : null}
-      {projectId && sourced ? (
-        <Button type="button" variant="outline" onClick={refreshTask} disabled={busy}>
-          刷新同一任务
-        </Button>
-      ) : null}
       {!same ? <p>刷新后的任务编号变了，请不要把它当成同一次生成。</p> : null}
       {notice ? <p role="alert">{notice}</p> : null}
       {personal ? (

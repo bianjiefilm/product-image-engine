@@ -36,34 +36,46 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="card" style={{ maxWidth: 420, margin: "48px auto" }}>
-      <h2>登录</h2>
-      <form onSubmit={submit}>
-        <label>邮箱</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          required
-        />
-        <label>口令</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error ? <div className="banner">{error}</div> : null}
-        <div style={{ marginTop: 16 }}>
-          <button className="primary" type="submit" disabled={busy}>
-            {busy ? "登录中…" : "登录"}
-          </button>
+    <div className="media-bench" data-layout="entry">
+      <section className="media-stage" aria-label="产品图">
+        <div className="stage-empty">
+          <p className="stage-kicker">产品图</p>
+          <h2>先看商品，再决定改哪里</h2>
+          <p>登录之后从一张商品照片开始。商品本身保持不动。</p>
+          <p className="muted">这里还没有成片。登录不会生成图片。</p>
         </div>
-      </form>
-      <p className="muted" style={{ marginBottom: 0 }}>
-        身份由平台统一派生(usr_/acct_),本应用不保存口令。
-      </p>
+      </section>
+      <aside className="media-rail">
+        <div className="card">
+          <h2>登录</h2>
+          <form onSubmit={submit}>
+            <div className="media-actions">
+              <button className="primary" type="submit" disabled={busy}>
+                {busy ? "登录中…" : "登录后开始"}
+              </button>
+            </div>
+            <label>邮箱</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+            />
+            <label>口令</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {error ? <div className="banner" role="alert">{error}</div> : null}
+          </form>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            身份由平台统一派生，本应用不保存口令。
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
