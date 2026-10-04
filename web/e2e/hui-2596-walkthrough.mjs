@@ -175,7 +175,8 @@ const content = await jget(`/api/projects/${PROJECT}/revisions/V1/content`);
 save("revision-content-v1.meta.json", { status: content.status, headers: { x_revision_version: content.headers["x-revision-version"], x_revision_sha256: content.headers["x-revision-sha256"] } });
 fs.writeFileSync(path.join(OUT, "revision-V1-content.png"), Buffer.from(await (await ctx.request.get(WEB + `/api/projects/${PROJECT}/revisions/V1/content`)).body()));
 fs.writeFileSync(path.join(OUT, "revision-V2-content.png"), Buffer.from(await (await ctx.request.get(WEB + `/api/projects/${PROJECT}/revisions/V2/content`)).body()));
-const expFailed = await jpost(`/api/projects/${PROJECT}/revisions/${failed.body?.versions?.slice(-2)?.[0]?.label ?? "V3"}/export`, {});
+const failedLabel = failed.body?.versions?.[failed.body.versions.length - 1]?.label;
+const expFailed = await jpost(`/api/projects/${PROJECT}/revisions/${failedLabel ?? ""}/export`, {});
 save("revision-export-failed.json", expFailed);
 if (expFailed.status !== 409) throw new Error("export of a failed version is not 409 not_exportable");
 

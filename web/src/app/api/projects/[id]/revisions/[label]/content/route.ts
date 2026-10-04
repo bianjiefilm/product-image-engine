@@ -29,14 +29,14 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       }
       throw new UpstreamError(res.status, code, message);
     }
-    return new Response(res.body, {
-      status: 200,
-      headers: {
-        "Content-Type": res.headers.get("content-type") ?? "image/png",
-        "Cache-Control": "no-store",
-        "X-Revision-Version": res.headers.get("X-Revision-Version") ?? label,
-      },
+    const headers = new Headers({
+      "Content-Type": res.headers.get("content-type") ?? "image/png",
+      "Cache-Control": "no-store",
+      "X-Revision-Version": res.headers.get("X-Revision-Version") ?? label,
     });
+    const sha = res.headers.get("X-Revision-Sha256");
+    if (sha) headers.set("X-Revision-Sha256", sha);
+    return new Response(res.body, { status: 200, headers });
   } catch (e) {
     return toErrorResponse(e);
   }
