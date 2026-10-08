@@ -215,10 +215,11 @@ describe("半成品标记", () => {
   it("记下的命中和重新扫描该页面文件一致", () => {
     const want = new Map<string, Marker[]>([
       ["/", []],
-      ["/login", ["inline style", "raw button", "raw input"]],
+      // HUI-2627 fix2:三个路由页的行内样式收敛为版式工具类,标记账随之收缩。
+      ["/login", ["raw button", "raw input"]],
       ["/start", []],
-      ["/projects", ["inline style", "raw button", "raw input", "raw table"]],
-      ["/projects/[id]", ["inline style", "raw button", "raw input", "raw table"]],
+      ["/projects", ["raw button", "raw input", "raw table"]],
+      ["/projects/[id]", ["raw button", "raw input", "raw table"]],
       ["/batches", ["inline style", "raw button", "raw input", "raw table"]],
       ["/handoff", ["inline style", "raw button", "raw input", "raw table"]],
     ]);

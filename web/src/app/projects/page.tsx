@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorBanner } from "@/components/ui/error-banner";
+import { jsonBody, jsonHeaders } from "@/lib/api-client";
+import { projectSourceLabel, projectStatusLabel } from "@/lib/project-labels";
 
 interface Project {
   id: string;
@@ -76,8 +78,8 @@ export default function ProjectsPage() {
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        headers: jsonHeaders,
+        body: jsonBody(form),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -96,8 +98,8 @@ export default function ProjectsPage() {
   return (
     <div className="list-workspace" data-layout="list">
       <div className="card">
-        <div className="row" style={{ alignItems: "center" }}>
-          <h2 style={{ flex: 1, margin: 0 }}>我的制作工程</h2>
+        <div className="row row-center">
+          <h2 className="row-title">我的制作工程</h2>
           <Link className="link" href="/start">开始做产品图</Link>
           <Link className="link" href="/batches">批量</Link>
           <Link className="link" href="/handoff">
@@ -108,7 +110,7 @@ export default function ProjectsPage() {
           </button>
         </div>
         {showCreate ? (
-          <form onSubmit={create} style={{ marginTop: 12 }}>
+          <form onSubmit={create} className="mt-12">
             <div className="row">
               <div>
                 <label>工程名称</label>
@@ -175,21 +177,25 @@ export default function ProjectsPage() {
                 </div>
               ) : null}
             </div>
-            <div style={{ marginTop: 12 }}>
+            <div className="mt-12">
               <button className="primary" type="submit" disabled={creating}>
                 {creating ? "创建中…" : "创建"}
               </button>
             </div>
           </form>
         ) : null}
-        {error ? <ErrorBanner message={error} onRetry={() => void reload()} /> : null}
+        {error ? (
+          <div data-state="error">
+            <ErrorBanner message={error} onRetry={() => void reload()} />
+          </div>
+        ) : null}
       </div>
 
       <div className="card">
         {projects === null ? (
-          <span className="muted">加载中…</span>
+          <span className="muted" data-state="loading">加载中…</span>
         ) : projects.length === 0 ? (
-          <span className="muted">还没有工程。<Link className="link" href="/start">去开始做产品图</Link></span>
+          <span className="muted" data-state="empty">还没有工程。<Link className="link" href="/start">去开始做产品图</Link></span>
         ) : (
           <table>
             <thead>
@@ -210,7 +216,9 @@ export default function ProjectsPage() {
                       {p.name}
                     </Link>
                   </td>
-                  <td>{p.status}</td>
+                  <td>
+                    <span className="pill">{projectStatusLabel(p.status)}</span>
+                  </td>
                   <td>{p.usage_kind || "—"}</td>
                   <td>
                     {p.width_px}×{p.height_px}
@@ -218,7 +226,7 @@ export default function ProjectsPage() {
                   <td>
                     {p.source_type ? (
                       <span className="pill">
-                        {p.source_type}
+                        {projectSourceLabel(p.source_type)}
                         {p.source_ref ? ` · ${p.source_ref}` : ""}
                       </span>
                     ) : (
