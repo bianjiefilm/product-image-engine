@@ -57,3 +57,12 @@
 ## D12 驱动缺口补齐清单(接棒判定)
 - 驱动已含:八页×五宽矩阵、login 主操作置顶、首图四步、结果卡三 chip、2596 采用/回退、诚实 downstream 文案、empty/disabled/revision_off/loading/offline/not_usable 状态、axe(1440+390)、去Logo 品牌族材料。
 - 接棒补齐:逐项核对后驱动不需要结构性改动;若跑动中出现 selector/时序失配,按最小改动修复并在此记录。
+
+## D13 清零扫描口径:裸 hex=0 硬断言,raw control/inline style 按基线防回潮
+- 事实:实测 web/src 裸 hex=0;inline style 72 / raw button 45 / raw input 53 / raw table 14。全部清零=整面重写七个页,必触 HUI-2596 交互(禁区),超出本轮 P0;page-census markerBook 本身就是「稳定记账」而非清零口径。
+- 拍板:tests/finish-hygiene.test.ts —— 裸 hex 必须 0;其余四类钉在 2026-10-08 基线「只许下降」;逐文件账目入 hygiene-scan.json。「无 table/form 主视觉」红线由驱动在真实渲染层把关(list 页允许 Work Pattern 数据表)。
+
+## D14 驱动两处修复与 code-review 结果
+- 修复 1:axe/blind 的 390 腿曾误用 1440 视口(batches blind 1440/390 截图哈希相同实锤)——驱动内切视口修复,复跑两连 0 fail。
+- 修复 2:axe label(critical) 两处(RevisionRail 原图/遮罩 input、详情页 size-adapt 成果 input)——htmlFor/id 显式关联,TDD 先红后绿;HUI-2596 交互未动。
+- code-review(双轴内联,任务书禁派孙代理):Standards 0 Major/3 Minor(ErrorBanner 显式 role 契约钉死、基线在测试与 JSON 双处出现、驱动与 walkthrough 驱动惯用式重复——均有既定理由);Spec 0 Major/1 partial(「1440 与 390 完成核心流程」中 390 全流程证据继承自 10-04 真实栈验收,fixture 层 390 覆盖为矩阵+单栏断言,PR 如实标注)。
