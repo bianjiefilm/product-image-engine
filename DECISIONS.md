@@ -66,3 +66,52 @@
 - 修复 1:axe/blind 的 390 腿曾误用 1440 视口(batches blind 1440/390 截图哈希相同实锤)——驱动内切视口修复,复跑两连 0 fail。
 - 修复 2:axe label(critical) 两处(RevisionRail 原图/遮罩 input、详情页 size-adapt 成果 input)——htmlFor/id 显式关联,TDD 先红后绿;HUI-2596 交互未动。
 - code-review(双轴内联,任务书禁派孙代理):Standards 0 Major/3 Minor(ErrorBanner 显式 role 契约钉死、基线在测试与 JSON 双处出现、驱动与 walkthrough 驱动惯用式重复——均有既定理由);Spec 0 Major/1 partial(「1440 与 390 完成核心流程」中 390 全流程证据继承自 10-04 真实栈验收,fixture 层 390 覆盖为矩阵+单栏断言,PR 如实标注)。
+
+---
+
+# gate-r2 修复轮(2026-10-08,fix2,接棒续写)
+
+2625 Finish Gate 首裁 product-image-web=fail,修复清单 5 条回流;业主不在线,以下继续自行拍板。
+
+## D15 fix2 判读基线:210 是「route 级」计数,[id] 页 91 条 × Detail/Result 两角色
+- 事实:复扫 62a0d70a 的 210 = login 8 + start 1×2 角色 + projects 18 + projects/[id] 91×2 角色;与 fix-list「projects/[id] 91 findings ×2 角色(inline 71 全仓大头)」一致。逐 rule:inline 71、unstyled 65、off_ds 50、raw_json 16、missing 6、hand_filled 2。
+- 拍板:逐条修复一律以 route 级计数对账;复扫产物入 fix2 包(detector-rescan.json),不重算口径。
+
+## D16 修复1 双语徽章:映射收进 lib,契约外枚举不裸奔
+- 拍板:新建 web/src/lib/project-labels.ts(TDD 先红后绿):draft/active/archived → 草稿/进行中/已归档;standalone/order/campaign → 独立制作/挂接订单/挂接活动(与新建工程表单下拉文案同族);未知枚举给「状态未知/来源未知」产品语句,不回显英文。projects 列表状态/来源两列换 .pill 徽章(与批次「部分失败」同款);[id] 页来源 pill 与状态下拉 option 文案同步同族词汇(值不变)。盲评锚点只点了 projects 列表,[id] 页同族词汇一并收敛属同一修复面,已在 PR 注明。
+- 遗留:[id] 页 versions 表的生成状态(adopted→已采用,其余裸英文)属 first-image STATUS_LABEL 词汇族,不在本条锚点内,记遗留不改。
+
+## D17 修复3 inline 71:38 处页面行内样式全部「真改」,计算布局白名单记账 0 条
+- 事实:逐条核对 38 处(login 1 / projects 4 / [id] 33),全部是 alignItems/flex/margin/gap 一类静态版式事实,**没有一处**是动态测量布局(width/height/top/left 随数据计算)——即没有一条符合 data-uifinish-computed-layout 白名单记账的前提。
+- 拍板:全部真改为 globals.css 版式工具类(.row-center/.flex-0/.flex-2/.row-title/.mt-4/8/12/.mb-0/.m-0/.banner-action/.row-gap-8/.flex-none);不虚报记账、不虚报清零。工具类只承载既有行内样式的版式事实,颜色字重仍走语义 token;`.row > div` 特异性冲突以 `.row > .flex-0` 等显式战胜,渲染结果与改动前逐像素等价(flex:1/min-width:140px 行为保持)。
+- 结果:inline 71 → 0(route 级);全 src inline_style 72 → 34。
+
+## D18 修复3 raw_json 16:请求体序列化收敛到共享客户端,错误文案本身已合规
+- 事实:16 条(7+7 同文件双角色 + login 1 + projects 1)全部是 `body: JSON.stringify(...)` **请求体构造**,不是用户可见的错误文案;页面错误面在 finish-r1 已是产品语句 + 恢复动作(ErrorBanner)。
+- 拍板:新建 web/src/lib/api-client.ts(TDD):jsonBody/jsonHeaders 冻结导出;8 处请求点全部改走共享客户端。这是真实的结构收敛(单一序列化点、类型化出口),页面源不再内联 JSON 处理;不是把字符串拆开躲正则。
+- 结果:raw_json 16 → 0(route 级)。
+
+## D19 修复5 三态声明:按现行 detector 口径在页面源补字面量,载体全部是真实分支
+- 拍板:6/6 路由(4 个页面源)补 data-state="loading|empty|error" 静态声明,一律挂在真实状态分支上,不做无中生有的空壳:
+  - projects:加载中/还没有工程/ErrorBanner 三分支(真实条件渲染);
+  - login:busy 时渲染的「登录中…」span(loading)、stage-empty 空台(empty)、错误 banner(error);
+  - [id]:loadError 早退分支(error)、!project 加载分支(loading)、「尚未挂接素材」空分支(empty);
+  - start:Suspense 回退(loading)、新增 SurfaceErrorBoundary 回退(error,产品语句+返回入口)、工作台壳声明 empty(StartScreen 的候选空台 stage-empty 常驻渲染,页面注释如实写明这一语义)。
+- 配套:tests/surface-states.test.ts 以 detector 同口径正则防回潮;改判读口径归 2619,本票不预判。
+
+## D20 修复4 offline:三层口径说明 + 补真实浏览器离线的应用内 UI
+- 拍板:不满足于「写说明」——新增 OfflineBanner(根 layout 挂载)覆盖「已加载后真断网」层:浏览器 online/offline 事件驱动、重试为真实 fetch 探针、恢复自动消失,零伪造;真实 Chrome setOffline 证据入包。三层口径(① fixture 路由层 ② 真断网会话中 ③ 真断网冷加载=浏览器错误页,SPA 物理边界)写入 fix2/offline-two-layers.md;③ 层不做 Service Worker(新功能,留票)。
+
+## D21 修复2 触控账目:探针入仓,实测 0 不达标 + 3 行内例外
+- 拍板:探针 e2e/hui-2627-fix2.mjs 入仓(对标 2626 touch-targets.json 形态:viewport 键 + label/tag/cls/w/h,增列 surface/pass 便于对账),六代表面 × {430,390} 全量 100 控件/腿。首轮实测 21 处 <44px,逐处修尺寸:壳导航按钮(eco-nav menuBtn/switchBtn 44×32)以 globals.css ≤430 兜底提升到 44(2626 同款做法,不改共享组件源);.row 头部链接加水平命中补足(批量 28→44+);表格行主链接(工程名)在移动卡片版式下提升为 44px 命中行。余 3 处段落内文字链接(去开始做产品图/已有制作工程/接受跨应用交接)按 WCAG 2.5.8 行内例外记账——其中 1 处在 RevisionRail 内,纪律不动其源文件,CSS 亦不越权改它的版式。
+- 结果:@430/@390 均 0 fail + 3 inline-exception;账目 touch-targets.json + 12 张走查截图入包。
+
+## D22 剩余 117 findings 记账:off_ds 50 + unstyled 65 + hand_filled 2,维持 D13 结构基线
+- 事实:消化后复扫 210 → 117(Δ-93);剩余三类不动的理由:D13 已裁决「raw 控件全清零=整面重写、必触 HUI-2596 禁区」,本轮无权推翻;hand_filled 2 条是 `sourceTenantId: null` 字段名正则误报(值恒为 null,字段名属 eco-nav workbench 契约,改名牵动共享壳)。
+- 拍板:剩余按 D13 记账原样保留,fix2 README 逐 rule 对账;防回潮测试(census markerBook + finish-hygiene)随真实页面收缩同步收紧:markerBook 三条路由的 inline style 标记移除、inline_style 基线 72→34、raw_button 维持 45(新组件一律走设计系统 Button,OfflineBanner 即如此;login 的 loading 声明用条件 span 不加第二枚按钮)。账目:fix2/hygiene-scan.json(与 finish-r1 同格式对照)。
+
+## D23 证据与验证账目
+- vitest:基线 41 文件/333 用例 → fix2 46 文件/349 用例全绿(新增 project-labels 4、api-client 2、surface-error-boundary 3、ui-offline-banner 3、surface-states 4;0 破坏)。next build exit 0。
+- 证据包 docs/audits/hui-2627/fix2/:双语徽章断言+1440/390 截图(before 引 finish-r1 包 finish-blind-projects-390.png,不推翻原证据)、touch-targets.json+12 截图、state-offline-browser.json+截图、hygiene-scan.json、detector-rescan.json、offline-two-layers.md、fix2-run-record.json、SHA256SUMS。
+- fixture/端口:沿用 32321(web)/32324(fixture-api)惯例;零第三方付费;真实 Chrome(headless)。
+- HUI-2596 交互、RevisionRail、HUI-2622、D2 全栈、Motion Consumer、Redis:均未触碰(grep 复核 diff 文件清单)。

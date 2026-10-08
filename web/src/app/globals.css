@@ -178,12 +178,15 @@ p .link, .muted .link { text-decoration: underline; }
 .offline-banner button { min-height: 44px; }
 
 /* HUI-2627 fix2:≤430 触控命中区逐控件 ≥44px(a11y touch-target 项)。
-   逐控件实测账目:e2e/touch-targets.mjs → docs/audits/hui-2627/fix2/touch-targets.json。
-   表格行内的文字链接属 WCAG 2.5.8 行内例外,与 2626 同款记账,不改版式。 */
+   逐控件实测账目:e2e/hui-2627-fix2.mjs → docs/audits/hui-2627/fix2/touch-targets.json。
+   壳导航按钮以 globals 兜底 ≥44px(2626 同款做法,不改共享组件源);
+   表格行内/段落中的文字链接属 WCAG 2.5.8 行内例外,与 2626 同款记账,不改版式。 */
 @media (max-width: 430px) {
   button { min-height: 44px; }
   input:not([type="checkbox"]), select, textarea { min-height: 44px; }
   details > summary { min-height: 44px; display: flex; align-items: center; }
   .media-actions > * { min-height: 44px; }
-  .row > .link { display: inline-flex; align-items: center; min-height: 44px; }
+  .row > .link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; }
+  .list-workspace td .link { display: inline-flex; align-items: center; min-height: 44px; }
+  [data-eco-topnav] button { min-height: 44px; }
 }

@@ -1,0 +1,2006 @@
+{
+ "390": [
+  {
+   "surface": "login",
+   "label": "登录后开始",
+   "tag": "button",
+   "cls": "primary",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "login",
+   "label": "you@example.com",
+   "tag": "input",
+   "cls": "",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "login",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "上传并使用",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_secondary__Km69l",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "去开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 98,
+   "h": 17,
+   "min": 44,
+   "pass": "inline-exception"
+  },
+  {
+   "surface": "start",
+   "label": "核对原费用",
+   "tag": "button",
+   "cls": "primary",
+   "w": 264,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "回到开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 264,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 264,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "批量列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 264,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "普通文字生成（不保证商品一致）",
+   "tag": "summary",
+   "cls": "",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "创建个人普通图工程（1024×1024）",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp",
+   "w": 254,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "读取旧记录",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "已有制作工程",
+   "tag": "a",
+   "cls": "",
+   "w": 84,
+   "h": 17,
+   "min": 44,
+   "pass": "inline-exception"
+  },
+  {
+   "surface": "projects",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "批量",
+   "tag": "a",
+   "cls": "link",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "接受跨应用交接",
+   "tag": "a",
+   "cls": "link",
+   "w": 114,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "新建工程",
+   "tag": "button",
+   "cls": "primary",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "个人商品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 70,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "上传并使用",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_secondary__Km69l",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "← 返回工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 116,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "保存简报",
+   "tag": "button",
+   "cls": "primary",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "个人商品图",
+   "tag": "input",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "草稿进行中已归档",
+   "tag": "select",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "电商主图",
+   "tag": "input",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "1024",
+   "tag": "input",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "1280",
+   "tag": "input",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "素材引用",
+   "tag": "summary",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "上传并挂接",
+   "tag": "button",
+   "cls": "primary",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "已有素材引用",
+   "tag": "summary",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "0",
+   "tag": "input",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "挂接素材",
+   "tag": "button",
+   "cls": "",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "背景简单一点",
+   "tag": "button",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "换成户外",
+   "tag": "button",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "保留商品，只调亮",
+   "tag": "button",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "例如：背景简单一点",
+   "tag": "input",
+   "cls": "",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "看会影响哪里",
+   "tag": "button",
+   "cls": "primary",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "采用这个版本",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "回到 V1",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送数字人",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送 AiCut",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送矩阵",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "采用这个版本",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "回到 V2",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送数字人",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送 AiCut",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送矩阵",
+   "tag": "button",
+   "cls": "",
+   "w": 126,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "V1 · 已采用V2",
+   "tag": "select",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "V1 · 已采用V2",
+   "tag": "select",
+   "cls": "",
+   "w": 143,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "并排比较",
+   "tag": "button",
+   "cls": "primary",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "核对原费用",
+   "tag": "button",
+   "cls": "primary",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "回到开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "批量列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 298,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "例如：蓝色纸盒，浅灰棚拍",
+   "tag": "textarea",
+   "cls": "",
+   "w": 332,
+   "h": 69,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "获取报价",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "明确重新生成（新请求）",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 184,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "重新读取当前登录与历史",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 184,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "读取旧记录",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "选择已有产品图",
+   "tag": "select",
+   "cls": "",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "360",
+   "tag": "input",
+   "cls": "",
+   "w": 303,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "scene",
+   "tag": "input",
+   "cls": "",
+   "w": 303,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "用这张产品图做展示视频",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp",
+   "w": 184,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "刷新同一条记录",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 128,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "提交生成",
+   "tag": "button",
+   "cls": "primary",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "读取费用事实",
+   "tag": "button",
+   "cls": "",
+   "w": 114,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "接受跨应用交接",
+   "tag": "a",
+   "cls": "link",
+   "w": 98,
+   "h": 17,
+   "min": 44,
+   "pass": "inline-exception"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 180,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "登记成果",
+   "tag": "button",
+   "cls": "primary",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "返回工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "做单张",
+   "tag": "a",
+   "cls": "link",
+   "w": 58,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "建批(0 个文件)",
+   "tag": "button",
+   "cls": "primary",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "如:秋季上新批次",
+   "tag": "input",
+   "cls": "",
+   "w": 160,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 160,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "白底主图,场景图",
+   "tag": "input",
+   "cls": "",
+   "w": 160,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "如:秋季上新",
+   "tag": "input",
+   "cls": "",
+   "w": 160,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "查看",
+   "tag": "button",
+   "cls": "",
+   "w": 58,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "→ 我的工程",
+   "tag": "a",
+   "cls": "link",
+   "w": 88,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "接受交接",
+   "tag": "button",
+   "cls": "primary",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "把交接文档贴在这里",
+   "tag": "textarea",
+   "cls": "",
+   "w": 332,
+   "h": 188,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "主图",
+   "tag": "input",
+   "cls": "",
+   "w": 332,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  }
+ ],
+ "430": [
+  {
+   "surface": "login",
+   "label": "登录后开始",
+   "tag": "button",
+   "cls": "primary",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "login",
+   "label": "you@example.com",
+   "tag": "input",
+   "cls": "",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "login",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "上传并使用",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_secondary__Km69l",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "去开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 98,
+   "h": 17,
+   "min": 44,
+   "pass": "inline-exception"
+  },
+  {
+   "surface": "start",
+   "label": "核对原费用",
+   "tag": "button",
+   "cls": "primary",
+   "w": 304,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "回到开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 304,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 304,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "批量列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 304,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "普通文字生成（不保证商品一致）",
+   "tag": "summary",
+   "cls": "",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "创建个人普通图工程（1024×1024）",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp",
+   "w": 254,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "读取旧记录",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "start",
+   "label": "已有制作工程",
+   "tag": "a",
+   "cls": "",
+   "w": 84,
+   "h": 17,
+   "min": 44,
+   "pass": "inline-exception"
+  },
+  {
+   "surface": "projects",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "批量",
+   "tag": "a",
+   "cls": "link",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "接受跨应用交接",
+   "tag": "a",
+   "cls": "link",
+   "w": 114,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "新建工程",
+   "tag": "button",
+   "cls": "primary",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "projects",
+   "label": "个人商品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 70,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "上传并使用",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_secondary__Km69l",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "← 返回工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 116,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "保存简报",
+   "tag": "button",
+   "cls": "primary",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "个人商品图",
+   "tag": "input",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "草稿进行中已归档",
+   "tag": "select",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "电商主图",
+   "tag": "input",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "1024",
+   "tag": "input",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "1280",
+   "tag": "input",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "素材引用",
+   "tag": "summary",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "上传并挂接",
+   "tag": "button",
+   "cls": "primary",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "已有素材引用",
+   "tag": "summary",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "0",
+   "tag": "input",
+   "cls": "",
+   "w": 186,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "挂接素材",
+   "tag": "button",
+   "cls": "",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "背景简单一点",
+   "tag": "button",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "换成户外",
+   "tag": "button",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "保留商品，只调亮",
+   "tag": "button",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "例如：背景简单一点",
+   "tag": "input",
+   "cls": "",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "看会影响哪里",
+   "tag": "button",
+   "cls": "primary",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "采用这个版本",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "回到 V1",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送数字人",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送 AiCut",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送矩阵",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "采用这个版本",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "回到 V2",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送数字人",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送 AiCut",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "送矩阵",
+   "tag": "button",
+   "cls": "",
+   "w": 146,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "V1 · 已采用V2",
+   "tag": "select",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "V1 · 已采用V2",
+   "tag": "select",
+   "cls": "",
+   "w": 163,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "并排比较",
+   "tag": "button",
+   "cls": "primary",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "核对原费用",
+   "tag": "button",
+   "cls": "primary",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "回到开始做产品图",
+   "tag": "a",
+   "cls": "link",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "批量列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 338,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "例如：蓝色纸盒，浅灰棚拍",
+   "tag": "textarea",
+   "cls": "",
+   "w": 372,
+   "h": 69,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "获取报价",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "明确重新生成（新请求）",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 184,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "重新读取当前登录与历史",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 184,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "读取旧记录",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "选择已有产品图",
+   "tag": "select",
+   "cls": "",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "360",
+   "tag": "input",
+   "cls": "",
+   "w": 343,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "scene",
+   "tag": "input",
+   "cls": "",
+   "w": 343,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "用这张产品图做展示视频",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp",
+   "w": 184,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "刷新同一条记录",
+   "tag": "button",
+   "cls": "ui_btn__1wlfp ui_outline__Qn7XW",
+   "w": 128,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "提交生成",
+   "tag": "button",
+   "cls": "primary",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "读取费用事实",
+   "tag": "button",
+   "cls": "",
+   "w": 114,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "接受跨应用交接",
+   "tag": "a",
+   "cls": "link",
+   "w": 98,
+   "h": 17,
+   "min": 44,
+   "pass": "inline-exception"
+  },
+  {
+   "surface": "project-detail",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 220,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "project-detail",
+   "label": "登记成果",
+   "tag": "button",
+   "cls": "primary",
+   "w": 86,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "返回工程列表",
+   "tag": "a",
+   "cls": "link",
+   "w": 100,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "做单张",
+   "tag": "a",
+   "cls": "link",
+   "w": 58,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "建批(0 个文件)",
+   "tag": "button",
+   "cls": "primary",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "如:秋季上新批次",
+   "tag": "input",
+   "cls": "",
+   "w": 180,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "INPUT",
+   "tag": "input",
+   "cls": "",
+   "w": 180,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "白底主图,场景图",
+   "tag": "input",
+   "cls": "",
+   "w": 180,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "如:秋季上新",
+   "tag": "input",
+   "cls": "",
+   "w": 180,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "batches",
+   "label": "查看",
+   "tag": "button",
+   "cls": "",
+   "w": 58,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "应用",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "个人",
+   "tag": "button",
+   "cls": "eco-nav_switchBtn__Ig_kV",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "账号",
+   "tag": "button",
+   "cls": "eco-nav_menuBtn__PIbLq",
+   "w": 44,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "→ 我的工程",
+   "tag": "a",
+   "cls": "link",
+   "w": 88,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "接受交接",
+   "tag": "button",
+   "cls": "primary",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "把交接文档贴在这里",
+   "tag": "textarea",
+   "cls": "",
+   "w": 372,
+   "h": 188,
+   "min": 44,
+   "pass": "pass"
+  },
+  {
+   "surface": "handoff",
+   "label": "主图",
+   "tag": "input",
+   "cls": "",
+   "w": 372,
+   "h": 44,
+   "min": 44,
+   "pass": "pass"
+  }
+ ]
+}

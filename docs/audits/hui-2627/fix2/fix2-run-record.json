@@ -1,0 +1,38 @@
+{
+ "layer": "fixture",
+ "web": "http://localhost:32321",
+ "started_at": "2026-10-08T12:30:16.785Z",
+ "widths": [
+  430,
+  390
+ ],
+ "min_target": 44,
+ "findings": [
+  {
+   "kind": "ok",
+   "what": "projects list shows Chinese status/source badges only"
+  },
+  {
+   "kind": "ok",
+   "what": "@430: 100 controls, 0 below 44px, 3 inline exceptions"
+  },
+  {
+   "kind": "ok",
+   "what": "@390: 100 controls, 0 below 44px, 3 inline exceptions"
+  },
+  {
+   "kind": "ok",
+   "what": "real-browser offline: banner shows with retry, clears on recovery"
+  }
+ ],
+ "readyz": {
+  "creates": 0,
+  "confirms": 0,
+  "selects": 0,
+  "returns": 0,
+  "receipts": 0,
+  "uploads": 0,
+  "projects": 0,
+  "scenario": "limited"
+ }
+}
