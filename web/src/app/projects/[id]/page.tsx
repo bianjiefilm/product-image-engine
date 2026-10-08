@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { usePublishWorkbench } from "@/components/eco-nav/workbench";
 import { SubjectFidelityPanel } from "@/components/SubjectFidelityPanel";
 import { sourceLabel } from "@/lib/eco-nav";
+import { jsonBody, jsonHeaders } from "@/lib/api-client";
+import { projectSourceLabel } from "@/lib/project-labels";
 import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 import { LightScenePanel } from "@/components/light-scene/Panel";
 import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
@@ -246,8 +248,8 @@ export default function ProjectDetailPage() {
     try {
       const res = await fetch(`/api/projects/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        headers: jsonHeaders,
+        body: jsonBody(form),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -266,8 +268,8 @@ export default function ProjectDetailPage() {
     setNotice("");
     const res = await fetch(`/api/projects/${id}/inputs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newInput),
+      headers: jsonHeaders,
+      body: jsonBody(newInput),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -319,8 +321,8 @@ export default function ProjectDetailPage() {
       const photo = upData?.photo ?? {};
       const attach = await fetch(`/api/projects/${id}/inputs`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        headers: jsonHeaders,
+        body: jsonBody({
           platform_asset_id: photo.platform_asset_id ?? "",
           snapshot_name: photo.original_name ?? photoFile.name,
           snapshot_size: photo.size_bytes ?? bytes.byteLength,
@@ -350,8 +352,8 @@ export default function ProjectDetailPage() {
     setNotice("");
     const res = await fetch(`/api/projects/${id}/versions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      headers: jsonHeaders,
+      body: jsonBody({}),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -380,8 +382,8 @@ export default function ProjectDetailPage() {
     setSrcNotice("");
     const res = await fetch(`/api/bindings/${binding.id}/adopt`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snapshot_id: pendingSnap.id }),
+      headers: jsonHeaders,
+      body: jsonBody({ snapshot_id: pendingSnap.id }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -416,8 +418,8 @@ export default function ProjectDetailPage() {
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
     const res = await fetch(`/api/projects/${id}/outputs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      headers: jsonHeaders,
+      body: jsonBody({
         file_name: outputFile.name,
         content_type: outputFile.type || "image/png",
         data_b64: btoa(bin),
@@ -495,8 +497,8 @@ export default function ProjectDetailPage() {
       for (const p of saSelected) {
         const res = await fetch(`/api/projects/${id}/size-adapt`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          headers: jsonHeaders,
+          body: jsonBody({
             source_output_id: saSource,
             preset_name: p,
             format: saFormat,
@@ -542,7 +544,7 @@ export default function ProjectDetailPage() {
 
   if (loadError) {
     return (
-      <section id="recovery" className="card" aria-label="出错与恢复">
+      <section id="recovery" className="card" aria-label="出错与恢复" data-state="error">
         <h2>这个工程没有打开</h2>
         <div className="banner" role="alert">{loadError}</div>
         <p className="muted">不会重新做图，也不会再扣一次。</p>
@@ -553,23 +555,23 @@ export default function ProjectDetailPage() {
       </section>
     );
   }
-  if (!project) return <div className="card muted">加载中…</div>;
+  if (!project) return <div className="card muted" data-state="loading">加载中…</div>;
 
   const benchMaterials = (
     <>
       <div className="card">
-        <div className="row" style={{ alignItems: "center" }}>
-          <h2 style={{ flex: 1, margin: 0 }}>{project.name}</h2>
+        <div className="row row-center">
+          <h2 className="row-title">{project.name}</h2>
           <Link className="link" href="/projects">
             ← 返回工程列表
           </Link>
         </div>
-        <p className="muted" style={{ marginTop: 4 }}>
+        <p className="muted mt-4">
           来源:
           {project.source_type ? (
             <>
               <span className="pill">
-                {project.source_type} · {project.source_ref}
+                {projectSourceLabel(project.source_type)} · {project.source_ref}
               </span>{" "}
               <span className="muted">(来源详情与回传入口见下方卡片)</span>
             </>
@@ -604,9 +606,9 @@ export default function ProjectDetailPage() {
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value })}
               >
-                <option value="draft">draft</option>
-                <option value="active">active</option>
-                <option value="archived">archived</option>
+                <option value="draft">草稿</option>
+                <option value="active">进行中</option>
+                <option value="archived">已归档</option>
               </select>
             </div>
           </div>
@@ -651,7 +653,7 @@ export default function ProjectDetailPage() {
       <div className="card">
         <h2>商品素材</h2>
         {inputs.length === 0 ? (
-          <p className="muted">尚未挂接素材。</p>
+          <p className="muted" data-state="empty">尚未挂接素材。</p>
         ) : (
           <ul className="asset-strip">
             {inputs.map((i) => (
@@ -701,7 +703,7 @@ export default function ProjectDetailPage() {
           </table>
         )}
         </details>
-        <form onSubmit={uploadPhoto} style={{ marginTop: 12 }}>
+        <form onSubmit={uploadPhoto} className="mt-12">
           <div className="media-actions">
             <button className="primary" type="submit" disabled={!photoFile || photoBusy}>
               {photoBusy ? "上传中…" : "上传并挂接"}
@@ -721,7 +723,7 @@ export default function ProjectDetailPage() {
         </form>
         <details>
           <summary>已有素材引用</summary>
-        <form onSubmit={addInput} style={{ marginTop: 12 }}>
+        <form onSubmit={addInput} className="mt-12">
           <div className="row">
             <div>
               <label>平台 asset_id</label>
@@ -752,12 +754,12 @@ export default function ProjectDetailPage() {
                 }
               />
             </div>
-            <div style={{ flex: 0 }}>
+            <div className="flex-0">
               <button type="submit">挂接素材</button>
             </div>
           </div>
         </form>
-        <p className="muted" style={{ marginBottom: 0 }}>
+        <p className="muted mb-0">
           上传经本产品 BFF 受限中继:服务端核验格式/大小/用途并做内容幂等(同内容重传不重复登记);
           也可直接粘贴平台素材引用保存(跨应用图片为经授权的版本引用,经平台设施解析,不读其他应用数据库)。
         </p>
@@ -840,18 +842,18 @@ export default function ProjectDetailPage() {
             </tbody>
           </table>
         )}
-        <div className="row" style={{ marginTop: 12 }}>
-          <div style={{ flex: 0 }}>
+        <div className="row mt-12">
+          <div className="flex-0">
             <button className="primary" onClick={submitGeneration}>提交生成</button>
           </div>
-          <div style={{ flex: 0 }}>
+          <div className="flex-0">
             <button onClick={loadBalance}>读取费用事实</button>
           </div>
-          <div style={{ flex: 2 }}>
+          <div className="flex-2">
             {balance ? <span className="muted">{balance}</span> : null}
           </div>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
+        <p className="muted mb-0">
           生成能力与计费开关默认关闭;失败时这里只会展示真实原因,不会伪造成功。
         </p>
       </div>
@@ -922,28 +924,28 @@ export default function ProjectDetailPage() {
               </tr>
             </tbody>
           </table>
-          <div className="row" style={{ marginTop: 12 }}>
-            <div style={{ flex: 0 }}>
+          <div className="row mt-12">
+            <div className="flex-0">
               <button onClick={goBackToSource}>返回来源</button>
             </div>
             {returnURL ? (
-              <div style={{ flex: 0 }}>
+              <div className="flex-0">
                 <a className="link" href={returnURL} target="_blank" rel="noreferrer">
                   打开来源应用 ↗
                 </a>
               </div>
             ) : null}
-            <div style={{ flex: 2 }}>
+            <div className="flex-2">
               <span className="muted">
                 来源文本仅作数据展示;续接编辑在本工程进行。
               </span>
             </div>
           </div>
           {pendingSnap ? (
-            <div className="banner warn" style={{ marginTop: 8 }}>
+            <div className="banner warn mt-8">
               来源需求已有新版({pendingSnap.brief_version},handoff{" "}
               {pendingSnap.handoff_id})待确认。
-              <button onClick={adoptPending} style={{ marginLeft: 8 }}>
+              <button onClick={adoptPending} className="banner-action">
                 确认并采用新版
               </button>
               <span className="muted">
@@ -955,7 +957,7 @@ export default function ProjectDetailPage() {
       ) : (
         <div className="card">
           <h2>来源信息</h2>
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted m-0">
             独立制作(无来源绑定);不影响任何功能。需要从订单 / 活动续接时,在
             <Link className="link" href="/handoff">
               接受跨应用交接
@@ -967,12 +969,12 @@ export default function ProjectDetailPage() {
 
       <div className="card">
         <h2>成果登记与回传来源</h2>
-        <p className="muted" style={{ marginTop: 4 }}>
+        <p className="muted mt-4">
           明确选择输出版本后登记(合法 PNG,经平台资产设施);回传来源只发送既有成果的
           不可变引用与任务事实,回执失败不追加生成任务、不扣费。
         </p>
         <form onSubmit={registerOutput} className="row">
-          <div style={{ flex: 2 }}>
+          <div className="flex-2">
             <label htmlFor="output-file">选择成果文件(仅 PNG)</label>
             <input
               id="output-file"
@@ -981,7 +983,7 @@ export default function ProjectDetailPage() {
               onChange={(e) => setOutputFile(e.target.files?.[0] ?? null)}
             />
           </div>
-          <div style={{ flex: 0, alignSelf: "flex-end" }}>
+          <div className="flex-0">
             <button className="primary" type="submit" disabled={!outputFile}>
               登记成果
             </button>
@@ -990,7 +992,7 @@ export default function ProjectDetailPage() {
         {outputs.length === 0 ? (
           <p className="muted">尚未登记成果。</p>
         ) : (
-          <table style={{ marginTop: 12 }}>
+          <table className="mt-12">
             <thead>
               <tr>
                 <th>文件</th>
@@ -1041,7 +1043,7 @@ export default function ProjectDetailPage() {
           </table>
         )}
         {srcNotice ? (
-          <div className="banner warn" style={{ marginTop: 8 }}>
+          <div className="banner warn mt-8">
             {srcNotice}
           </div>
         ) : null}
@@ -1050,12 +1052,12 @@ export default function ProjectDetailPage() {
       {sizePresets ? (
         <div className="card">
           <h2>尺寸适配(电商规格)</h2>
-          <p className="muted" style={{ marginTop: 4 }}>
+          <p className="muted mt-4">
             纯确定性变换(等比缩放 + 白底填充 / 居中裁切),不调用 AI、不产生任务与费用。
             预设为公开常见规格整理,商家可自定义覆盖;以各平台当时官方要求为准。
             成果登记只存平台引用,生成时请重新提供对应源 PNG(服务端按 sha256 校验一致性)。
           </p>
-          <div className="row" style={{ alignItems: "flex-end" }}>
+          <div className="row">
             <div>
               <label htmlFor="sa-source">源成果</label>
               <select
@@ -1071,7 +1073,7 @@ export default function ProjectDetailPage() {
                 ))}
               </select>
             </div>
-            <div style={{ flex: 1 }}>
+            <div>
               <label htmlFor="sa-png">源 PNG 文件</label>
               <input
                 id="sa-png"
@@ -1092,14 +1094,13 @@ export default function ProjectDetailPage() {
               </select>
             </div>
           </div>
-          <div style={{ marginTop: 8 }}>
+          <div className="mt-8">
             <label>目标规格</label>
-            <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <div className="row row-gap-8">
               {sizePresets.map((p) => (
                 <label
                   key={p.name}
-                  className="muted"
-                  style={{ flex: "0 0 auto" }}
+                  className="muted flex-none"
                 >
                   <input
                     type="checkbox"
@@ -1113,7 +1114,7 @@ export default function ProjectDetailPage() {
               ))}
             </div>
           </div>
-          <div style={{ marginTop: 12 }}>
+          <div className="mt-12">
             <button
               className="primary"
               onClick={generateVariants}
@@ -1123,12 +1124,12 @@ export default function ProjectDetailPage() {
             </button>
           </div>
           {saNotice ? (
-            <div className="banner warn" style={{ marginTop: 8 }}>
+            <div className="banner warn mt-8">
               {saNotice}
             </div>
           ) : null}
           {variants.length > 0 ? (
-            <table style={{ marginTop: 12 }}>
+            <table className="mt-12">
               <thead>
                 <tr>
                   <th>缩略名</th>

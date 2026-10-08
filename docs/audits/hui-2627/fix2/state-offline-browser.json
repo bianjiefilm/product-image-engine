@@ -1,0 +1,10 @@
+{
+ "offline": {
+  "banner_visible": true,
+  "copy": "网络已断开:已打开的页面还能看,但保存与生成会失败。恢复网络后这里会自动消失。重试",
+  "has_retry": true
+ },
+ "back_online": {
+  "banner_gone": true
+ }
+}

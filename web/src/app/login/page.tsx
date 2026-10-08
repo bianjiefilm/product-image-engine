@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { jsonBody, jsonHeaders } from "@/lib/api-client";
 import { loggedInHome } from "@/lib/first-image";
 
 // 登录页:邮箱+口令(platform-identity 派生身份,本应用不自管账号)。
@@ -19,8 +20,8 @@ export default function LoginPage() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        headers: jsonHeaders,
+        body: jsonBody({ email, password }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -38,7 +39,7 @@ export default function LoginPage() {
   return (
     <div className="media-bench" data-layout="entry">
       <section className="media-stage" aria-label="产品图">
-        <div className="stage-empty">
+        <div className="stage-empty" data-state="empty">
           <p className="stage-kicker">产品图</p>
           <h2>先看商品，再决定改哪里</h2>
           <p>登录之后从一张商品照片开始。商品本身保持不动。</p>
@@ -51,7 +52,11 @@ export default function LoginPage() {
           <form onSubmit={submit}>
             <div className="media-actions">
               <button className="primary" type="submit" disabled={busy}>
-                {busy ? "登录中…" : "登录后开始"}
+                {busy ? (
+                  <span data-state="loading">登录中…</span>
+                ) : (
+                  "登录后开始"
+                )}
               </button>
             </div>
             <label htmlFor="login-email">邮箱</label>
@@ -71,9 +76,9 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            {error ? <div className="banner" role="alert">{error}</div> : null}
+            {error ? <div className="banner" role="alert" data-state="error">{error}</div> : null}
           </form>
-          <p className="muted" style={{ marginBottom: 0 }}>
+          <p className="muted mb-0">
             身份由平台统一派生，本应用不保存口令。
           </p>
         </div>
