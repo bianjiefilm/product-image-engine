@@ -1,0 +1,665 @@
+{
+  "schema": "uifinish-route-scan/v1",
+  "generated_at": "2026-10-08T12:35:18Z",
+  "tool": "cmd/uifinish-scan",
+  "routes": [
+    {
+      "profile": "product-image-web",
+      "role": "Entry",
+      "route": "/login",
+      "source_path": "web/src/app/login/page.tsx",
+      "census_pin": "0c5ac0f8f820d8afd759612d56f65237274bd099",
+      "scanned_sha": "28562dddb0cd5853e72ab216a65adcf5ac18181a",
+      "verdict": "fail",
+      "findings": [
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 52,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 54,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 54,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 63,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 72,
+          "message": "原生 input 未走设计系统控件"
+        }
+      ]
+    },
+    {
+      "profile": "product-image-web",
+      "role": "Home",
+      "route": "/start",
+      "source_path": "web/src/app/start/page.tsx",
+      "census_pin": "0c5ac0f8f820d8afd759612d56f65237274bd099",
+      "scanned_sha": "28562dddb0cd5853e72ab216a65adcf5ac18181a",
+      "verdict": "pass",
+      "findings": null
+    },
+    {
+      "profile": "product-image-web",
+      "role": "List",
+      "route": "/projects",
+      "source_path": "web/src/app/projects/page.tsx",
+      "census_pin": "0c5ac0f8f820d8afd759612d56f65237274bd099",
+      "scanned_sha": "28562dddb0cd5853e72ab216a65adcf5ac18181a",
+      "verdict": "fail",
+      "findings": [
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 108,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 108,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 113,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 117,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 125,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 136,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 146,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 156,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 170,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 181,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 181,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 200,
+          "message": "未经设计系统的 table"
+        }
+      ]
+    },
+    {
+      "profile": "product-image-web",
+      "role": "Detail",
+      "route": "/projects/[id]",
+      "source_path": "web/src/app/projects/[id]/page.tsx",
+      "census_pin": "0c5ac0f8f820d8afd759612d56f65237274bd099",
+      "scanned_sha": "28562dddb0cd5853e72ab216a65adcf5ac18181a",
+      "verdict": "fail",
+      "findings": [
+        {
+          "rule": "hand_filled_tenant_or_internal_id",
+          "line": 538,
+          "message": "手填 tenant id 或 internal id TenantId"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 586,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 588,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 588,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 595,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 604,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 618,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 628,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 639,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 665,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 665,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 673,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 698,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 698,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 706,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 708,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 708,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 715,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 726,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 730,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 740,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 749,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 758,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 758,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 826,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 847,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 847,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 850,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 850,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 864,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 929,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 929,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 948,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 948,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 976,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 979,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 987,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 987,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 995,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1025,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1025,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1031,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1031,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1063,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1078,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1087,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1105,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1118,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1118,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1132,
+          "message": "未经设计系统的 table"
+        }
+      ]
+    },
+    {
+      "profile": "product-image-web",
+      "role": "Main Action",
+      "route": "/start",
+      "source_path": "web/src/app/start/page.tsx",
+      "census_pin": "0c5ac0f8f820d8afd759612d56f65237274bd099",
+      "scanned_sha": "28562dddb0cd5853e72ab216a65adcf5ac18181a",
+      "verdict": "pass",
+      "findings": null
+    },
+    {
+      "profile": "product-image-web",
+      "role": "Result",
+      "route": "/projects/[id]",
+      "source_path": "web/src/app/projects/[id]/page.tsx",
+      "census_pin": "0c5ac0f8f820d8afd759612d56f65237274bd099",
+      "scanned_sha": "28562dddb0cd5853e72ab216a65adcf5ac18181a",
+      "verdict": "fail",
+      "findings": [
+        {
+          "rule": "hand_filled_tenant_or_internal_id",
+          "line": 538,
+          "message": "手填 tenant id 或 internal id TenantId"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 586,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 588,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 588,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 595,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 604,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 618,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 628,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 639,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 665,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 665,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 673,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 698,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 698,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 706,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 708,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 708,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 715,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 726,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 730,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 740,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 749,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 758,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 758,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 826,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 847,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 847,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 850,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 850,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 864,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 929,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 929,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 948,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 948,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 976,
+          "message": "未经设计系统的 form"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 979,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 987,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 987,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 995,
+          "message": "未经设计系统的 table"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1025,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1025,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1031,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1031,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1063,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1078,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1087,
+          "message": "原生 select 未走设计系统控件"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1105,
+          "message": "原生 input 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1118,
+          "message": "未经设计系统的 button"
+        },
+        {
+          "rule": "unstyled_native_control",
+          "line": 1118,
+          "message": "原生 button 未走设计系统控件"
+        },
+        {
+          "rule": "off_design_system_table_form_button",
+          "line": 1132,
+          "message": "未经设计系统的 table"
+        }
+      ]
+    }
+  ],
+  "products": {
+    "product-image-web": {
+      "passed": false,
+      "routes_total": 6,
+      "routes_pass": 2,
+      "routes_fail": 4,
+      "routes_error": 0
+    }
+  }
+}
