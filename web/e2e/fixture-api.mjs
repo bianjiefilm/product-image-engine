@@ -18,8 +18,8 @@ const ACCESS = "fixture-access";
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const PASS = ["mask_pixels_identical", "coverage_logo", "coverage_packaging_text", "coverage_spec", "coverage_structure", "product_count", "output_size", "plate_size", "plate_is_new_background", "background_changed", "plate_task_succeeded", "plate_asset_hash_verified", "plate_charged_observed"];
 
-const state = { scenario: "limited", photos: new Map(), inputs: [], runs: new Map(), stats: { creates: 0, confirms: 0, selects: 0, returns: 0, receipts: 0, uploads: 0, projects: 0 }, serial: 0 };
-const reset = () => { state.photos.clear(); state.inputs = []; state.runs.clear(); Object.keys(state.stats).forEach((k) => (state.stats[k] = 0)); state.serial = 0; };
+const state = { scenario: "limited", photos: new Map(), inputs: [], runs: new Map(), stats: { creates: 0, confirms: 0, selects: 0, returns: 0, receipts: 0, uploads: 0, projects: 0 }, serial: 0, revision: { adopted: "V1" } };
+const reset = () => { state.photos.clear(); state.inputs = []; state.runs.clear(); Object.keys(state.stats).forEach((k) => (state.stats[k] = 0)); state.serial = 0; state.revision.adopted = "V1"; };
 
 const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(body)); };
 const err = (res, status, code, message = code) => json(res, status, { error: { code, message } });
@@ -117,6 +117,57 @@ const server = http.createServer(async (req, res) => {
     if (action === "export") { const zip = writeStoredZip({ "image.png": run.png, "quality.json": Buffer.from(report(run)), "snapshot.json": Buffer.from("{}") }); res.writeHead(200, { "Content-Type": "application/zip", "Content-Length": zip.length }); return res.end(zip); }
   }
   if ((m = p.match(/^\/api\/v1\/projects\/([^/]+)\/outputs\/([^/]+)\/receipt$/)) && req.method === "POST") { state.stats.receipts++; return json(res, 201, { receipt: { status: "delivered" } }); }
+  // --- HUI-2627 finish-r1:八代表页缺口面。全部只读或零扣费;downstream 只返回
+  // 本地引用(与真实 Go 契约同形),永不声称已上传/已送出。层级 = fixture。 ---
+  const FX_PROJECT = { id: "proj_fx", name: "个人商品图", status: "active", usage_kind: "电商主图", width_px: 1024, height_px: 1280, source_type: "standalone", source_ref: "", updated_at: new Date().toISOString() };
+  if (p === "/api/v1/projects" && req.method === "GET") {
+    const list = state.scenario === "empty" ? [] : [FX_PROJECT];
+    return json(res, 200, { projects: list, next_cursor: "" });
+  }
+  if ((m = p.match(/^\/api\/v1\/projects\/([^/]+)$/)) && req.method === "GET") {
+    if (m[1] !== "proj_fx") return err(res, 404, "not_found", "没有打开这个工程。它可能不存在,或不属于当前账号。");
+    return json(res, 200, { project: FX_PROJECT, inputs: [], versions: [] });
+  }
+  if (p === "/api/v1/batches" && req.method === "GET") {
+    const batches = state.scenario === "empty" ? [] : [{
+      id: "bat_fx1", name: "主图批次-含部分失败", status: "completed_with_failures", error_code: "", project_id: "proj_fx",
+      counts: { total: 4, pending: 0, submitted: 0, succeeded: 2, failed: 1, blocked: 1, cancelled: 0 },
+      preset_summary: { scenes: ["白底主图"], presets: ["800x800"], usage_note: "fixture 部分失败样本", finalize_with_variants: false },
+      updated_at: new Date().toISOString(),
+    }];
+    return json(res, 200, { batches, next_cursor: "" });
+  }
+  const revLabels = () => [
+    { label: "V1", outcome: "succeeded", action: "simplify_background", region: "background", incremental_cost_cents: 30, brief_version: "bv_1" },
+    { label: "V2", outcome: "succeeded", action: "outdoor", region: "background", incremental_cost_cents: 30, brief_version: "bv_2" },
+  ];
+  const revState = () => ({ adopted_label: state.revision.adopted, versions: revLabels() });
+  if ((m = p.match(/^\/api\/v1\/projects\/proj_fx\/revisions\/?$/)) && req.method === "POST") {
+    await body(req); // 执行(带原图/遮罩,fixture 不碰像素)
+    return json(res, 200, revState());
+  }
+  if ((m = p.match(/^\/api\/v1\/projects\/proj_fx\/revisions$/)) && req.method === "GET") return json(res, 200, revState());
+  if (p === "/api/v1/projects/proj_fx/revisions/intent" && req.method === "POST") return json(res, 200, { armed: true });
+  if (p === "/api/v1/projects/proj_fx/revisions/plan" && req.method === "POST") {
+    const b = JSON.parse((await body(req)).toString() || "{}");
+    return json(res, 200, { plan: { click: b.click ?? "", requires_acknowledgement: true, incremental_cost_cents: 30, calls_supplier: false, supplier_note: "真实供应商局部编辑仍是 UNKNOWN。确认后也只做确定性底板锁回主体,不会把画面交给外部修改。" } });
+  }
+  if (p === "/api/v1/projects/proj_fx/revisions/outcome" && req.method === "POST") { await body(req); return json(res, 200, { outcome: "recorded" }); }
+  if (p === "/api/v1/projects/proj_fx/revisions/briefs" && req.method === "POST") { await body(req); return json(res, 200, { briefs: [] }); }
+  if ((m = p.match(/^\/api\/v1\/projects\/proj_fx\/revisions\/(V\d+)\/adopt$/)) && req.method === "POST") { await body(req); state.revision.adopted = m[1]; return json(res, 200, revState()); }
+  if (p === "/api/v1/projects/proj_fx/revisions/rollback" && req.method === "POST") { await body(req); state.revision.adopted = "V1"; return json(res, 200, revState()); }
+  if (p === "/api/v1/projects/proj_fx/revisions/compare" && req.method === "GET") return json(res, 200, { left: url.searchParams.get("left"), right: url.searchParams.get("right") });
+  if ((m = p.match(/^\/api\/v1\/projects\/proj_fx\/revisions\/(V\d+)\/downstream$/)) && req.method === "POST") {
+    const b = JSON.parse((await body(req)).toString() || "{}");
+    const ref = "revision-version/" + m[1] + "@" + sha(Buffer.from(m[1] + (b.target ?? ""))).slice(0, 12);
+    return json(res, 200, { downstream: { target: b.target ?? "", requires_reupload: false, asset_ref: ref, note: "只返回了本地引用,没有上传文件。对方还没收到。" } });
+  }
+  if ((m = p.match(/^\/api\/v1\/projects\/proj_fx\/revisions\/(V\d+)\/content$/)) && req.method === "GET") {
+    const c0 = manifest.cases[0];
+    const png = fs.readFileSync(path.join(SAMPLES, c0.original.path));
+    res.writeHead(200, { "Content-Type": "image/png", "Content-Length": png.length, "X-Revision-Version": m[1], "X-Revision-Sha256": sha(png), "Cache-Control": "no-store" });
+    return res.end(png);
+  }
   return err(res, 404, "not_found");
 });
 server.listen(PORT, "127.0.0.1", () => console.log(`fixture api listening on ${PORT}`));
