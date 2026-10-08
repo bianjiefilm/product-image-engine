@@ -32,3 +32,28 @@
 
 ## D8 交付纪律
 - push 分支 + gh pr create 到 main;不合并不改票不发评论;PR 描述含 NOT_RUN 账目与「2625 门未开,不标 Done」。
+
+---
+
+# 接棒段(2026-10-08,前任限流身故后由接棒代理续写)
+
+## D9 WIP 全部保留续完,不丢弃
+- 事实:前任 WIP 共 13 个文件,逐文件读懂后判定高度连贯且与 D3/D4/Task 4 一致:
+  - fixture-api.mjs + fixture-api.test.ts:revision_off 场景 + 诚实 downstream/plan 字段(Task 3);
+  - axe-core devDependency + lock(D4);lock 增量中 optional deps 的 `libc` 字段被本机 npm 修剪,registry 仍 npmmirror 与仓内既有 158 处一致,无 CI 风险;
+  - login/handoff/batches/projects(列表+详情)五页 label htmlFor 关联(axe label 修复);
+  - globals.css `p .link` 下划线(a11y link-in-text-block);
+  - 新组件 ui/error-banner.tsx + ui-error-banner.test.tsx + projects 列表页接入(offline 诚实文案+重试,Task 4 Step 4 的 error/offline 恢复动作);
+  - e2e/hui-2627-finish-r1.mjs 387 行驱动(Task 4,选择器已逐一对照 PlateLockScreen/PhotoUpload/RevisionRail/EcoTopNav 核实存在)。
+- 拍板:全部保留,补齐后提交;无丢弃项。
+
+## D10 回归复核「动态断言」由本次驱动执行兑现
+- 事实:前任 regression-review.md 写「动态断言在 finish-r1 驱动执行」,但驱动当时未跑、审计目录无任何截图/JSON 证据——按任务书「证据文件实际存在才能引用」,该半句在接棒时**不成立**。
+- 拍板:静态 diff 精读部分(d2e0180/a0e9368/c798692)已抽验与前任描述一致,沿用;动态部分(四步 stepper、figcaption 三 chip、40 张矩阵、390 单栏、token 清零)由接棒后真实驱动跑出的证据兑现,regression-review.md 增补一行指向证据文件。
+
+## D11 测试基线更新
+- 接棒时全量 `npx vitest run --pool=forks`:**40 文件 / 330 用例全过**(前任记录 38/320 → +ui-error-banner.test.tsx 2 例 + revision_off 1 例 + 中间增量)。四条 PASS 测试面全绿,无回归。
+
+## D12 驱动缺口补齐清单(接棒判定)
+- 驱动已含:八页×五宽矩阵、login 主操作置顶、首图四步、结果卡三 chip、2596 采用/回退、诚实 downstream 文案、empty/disabled/revision_off/loading/offline/not_usable 状态、axe(1440+390)、去Logo 品牌族材料。
+- 接棒补齐:逐项核对后驱动不需要结构性改动;若跑动中出现 selector/时序失配,按最小改动修复并在此记录。

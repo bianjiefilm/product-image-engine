@@ -82,6 +82,18 @@ describe("fixture-api finish-r1 endpoints (eight representative pages)", () => {
     await jpost("/__fixture/scenario", { name: "limited", reset: true });
   });
 
+  it("revision_off scenario makes every revision endpoint 404 like a disabled feature", async () => {
+    await start();
+    await jpost("/__fixture/scenario", { name: "revision_off" });
+    const st = await jget("/api/v1/projects/proj_fx/revisions");
+    expect(st.status).toBe(404);
+    expect(st.body?.error?.code).toBeTruthy();
+    const plan = await jpost("/api/v1/projects/proj_fx/revisions/plan", { click: "simplify_background" });
+    expect(plan.status).toBe(404);
+    await jpost("/__fixture/scenario", { name: "limited", reset: true });
+    expect((await jget("/api/v1/projects/proj_fx/revisions")).status).toBe(200);
+  });
+
   it("revision state follows the VersionView contract with V1/V2 and adopted V1", async () => {
     await start();
     const st = await jget("/api/v1/projects/proj_fx/revisions");

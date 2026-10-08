@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ErrorBanner } from "@/components/ui/error-banner";
 
 interface Project {
   id: string;
@@ -34,8 +35,15 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     (async () => {
-      const s = await fetch("/api/auth/session");
-      if (s.status === 401) {
+      let session: Response;
+      try {
+        session = await fetch("/api/auth/session");
+      } catch {
+        // 网络不可达不等于未登录:给诚实错误态和恢复动作,不偷偷跳登录。
+        setError("网络不可用,暂时无法确认登录状态,请稍后重试。");
+        return;
+      }
+      if (session.status === 401) {
         router.replace("/login");
         return;
       }
@@ -45,12 +53,19 @@ export default function ProjectsPage() {
   }, []);
 
   async function reload() {
-    const res = await fetch("/api/projects");
+    let res: Response;
+    try {
+      res = await fetch("/api/projects");
+    } catch {
+      setError("网络不可用,暂时拿不到工程列表,请稍后重试。");
+      return;
+    }
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       setError(data?.error?.message ?? "加载失败");
       return;
     }
+    setError("");
     setProjects((data?.projects ?? []) as Project[]);
   }
 
@@ -167,7 +182,7 @@ export default function ProjectsPage() {
             </div>
           </form>
         ) : null}
-        {error ? <div className="banner">{error}</div> : null}
+        {error ? <ErrorBanner message={error} onRetry={() => void reload()} /> : null}
       </div>
 
       <div className="card">

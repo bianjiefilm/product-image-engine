@@ -255,8 +255,9 @@ export default function BatchesPage() {
           </div>
           <div className="row">
             <div>
-              <label>批次名称</label>
+              <label htmlFor="batch-name">批次名称</label>
               <input
+                id="batch-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="如:秋季上新批次"
@@ -264,8 +265,9 @@ export default function BatchesPage() {
               />
             </div>
             <div>
-              <label>产品图(PNG,≤8MiB,可多选)</label>
+              <label htmlFor="batch-files">产品图(PNG,≤8MiB,可多选)</label>
               <input
+                id="batch-files"
                 type="file"
                 accept="image/png"
                 multiple
@@ -275,16 +277,18 @@ export default function BatchesPage() {
           </div>
           <div className="row">
             <div>
-              <label>场景(逗号分隔)</label>
+              <label htmlFor="batch-scenes">场景(逗号分隔)</label>
               <input
+                id="batch-scenes"
                 value={scenes}
                 onChange={(e) => setScenes(e.target.value)}
                 placeholder="白底主图,场景图"
               />
             </div>
             <div>
-              <label>备注用途(可选)</label>
+              <label htmlFor="batch-usage-note">备注用途(可选)</label>
               <input
+                id="batch-usage-note"
                 value={usageNote}
                 onChange={(e) => setUsageNote(e.target.value)}
                 placeholder="如:秋季上新"

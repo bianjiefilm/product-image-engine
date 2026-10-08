@@ -142,6 +142,9 @@ const server = http.createServer(async (req, res) => {
     { label: "V2", outcome: "succeeded", action: "outdoor", region: "background", incremental_cost_cents: 30, brief_version: "bv_2" },
   ];
   const revState = () => ({ adopted_label: state.revision.adopted, versions: revLabels() });
+  // 局部编辑整体未开放(真实栈 = FEATURE_SELECTIVE_REVISION=0 → 路由不注册 → 404)。
+  const revisionOff = () => state.scenario === "revision_off";
+  if (revisionOff() && p.startsWith("/api/v1/projects/proj_fx/revisions")) return err(res, 404, "revision_not_available");
   if ((m = p.match(/^\/api\/v1\/projects\/proj_fx\/revisions\/?$/)) && req.method === "POST") {
     await body(req); // 执行(带原图/遮罩,fixture 不碰像素)
     return json(res, 200, revState());
