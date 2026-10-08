@@ -336,10 +336,10 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
           {click ? (
             <>
               <p>{notice || "确认前不会改图。"}</p>
-              <label>商品原图（PNG）</label>
-              <input type="file" accept="image/png" onChange={(e) => setOriginal(e.target.files?.[0] ?? null)} />
-              <label>要锁住的商品范围（PNG）</label>
-              <input type="file" accept="image/png" onChange={(e) => setMask(e.target.files?.[0] ?? null)} />
+              <label htmlFor="revision-original">商品原图（PNG）</label>
+              <input id="revision-original" type="file" accept="image/png" onChange={(e) => setOriginal(e.target.files?.[0] ?? null)} />
+              <label htmlFor="revision-mask">要锁住的商品范围（PNG）</label>
+              <input id="revision-mask" type="file" accept="image/png" onChange={(e) => setMask(e.target.files?.[0] ?? null)} />
               <p className="muted">页面上还不能直接圈选。没有原图和要锁住的范围时不会执行，也不会用别的图冒充结果。</p>
               {needsAck ? (
                 <label>

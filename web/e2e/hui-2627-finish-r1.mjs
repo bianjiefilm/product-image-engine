@@ -215,6 +215,20 @@ try {
   const imgsOk = await page.evaluate(() => [...document.querySelectorAll("#compare .compare-pair img")].every((i) => i.complete && i.naturalWidth > 0));
   if (!imgsOk) note("fail", "compare pair images did not load");
   await shot(page, "compare-1440", 1440);
+  // 390:并排比较必须退化为单栏(10-04 验收口径)。
+  await page.setViewportSize({ width: 390, height: 900 });
+  await sleep(600);
+  const compare390 = await page.evaluate(() => {
+    const figs = [...document.querySelectorAll("#compare .compare-pair figure")];
+    if (figs.length < 2) return { found: false };
+    const a = figs[0].getBoundingClientRect(), b = figs[1].getBoundingClientRect();
+    return { found: true, stacked: b.top >= a.bottom - 2 };
+  });
+  save("compare-390.json", compare390);
+  if (!compare390.found || !compare390.stacked) note("fail", "compare pair is not single-column at 390");
+  else note("ok", "compare pair stacks single-column at 390");
+  await shot(page, "compare-390", 390);
+  await page.setViewportSize({ width: 1440, height: 900 });
   // adopt V2, then roll back to V1 (core HUI-2596 interaction unchanged)
   await page.locator("#revision li").nth(1).getByRole("button", { name: "采用这个版本" }).click({ timeout: 15000 });
   await page.getByText("已采用 V2。", { exact: false }).waitFor({ timeout: 20000 });
@@ -306,6 +320,17 @@ try {
   if (!partialCheck.partial_label) note("fail", "partial batch does not show the 部分失败 label");
   await shot(page, "state-partial-batches", 1440);
 
+  // 打不开的工程:error 文案必须诚实且带返回入口。
+  await goto("/projects/proj_absent_0000");
+  const errorRecovery = await page.evaluate(() => {
+    const text = document.body.innerText;
+    const links = [...document.querySelectorAll("a")].map((a) => a.textContent ?? "");
+    return { honest: /没有打开/.test(text), recoveries: links.filter((t) => /返回|开始|列表/.test(t)) };
+  });
+  save("state-error-recovery.json", errorRecovery);
+  if (!errorRecovery.honest || errorRecovery.recoveries.length === 0) note("fail", "missing-project error lacks honest copy or recovery links");
+  else note("ok", `missing-project error shows recovery: ${JSON.stringify(errorRecovery.recoveries)}`);
+
   // not_usable candidate: scenario resets cleared earlier runs, so the failure
   // leg runs in a FRESH context — a new work session with no stale pending hint
   // (the fixture-reset equivalent of "the person comes back later").
@@ -368,10 +393,12 @@ try {
     await hideBrand();
     await page.screenshot({ path: path.join(OUT, "browser", `finish-blind-${name}-1440.png`), fullPage: true });
     if (name !== "login") {
+      await page.setViewportSize({ width: 390, height: 900 });
+      await sleep(400);
       await runAxe(`${name}@390`);
       await page.screenshot({ path: path.join(OUT, "browser", `finish-blind-${name}-390.png`), fullPage: true });
+      await page.setViewportSize({ width: 1440, height: 900 });
     }
-    await page.setViewportSize({ width: 1440, height: 900 });
   }
   await goto("/start"); // leave the brand-hidden style behind
   await page.setViewportSize({ width: 1440, height: 900 });

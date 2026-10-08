@@ -1,0 +1,15 @@
+{"label":"login@1440","url":"http://localhost:32321/login","violations":[],"passes":19}
+{"label":"start@1440","url":"http://localhost:32321/start","violations":[],"passes":25}
+{"label":"start@390","url":"http://localhost:32321/start","violations":[],"passes":25}
+{"label":"projects@1440","url":"http://localhost:32321/projects","violations":[],"passes":20}
+{"label":"projects@390","url":"http://localhost:32321/projects","violations":[],"passes":20}
+{"label":"detail@1440","url":"http://localhost:32321/projects/proj_fx","violations":[],"passes":28}
+{"label":"detail@390","url":"http://localhost:32321/projects/proj_fx","violations":[],"passes":28}
+{"label":"runview@1440","url":"http://localhost:32321/start?project=proj_fx&plate_run=sir_fx1","violations":[],"passes":27}
+{"label":"runview@390","url":"http://localhost:32321/start?project=proj_fx&plate_run=sir_fx1","violations":[],"passes":27}
+{"label":"batches@1440","url":"http://localhost:32321/batches","violations":[],"passes":23}
+{"label":"batches@390","url":"http://localhost:32321/batches","violations":[],"passes":23}
+{"label":"handoff@1440","url":"http://localhost:32321/handoff","violations":[],"passes":21}
+{"label":"handoff@390","url":"http://localhost:32321/handoff","violations":[],"passes":21}
+{"label":"error@1440","url":"http://localhost:32321/projects/proj_absent_0000","violations":[],"passes":18}
+{"label":"error@390","url":"http://localhost:32321/projects/proj_absent_0000","violations":[],"passes":18}

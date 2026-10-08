@@ -3,6 +3,8 @@
 基线:10-04 Root 真实栈验收,readyz build 身份 8f3dd4c,四条验收 PASS。
 本次复核对象:origin/main 8b231ac(= 8f3dd4c 之后合入 PR#46 尾部 + PR#47)。
 
+> 接棒增补(2026-10-08 晚):本文写就时驱动尚未跑通,下文「动态断言在 finish-r1 驱动执行」各条现已在 fixture 栈真实执行并落盘:40 张矩阵(八面×五宽)+ 状态/红线/axe/去Logo 证据见本目录 README.md 与 browser/;四条 PASS 的动态对应 = `login-primary-action.json`(步骤一)、`result-card-chips.json`(figcaption 三 chip 原文)、`walkthrough-record.json`(矩阵 0 overflow、无旧版表单字段)、`hygiene-scan.json`(token 清零)。接棒代理逐条抽验通过。
+
 ## 提交漂移账目(8f3dd4c → 8b231ac)
 
 | 提交 | 内容 | 触及四条 PASS 面? |

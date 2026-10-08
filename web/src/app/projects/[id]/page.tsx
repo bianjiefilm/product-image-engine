@@ -973,8 +973,9 @@ export default function ProjectDetailPage() {
         </p>
         <form onSubmit={registerOutput} className="row">
           <div style={{ flex: 2 }}>
-            <label>选择成果文件(仅 PNG)</label>
+            <label htmlFor="output-file">选择成果文件(仅 PNG)</label>
             <input
+              id="output-file"
               type="file"
               accept="image/png"
               onChange={(e) => setOutputFile(e.target.files?.[0] ?? null)}
