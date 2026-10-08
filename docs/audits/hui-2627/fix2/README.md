@@ -97,7 +97,9 @@ unstyled_native_control 65 + hand_filled 2,逐类记账见 §3(维持 D13 结构
 - 断言/账目:badges-projects.json、touch-targets.json、state-offline-browser.json、
   hygiene-scan.json、detector-rescan.json、fix2-run-record.json
 - 文档:offline-two-layers.md、本 README
-- 截图:browser/(15 张)
+- 截图:browser/(16 张;`fix2-project-detail-1440.png` 为行内样式收敛后的桌面
+  等价性证据:flex-0/flex-2 按钮组、成果登记右对齐按钮、尺寸适配版式与
+  finish-r1 包 finish-matrix-detail-1440.png 同构)
 - 校验:SHA256SUMS
 - 代码:web/src(lib/project-labels、lib/api-client、components/ui/{offline-banner,
   surface-error-boundary}、路由页 4 文件、globals.css、layout.tsx、page-census
