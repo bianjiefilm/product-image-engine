@@ -1,0 +1,20 @@
+{
+ "has_legacy_fields": false,
+ "step_like": [
+  "1选照片2写背景3确认费用4生成中5查看结果",
+  "1选照片",
+  "1",
+  "2写背景",
+  "2",
+  "3确认费用",
+  "3",
+  "4生成中",
+  "4",
+  "5查看结果",
+  "5"
+ ],
+ "leaks": false,
+ "tables": 0,
+ "forms": 1,
+ "first_figure_top": null
+}

@@ -54,16 +54,18 @@ export default function LoginPage() {
                 {busy ? "登录中…" : "登录后开始"}
               </button>
             </div>
-            <label>邮箱</label>
+            <label htmlFor="login-email">邮箱</label>
             <input
+              id="login-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
             />
-            <label>口令</label>
+            <label htmlFor="login-password">口令</label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

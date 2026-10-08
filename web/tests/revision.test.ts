@@ -31,4 +31,13 @@ describe("局部修改费用只展示服务端整数分", () => {
     expect(note).not.toContain("已送出");
     expect(note).not.toContain("已经收到");
   });
+
+  it("原图与遮罩的文件选择框都有显式 label 关联（axe label 规则）", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/components/revision/RevisionRail.tsx"), "utf8");
+    // 兄弟节点 <label> 不构成可访问名：必须 htmlFor + id 显式配对。
+    expect(src).toMatch(/htmlFor="revision-original"/);
+    expect(src).toMatch(/id="revision-original"/);
+    expect(src).toMatch(/htmlFor="revision-mask"/);
+    expect(src).toMatch(/id="revision-mask"/);
+  });
 });

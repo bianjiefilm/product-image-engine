@@ -140,8 +140,9 @@ export default function HandoffPage() {
             </button>
           </div>
           <div>
-            <label>交接文档</label>
+            <label htmlFor="handoff-doc">交接文档</label>
             <textarea
+              id="handoff-doc"
               rows={10}
               value={docText}
               onChange={(e) => setDocText(e.target.value)}
@@ -151,8 +152,9 @@ export default function HandoffPage() {
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <div>
-              <label>用途</label>
+              <label htmlFor="handoff-purpose">用途</label>
               <input
+                id="handoff-purpose"
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
                 required

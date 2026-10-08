@@ -1,0 +1,100 @@
+{
+ "scanned_at": "2026-10-08T10:42:01.899Z",
+ "root": "web/src",
+ "regex": "page-census scanMarkers 同口径",
+ "totals": {
+  "bare_hex": 0,
+  "inline_style": 72,
+  "raw_button": 45,
+  "raw_input": 53,
+  "raw_table": 14
+ },
+ "files": {
+  "src/src/app/batches/page.tsx": {
+   "inline_style": 9,
+   "raw_button": 6,
+   "raw_input": 6,
+   "raw_table": 2
+  },
+  "src/src/app/handoff/page.tsx": {
+   "inline_style": 6,
+   "raw_button": 2,
+   "raw_input": 1,
+   "raw_table": 2
+  },
+  "src/src/app/login/page.tsx": {
+   "inline_style": 1,
+   "raw_button": 1,
+   "raw_input": 2
+  },
+  "src/src/app/projects/[id]/page.tsx": {
+   "inline_style": 33,
+   "raw_button": 13,
+   "raw_input": 11,
+   "raw_table": 5
+  },
+  "src/src/app/projects/page.tsx": {
+   "inline_style": 4,
+   "raw_button": 2,
+   "raw_input": 5,
+   "raw_table": 1
+  },
+  "src/src/components/SubjectFidelityPanel.tsx": {
+   "inline_style": 2,
+   "raw_button": 1,
+   "raw_input": 6,
+   "raw_table": 1
+  },
+  "src/src/components/background-replace/Panel.tsx": {
+   "inline_style": 6,
+   "raw_input": 8,
+   "raw_table": 1
+  },
+  "src/src/components/eco-nav/EcoTopNav.tsx": {
+   "raw_button": 5
+  },
+  "src/src/components/light-scene/Panel.tsx": {
+   "inline_style": 4,
+   "raw_input": 3,
+   "raw_table": 1
+  },
+  "src/src/components/motion-ref/MotionRefNote.tsx": {
+   "raw_button": 3,
+   "raw_input": 3
+  },
+  "src/src/components/plate-lock/PhotoUpload.tsx": {
+   "raw_input": 1
+  },
+  "src/src/components/plate-lock/PlateLockScreen.tsx": {
+   "inline_style": 1,
+   "raw_input": 1
+  },
+  "src/src/components/recovery/RecoveryStrip.tsx": {
+   "raw_button": 1
+  },
+  "src/src/components/revision/RevisionRail.tsx": {
+   "inline_style": 2,
+   "raw_button": 9,
+   "raw_input": 4
+  },
+  "src/src/components/showcase-video/Panel.tsx": {
+   "inline_style": 1,
+   "raw_input": 1
+  },
+  "src/src/components/text-image/Panel.tsx": {
+   "inline_style": 2
+  },
+  "src/src/components/ui/button.tsx": {
+   "raw_button": 1
+  },
+  "src/src/components/ui/card.tsx": {
+   "inline_style": 1
+  },
+  "src/src/lib/page-census.ts": {
+   "raw_button": 1,
+   "raw_input": 1,
+   "raw_table": 1
+  }
+ },
+ "policy": "bare_hex must be 0; others recorded 2026-10-08 baseline, must not grow (tests/finish-hygiene.test.ts)"
+}

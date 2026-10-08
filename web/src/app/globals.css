@@ -80,6 +80,8 @@ th { color: var(--muted); font-weight: 500; }
 .banner.warn { border-color: #e6d28a; background: #fdf9ec; color: #7a5c00; }
 .muted { color: var(--muted); }
 .link { color: var(--accent); text-decoration: none; }
+/* 段落内的文字链接不能只靠颜色区分(a11y link-in-text-block)。 */
+p .link, .muted .link { text-decoration: underline; }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
 .pill.wait { background: #fdf9ec; color: #7a5c00; }
 .pill.bad { background: #fdf1f1; color: #b91c1c; }

@@ -1,0 +1,131 @@
+{
+ "layer": "fixture",
+ "web": "http://localhost:32321",
+ "started_at": "2026-10-08T10:45:59.534Z",
+ "widths": [
+  1920,
+  1440,
+  1024,
+  430,
+  390
+ ],
+ "findings": [
+  {
+   "kind": "ok",
+   "what": "login primary action \"登录后开始\" sits above the first input"
+  },
+  {
+   "kind": "info",
+   "what": "start step-like labels: [\"1选照片2写背景3确认费用4生成中5查看结果\",\"1选照片\",\"1\",\"2写背景\",\"2\",\"3确认费用\",\"3\",\"4生成中\",\"4\",\"5查看结果\",\"5\"]"
+  },
+  {
+   "kind": "ok",
+   "what": "result card chips: 主体保真 / 通过商品检查（限定范围） / 已选定 / 1024×1280"
+  },
+  {
+   "kind": "ok",
+   "what": "matrix complete: 8 surfaces x 5 widths"
+  },
+  {
+   "kind": "ok",
+   "what": "compare pair stacks single-column at 390"
+  },
+  {
+   "kind": "ok",
+   "what": "adopt/rollback round-trip works (HUI-2596 interaction intact)"
+  },
+  {
+   "kind": "ok",
+   "what": "downstream copy stays honest (local reference only)"
+  },
+  {
+   "kind": "ok",
+   "what": "revision-off shows the finished-product downgrade copy"
+  },
+  {
+   "kind": "ok",
+   "what": "unreachable-server state shows the honest copy with a retry action"
+  },
+  {
+   "kind": "ok",
+   "what": "missing-project error shows recovery: [\"返回工程列表\",\"开始做产品图\"]"
+  },
+  {
+   "kind": "ok",
+   "what": "not-usable run view shows the honest failed-check copy"
+  },
+  {
+   "kind": "ok",
+   "what": "axe login@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe start@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe start@390: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe projects@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe projects@390: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe detail@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe detail@390: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe runview@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe runview@390: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe batches@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe batches@390: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe handoff@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe handoff@390: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe error@1440: 0 serious/critical, 0 lesser"
+  },
+  {
+   "kind": "ok",
+   "what": "axe error@390: 0 serious/critical, 0 lesser"
+  }
+ ],
+ "readyz": {
+  "creates": 0,
+  "confirms": 0,
+  "selects": 0,
+  "returns": 0,
+  "receipts": 0,
+  "uploads": 0,
+  "projects": 0,
+  "scenario": "limited"
+ },
+ "anon_root_lands_on": "/login",
+ "run_id": "sir_fx1",
+ "finished_at": "2026-10-08T10:47:40.600Z"
+}

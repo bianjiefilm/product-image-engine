@@ -589,16 +589,18 @@ export default function ProjectDetailPage() {
           </div>
           <div className="row">
             <div>
-              <label>名称</label>
+              <label htmlFor="proj-name">名称</label>
               <input
+                id="proj-name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
               />
             </div>
             <div>
-              <label>状态</label>
+              <label htmlFor="proj-status">状态</label>
               <select
+                id="proj-status"
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value })}
               >
@@ -610,8 +612,9 @@ export default function ProjectDetailPage() {
           </div>
           <div className="row">
             <div>
-              <label>用途</label>
+              <label htmlFor="proj-usage">用途</label>
               <input
+                id="proj-usage"
                 value={form.usage_kind}
                 onChange={(e) =>
                   setForm({ ...form, usage_kind: e.target.value })
@@ -619,8 +622,9 @@ export default function ProjectDetailPage() {
               />
             </div>
             <div>
-              <label>宽(px)</label>
+              <label htmlFor="proj-width">宽(px)</label>
               <input
+                id="proj-width"
                 type="number"
                 value={form.width_px}
                 onChange={(e) =>
@@ -629,8 +633,9 @@ export default function ProjectDetailPage() {
               />
             </div>
             <div>
-              <label>高(px)</label>
+              <label htmlFor="proj-height">高(px)</label>
               <input
+                id="proj-height"
                 type="number"
                 value={form.height_px}
                 onChange={(e) =>
@@ -704,8 +709,9 @@ export default function ProjectDetailPage() {
           </div>
           <div className="row">
             <div>
-              <label>上传产品照片(jpeg/png/webp,服务端核验)</label>
+              <label htmlFor="proj-photo-upload">上传产品照片(jpeg/png/webp,服务端核验)</label>
               <input
+                id="proj-photo-upload"
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
@@ -967,8 +973,9 @@ export default function ProjectDetailPage() {
         </p>
         <form onSubmit={registerOutput} className="row">
           <div style={{ flex: 2 }}>
-            <label>选择成果文件(仅 PNG)</label>
+            <label htmlFor="output-file">选择成果文件(仅 PNG)</label>
             <input
+              id="output-file"
               type="file"
               accept="image/png"
               onChange={(e) => setOutputFile(e.target.files?.[0] ?? null)}
@@ -1050,8 +1057,9 @@ export default function ProjectDetailPage() {
           </p>
           <div className="row" style={{ alignItems: "flex-end" }}>
             <div>
-              <label>源成果</label>
+              <label htmlFor="sa-source">源成果</label>
               <select
+                id="sa-source"
                 value={saSource}
                 onChange={(e) => setSaSource(e.target.value)}
               >
@@ -1064,16 +1072,18 @@ export default function ProjectDetailPage() {
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label>源 PNG 文件</label>
+              <label htmlFor="sa-png">源 PNG 文件</label>
               <input
+                id="sa-png"
                 type="file"
                 accept="image/png"
                 onChange={(e) => setSaFile(e.target.files?.[0] ?? null)}
               />
             </div>
             <div>
-              <label>输出格式</label>
+              <label htmlFor="sa-format">输出格式</label>
               <select
+                id="sa-format"
                 value={saFormat}
                 onChange={(e) => setSaFormat(e.target.value)}
               >
