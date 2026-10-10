@@ -78,11 +78,13 @@ func (s *Server) handleCreateLightScene(w http.ResponseWriter, r *http.Request) 
 	if mode == string(lightscene.ModeCreative) {
 		latest, lerr := s.St.LatestLightJobForInput(r.Context(), p.Tenant(), projectID, in.ID)
 		reports := s.lightReportsForInput(r.Context(), p.Tenant(), projectID, in.ID, in.PlatformAssetID)
-		fidelityFailed := false
-		for _, report := range reports {
-			if report.Verdict == fidelity.VerdictFail {
-				fidelityFailed = true
-				break
+		fidelityFailed := lightscene.ProductAxesFailed(reports)
+		if !fidelityFailed {
+			for _, report := range reports {
+				if report.Verdict == fidelity.VerdictFail {
+					fidelityFailed = true
+					break
+				}
 			}
 		}
 		lightFailed := lerr == nil && latest.Mode == string(lightscene.ModeFidelity) &&

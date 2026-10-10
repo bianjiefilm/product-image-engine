@@ -303,7 +303,7 @@ func SubjectGate(ex Execution, reports []fidelity.Report) Execution {
 			return ex
 		}
 	}
-	if productAxesFailed(reports) {
+	if ProductAxesFailed(reports) {
 		ex.Quality = QualityFail
 		ex.VerifiedProduct = false
 		ex.Deliverable = false
@@ -380,7 +380,9 @@ func AppendPending(items []string, item string) []string {
 	return appendPending(items, item)
 }
 
-func productAxesFailed(reports []fidelity.Report) bool {
+// ProductAxesFailed 判断 Logo、包装文字、规格或结构是否失败。
+// 美观分或其他通过结论不能单独推翻这些轴。SubjectGate 与创意静默入口共用此判断。
+func ProductAxesFailed(reports []fidelity.Report) bool {
 	for _, report := range reports {
 		for _, check := range report.Checks {
 			if !isProductAxis(check.Name) {

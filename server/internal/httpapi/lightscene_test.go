@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
+	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 )
 
@@ -236,6 +237,50 @@ func TestLightSceneCreativeAfterFailureIgnoresModeFlag(t *testing.T) {
 	})
 	if st != http.StatusUnprocessableEntity {
 		t.Fatalf("单独确认也不能在创意路径未接通时出图, got %d %v", st, confirmed)
+	}
+}
+
+func TestLightSceneCreativeSilentEntryUsesProductAxes(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.LightSceneEnabled = true
+		c.LightCreativeEnabled = true
+		c.LightModelCredential = "configured-not-a-secret"
+		c.GenerationEnabled = true
+		c.TaskBaseURL = "http://127.0.0.1:1"
+		c.TaskToken = "task-tok"
+		c.UploadBaseURL = "http://127.0.0.1:1"
+		c.UploadToken = "up"
+	})
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	tenant := f.principal(t, tok)
+	_, _, err := f.st.SaveFidelityReport(t.Context(), tenant, proj, fidelity.Report{
+		Mode: fidelity.ModeFidelity, InputRef: in, InputVersion: "v-hand",
+		Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true,
+		RealGeneration: fidelity.RealGenerationAuthorized, BodySHA256: "hand-axis-fail",
+		Checks: []fidelity.Check{
+			{Name: "aesthetic", Result: "0.99"},
+			{Name: "logo", Result: fidelity.ResultFail},
+			{Name: "packaging_text", Result: fidelity.ResultFail},
+			{Name: "spec", Result: fidelity.ResultFail},
+			{Name: "structure", Result: fidelity.ResultFail},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, silent := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes", tok, map[string]any{
+		"input_id": in, "mode": "creative", "lighting_intent": "戏剧光",
+	})
+	code := ""
+	if errBody, ok := silent["error"].(map[string]any); ok {
+		code, _ = errBody["code"].(string)
+	}
+	if st != http.StatusConflict || code != "silent_creative_forbidden" {
+		t.Fatalf("手造通过结论不能盖过产品轴失败而静默进入创意, got %d %#v", st, silent)
+	}
+	if job, ok := silent["job"].(map[string]any); ok && job["mode"] == "creative" {
+		t.Fatalf("静默创意不得留下创意报价: %#v", silent)
 	}
 }
 
