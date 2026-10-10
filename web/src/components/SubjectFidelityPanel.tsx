@@ -156,41 +156,6 @@ export function SubjectFidelityPanel({ projectId }: { projectId: string }) {
           ) : (
             <p className="muted">还没有主体保真记录。结果上的商品检查仍然单独显示。</p>
           )}
-          <details>
-            <summary>记录检查（不生成、不扣费）</summary>
-          {reports && reports.length > 0 ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>结论</th>
-                  <th>模式</th>
-                  <th>样本</th>
-                  <th>输入版本</th>
-                  <th>限制</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <span className={verdictClass(r.verdict)}>{verdictLabel(r.verdict)}</span>
-                    </td>
-                    <td>{r.mode === "creative" ? "创意" : "保真"}</td>
-                    <td>{r.sample_class}</td>
-                    <td>
-                      {r.input_ref} · {r.input_version}
-                    </td>
-                    <td className="muted">
-                      {(r.reasons ?? []).concat(r.limits ?? []).join("；") || "—"}
-                      {r.exact_product ? "" : " 不能当作已验证商品图。"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">还没有主体保真记录。</p>
-          )}
           <form onSubmit={onSubmit} style={{ marginTop: 12 }}>
             <div className="row">
               <div>
@@ -278,6 +243,41 @@ export function SubjectFidelityPanel({ projectId }: { projectId: string }) {
               {busy ? "记录中…" : "记录主体保护"}
             </button>
           </form>
+          <details data-technical="true">
+            <summary>记录检查（不生成、不扣费）</summary>
+          {reports && reports.length > 0 ? (
+            <table>
+              <thead>
+                <tr>
+                  <th>结论</th>
+                  <th>模式</th>
+                  <th>样本</th>
+                  <th>输入版本</th>
+                  <th>限制</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <span className={verdictClass(r.verdict)}>{verdictLabel(r.verdict)}</span>
+                    </td>
+                    <td>{r.mode === "creative" ? "创意" : "保真"}</td>
+                    <td>{r.sample_class}</td>
+                    <td>
+                      {r.input_ref} · {r.input_version}
+                    </td>
+                    <td className="muted">
+                      {(r.reasons ?? []).concat(r.limits ?? []).join("；") || "—"}
+                      {r.exact_product ? "" : " 不能当作已验证商品图。"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">还没有主体保真记录。</p>
+          )}
           </details>
         </>
       )}

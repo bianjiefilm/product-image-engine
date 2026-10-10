@@ -421,11 +421,11 @@ export function BackgroundReplacePanel({
               模型 {active.model_ref || "未记录"} · 任务 {active.platform_task_id || "未记录"} · 资产{" "}
               {active.output_asset_id || "未记录"} {active.output_version || ""}
             </p>
+            <p>
+              对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}。允许用途:
+              {(active.allowed_uses ?? []).join("、") || "预览"}。
+            </p>
           </details>
-          <p>
-            对照:原输入 {active.input_id} / 输出 {active.output_asset_id || "尚无输出"}。允许用途:
-            {(active.allowed_uses ?? []).join("、") || "预览"}。
-          </p>
           <p>待确认:{(active.pending ?? []).join("；") || "无"}</p>
           <p className="muted">{active.honesty || HONESTY}</p>
           <p className="muted">{realNotice || REAL_GENERATION_INCOMPLETE}</p>
@@ -492,7 +492,9 @@ export function BackgroundReplacePanel({
         </div>
       ) : null}
       {samples.length > 0 ? (
-        <table style={{ marginTop: 16 }}>
+        <details data-technical="true">
+          <summary>样本技术详情</summary>
+          <table style={{ marginTop: 16 }}>
           <thead>
             <tr>
               <th>样本</th>
@@ -511,7 +513,8 @@ export function BackgroundReplacePanel({
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </details>
       ) : null}
       {jobs.length > 0 ? (
         <div style={{ marginTop: 12 }}>
