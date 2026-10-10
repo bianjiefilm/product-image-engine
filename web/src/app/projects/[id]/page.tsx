@@ -186,6 +186,8 @@ export default function ProjectDetailPage() {
     snapshot_size: 0,
     snapshot_content_type: "image/png",
   });
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachHint, setAttachHint] = useState("");
   const [balance, setBalance] = useState<string>("");
 
   // ---- 跨应用续接(HUI-1745 I1):来源绑定 / 待采用新版 / 成果回执 ----
@@ -313,6 +315,12 @@ export default function ProjectDetailPage() {
 
   async function addInput(e: React.FormEvent) {
     e.preventDefault();
+    if (!newInput.platform_asset_id.trim()) {
+      setAttachHint("请先填写素材编号，再挂接。");
+      setAttachOpen(true);
+      return;
+    }
+    setAttachHint("");
     setNotice("");
     const res = await fetch(`/api/projects/${id}/inputs`, {
       method: "POST",
@@ -787,6 +795,7 @@ export default function ProjectDetailPage() {
               {photoBusy ? "上传中…" : "上传并挂接"}
             </button>
             <button type="submit" form="proj-attach-form">挂接素材</button>
+            {attachHint ? <p className={styles.attachHint} role="status">{attachHint}</p> : null}
           </div>
           <div className="row">
             <div>
@@ -800,7 +809,11 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         </form>
-        <details data-technical="true">
+        <details
+          data-technical="true"
+          open={attachOpen}
+          onToggle={(e) => setAttachOpen(e.currentTarget.open)}
+        >
           <summary>已有素材引用</summary>
         <form id="proj-attach-form" onSubmit={addInput} className="mt-12">
           <div className="row">
@@ -811,7 +824,6 @@ export default function ProjectDetailPage() {
                 onChange={(e) =>
                   setNewInput({ ...newInput, platform_asset_id: e.target.value })
                 }
-                required
               />
             </div>
             <div>

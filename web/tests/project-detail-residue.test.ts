@@ -89,7 +89,8 @@ describe("项目页主路径不是管理表", () => {
     const technical = tags.filter((tag) => /data-technical\s*=\s*["']true["']/.test(tag));
     expect(technical.length).toBeGreaterThan(0);
     for (const tag of technical) {
-      expect(tag).not.toMatch(/\sopen[\s=>]/);
+      const withoutBound = tag.replace(/\sopen=\{attachOpen\}/g, "");
+      expect(withoutBound).not.toMatch(/\sopen[\s=>]/);
     }
   });
 
@@ -115,6 +116,25 @@ describe("项目页主路径不是管理表", () => {
       expect(slice, heading).toContain(listTag);
       expect(slice, heading).not.toContain("<table");
     }
+  });
+
+  it("空编号挂接不靠折叠里的 required，外侧说明不含 asset_id，并打开该技术详情", () => {
+    const hint = "请先填写素材编号，再挂接。";
+    expect(hint.toLowerCase()).not.toContain("asset_id");
+    expect(stripAllDetails(source)).toContain(hint);
+    const outside = stripAllDetails(fromBench(source));
+    expect(outside).toContain("{attachHint}");
+    expect(outside.toLowerCase()).not.toContain("asset_id");
+    const src = stripComments(source);
+    const formAt = src.indexOf('id="proj-attach-form"');
+    expect(formAt).toBeGreaterThan(0);
+    const form = src.slice(formAt, src.indexOf("</form>", formAt));
+    expect(form).not.toMatch(/\srequired\b/);
+    const detailsAt = src.lastIndexOf("<details", formAt);
+    const detailsTag = src.slice(detailsAt, src.indexOf(">", detailsAt) + 1);
+    expect(detailsTag).toContain('data-technical="true"');
+    expect(detailsTag).toContain("open={attachOpen}");
+    expect(src).toContain("const [attachOpen, setAttachOpen] = useState(false)");
   });
 
   it("去掉所有 details 内部之后，保存简报和挂接素材仍在", () => {
