@@ -117,6 +117,8 @@ func (s *Server) Router() http.Handler {
 	mux.Handle("POST /api/v1/projects/{id}/outputs", s.guard(true, s.handleRegisterOutput))
 	mux.Handle("GET /api/v1/projects/{id}/outputs", s.guard(true, s.handleListOutputs))
 	mux.Handle("POST /api/v1/projects/{id}/outputs/{outputId}/receipt", s.guard(true, s.handleSendReceipt))
+	mux.Handle("GET /api/v1/projects/{id}/campaign-restore", s.guard(true, s.handleGetCampaignRestore))
+	mux.Handle("POST /api/v1/projects/{id}/campaign-selection", s.guard(true, s.handleSelectCampaignVersion))
 	mux.Handle("GET /api/v1/projects/{id}/receipts", s.guard(true, s.handleListReceipts))
 	mux.Handle("POST /api/v1/receipts/{id}/resend", s.guard(true, s.handleResendReceipt))
 
