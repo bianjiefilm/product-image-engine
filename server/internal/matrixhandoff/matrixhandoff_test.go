@@ -45,8 +45,18 @@ func TestHandoffDocumentCarriesSelectedImage(t *testing.T) {
 		Image:      img,
 		PlatformID: FixtureArticle,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrDraftNotPersisted) {
+		t.Fatalf("err %v", err)
+	}
+	if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") {
+		t.Fatalf("success copy: %v %q", err, res.Message)
+	}
+	stored, verr := svc.Versions(testCaller(), img.TenantID, img.BrandID, img.AssetID, img.Version)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(stored) != 0 {
+		t.Fatalf("unpublished handoff stored %d drafts", len(stored))
 	}
 	doc := res.Document
 	if doc.Schema != SchemaVersion {
@@ -167,23 +177,33 @@ func TestArticleFixtureAcceptsIllustration(t *testing.T) {
 		Image:      img,
 		PlatformID: FixtureArticle,
 	})
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
 	}
-	if res.Status != StatusDraft || res.Role != PlacementIllustration || res.NeedsVideo {
+	if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") || res.Status == StatusDraft {
+		t.Fatalf("illustration was recorded: %+v err=%v", res, err)
+	}
+	if res.Role != PlacementIllustration || res.NeedsVideo {
 		t.Fatalf("illustration %+v", res)
 	}
 	if res.Published || res.Uploaded || res.VideoCreated || res.Charged || res.Document.Published {
 		t.Fatalf("illustration published: %+v", res)
 	}
-	if len(fc.Submits) != 1 || fc.Submits[0].Role != PlacementIllustration {
-		t.Fatalf("submit %+v", fc.Submits)
+	if len(fc.Submits) != 0 {
+		t.Fatalf("unpublished illustration submitted: %+v", fc.Submits)
 	}
-	if fc.Submits[0].Document.AIDisclosure != img.AIDisclosure {
-		t.Fatal("disclosure dropped at fixture")
+	if res.Document.AIDisclosure != img.AIDisclosure {
+		t.Fatal("disclosure dropped")
 	}
-	if fc.Submits[0].Document.MediaKind != MediaImage {
-		t.Fatal("fixture transcoded the image")
+	if res.Document.MediaKind != MediaImage {
+		t.Fatal("image was transcoded")
+	}
+	vers, verr := svc.Versions(testCaller(), img.TenantID, img.BrandID, img.AssetID, img.Version)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(vers) != 0 {
+		t.Fatalf("illustration stored a draft: %+v", vers)
 	}
 }
 
@@ -216,62 +236,65 @@ func TestCoverRequiresExistingVideoAsset(t *testing.T) {
 		Placement:            PlacementCover,
 		ExistingVideoAssetID: "video-asset-9",
 	})
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrDraftNotPersisted) {
+		t.Fatalf("cover persist: %v", err)
 	}
-	if res.Role != PlacementCover || res.Status != StatusDraft || res.NeedsVideo {
+	if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") {
+		t.Fatalf("cover success copy: %+v err=%v", res, err)
+	}
+	if res.Role != PlacementCover || res.NeedsVideo {
 		t.Fatalf("cover %+v", res)
 	}
-	if res.Published || res.Uploaded || res.VideoCreated || res.Transcoded {
+	if res.Published || res.Uploaded || res.VideoCreated || res.Transcoded || res.Document.Published {
 		t.Fatalf("cover created a video or published: %+v", res)
 	}
 	if res.Document.MediaKind != MediaImage || res.ExistingVideoAssetID != "video-asset-9" {
 		t.Fatalf("cover payload %+v", res)
 	}
-	if len(fc.Submits) != 1 || fc.Submits[0].ExistingVideoAssetID != "video-asset-9" {
+	if len(fc.Submits) != 0 {
 		t.Fatalf("submit %+v", fc.Submits)
+	}
+	vers, err = svc.Versions(testCaller(), "tenant-a", "brand-1", "asset-img-1", "v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vers) != 0 {
+		t.Fatalf("cover stored a draft: %+v", vers)
 	}
 }
 
-func TestSameIdentityReturnsSameDraftAndNewFactVersions(t *testing.T) {
+func TestUnpublishedHandoffDoesNotAppendDraftVersions(t *testing.T) {
 	svc := NewService(NewFixtureCatalog(), &FixtureClient{})
 	other := NewService(NewFixtureCatalog(), &FixtureClient{})
 	req := Request{Caller: testCaller(), Image: testImage(), PlatformID: FixtureArticle}
 	first, err := svc.Handoff(context.Background(), req)
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
 	}
 	second, err := svc.Handoff(context.Background(), req)
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
 	}
 	again, err := other.Handoff(context.Background(), req)
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
 	}
-	if first.Document.DraftRef == "" || first.Document.DraftVersion != 1 {
-		t.Fatalf("first draft %+v", first.Document)
+	if strings.Contains(first.Message, "draft recorded") || strings.Contains(second.Message, "draft recorded") || strings.Contains(again.Message, "draft recorded") {
+		t.Fatal("replay used the success copy")
 	}
-	if second.Document.DraftRef != first.Document.DraftRef || second.Document.DraftVersion != 1 {
-		t.Fatalf("replay changed draft: %+v", second.Document)
+	if first.Document.DraftRef != "" || first.Document.DraftVersion != 0 || second.Document.DraftRef != "" || again.Document.DraftRef != "" {
+		t.Fatalf("unpublished handoff recorded a ref: first=%+v second=%+v again=%+v", first.Document, second.Document, again.Document)
 	}
-	if again.Document.DraftRef != first.Document.DraftRef {
-		t.Fatalf("ref not stable across services: %s vs %s", again.Document.DraftRef, first.Document.DraftRef)
-	}
-	if !strings.HasPrefix(first.Document.DraftRef, "mhd_") {
-		t.Fatalf("draft ref %q", first.Document.DraftRef)
+	if first.Published || second.Published || again.Published {
+		t.Fatal("unpublished handoff published")
 	}
 
 	changed := testImage()
 	changed.ContentHash = hashOf("pixels-v3-b")
-	hashed, err := svc.Handoff(context.Background(), Request{
+	if _, err = svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: changed, PlatformID: FixtureArticle,
-	})
-	if err != nil {
+	}); !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
-	}
-	if hashed.Document.DraftRef != first.Document.DraftRef || hashed.Document.DraftVersion != 2 {
-		t.Fatalf("hash did not append a version: %+v", hashed.Document)
 	}
 
 	failed := changed
@@ -279,31 +302,22 @@ func TestSameIdentityReturnsSameDraftAndNewFactVersions(t *testing.T) {
 	verdict, err := svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: failed, PlatformID: FixtureArticle,
 	})
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
 	}
-	if verdict.Document.DraftRef != first.Document.DraftRef || verdict.Document.DraftVersion != 3 {
-		t.Fatalf("verdict did not append a version: %+v", verdict.Document)
-	}
-	if verdict.Document.QualityVerdict != VerdictFail || verdict.Document.Copy == ForbiddenUnchangedCopy {
+	if verdict.Document.QualityVerdict != VerdictFail || verdict.Document.Copy != FailCopy || verdict.Document.Copy == ForbiddenUnchangedCopy {
 		t.Fatalf("new verdict overwrote honesty: %+v", verdict.Document)
+	}
+	if verdict.Document.Published || verdict.Published || verdict.Charged || verdict.Uploaded {
+		t.Fatalf("verdict published: %+v", verdict)
 	}
 
 	vers, err := svc.Versions(testCaller(), "tenant-a", "brand-1", "asset-img-1", "v3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vers) != 3 {
-		t.Fatalf("versions %+v", vers)
-	}
-	if vers[0].ContentHash != testImage().ContentHash || vers[0].QualityVerdict != VerdictPass || vers[0].DraftVersion != 1 {
-		t.Fatalf("previous version overwritten: %+v", vers[0])
-	}
-	if vers[1].ContentHash != changed.ContentHash || vers[1].DraftVersion != 2 {
-		t.Fatalf("hash version %+v", vers[1])
-	}
-	if vers[2].QualityVerdict != VerdictFail || vers[2].AIDisclosure != failed.AIDisclosure {
-		t.Fatalf("latest %+v", vers[2])
+	if len(vers) != 0 {
+		t.Fatalf("versions stored %+v", vers)
 	}
 
 	otherVersion := testImage()
@@ -311,11 +325,15 @@ func TestSameIdentityReturnsSameDraftAndNewFactVersions(t *testing.T) {
 	moved, err := svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: otherVersion, PlatformID: FixtureArticle,
 	})
+	if !errors.Is(err, ErrDraftNotPersisted) {
+		t.Fatal(err)
+	}
+	movedVers, err := svc.Versions(testCaller(), otherVersion.TenantID, otherVersion.BrandID, otherVersion.AssetID, otherVersion.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.Document.DraftRef == first.Document.DraftRef {
-		t.Fatal("different asset version reused the draft ref")
+	if len(movedVers) != 0 || moved.Document.DraftRef != "" || moved.Document.Published {
+		t.Fatalf("other version stored %+v %+v", moved.Document, movedVers)
 	}
 }
 
@@ -372,24 +390,23 @@ func TestFailAndUnknownStayHonestThroughFixture(t *testing.T) {
 			res, err := svc.Handoff(context.Background(), Request{
 				Caller: testCaller(), Image: img, PlatformID: FixtureArticle,
 			})
-			if err != nil {
+			if !errors.Is(err, ErrDraftNotPersisted) {
 				t.Fatal(err)
+			}
+			if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") {
+				t.Fatalf("success copy: %v %q", err, res.Message)
 			}
 			if res.Document.QualityVerdict != tc.verdict || res.Document.Copy != tc.copy {
 				t.Fatalf("copy upgraded: %+v", res.Document)
 			}
-			if res.Document.Copy == ForbiddenUnchangedCopy {
-				t.Fatal("became 真实商品无改动")
+			if res.Document.Copy == ForbiddenUnchangedCopy || res.Published || res.Document.Published {
+				t.Fatal("became 真实商品无改动 or published")
 			}
 			if res.Document.AIDisclosure != img.AIDisclosure {
 				t.Fatal("disclosure dropped")
 			}
-			if len(fc.Submits) != 1 {
-				t.Fatalf("submits %+v", fc.Submits)
-			}
-			got := fc.Submits[0].Document
-			if got.QualityVerdict != tc.verdict || got.Copy != tc.copy || got.Copy == ForbiddenUnchangedCopy {
-				t.Fatalf("fixture upgraded copy: %+v", got)
+			if len(fc.Submits) != 0 {
+				t.Fatalf("unpublished fixture was called: %+v", fc.Submits)
 			}
 		})
 	}
@@ -420,8 +437,11 @@ func TestClientErrorDoesNotPublish(t *testing.T) {
 	res, err := svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: testImage(), PlatformID: FixtureArticle,
 	})
-	if !errors.Is(err, sentinel) {
+	if !errors.Is(err, ErrDraftNotPersisted) || errors.Is(err, sentinel) {
 		t.Fatalf("err %v", err)
+	}
+	if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") {
+		t.Fatalf("success copy: %v %q", err, res.Message)
 	}
 	if res.Published || res.Document.Published || res.Uploaded || res.Charged {
 		t.Fatalf("error set published: %+v", res)
@@ -429,11 +449,14 @@ func TestClientErrorDoesNotPublish(t *testing.T) {
 	if res.Status == "published" || strings.Contains(res.Message, "发布成功") {
 		t.Fatalf("error described as publish success: %+v", res)
 	}
+	if len(fc.Submits) != 0 {
+		t.Fatal("unpublished handoff called the client")
+	}
 	vers, err := svc.Versions(testCaller(), "tenant-a", "brand-1", "asset-img-1", "v3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vers) != 1 || vers[0].Published || vers[0].Charged {
+	if len(vers) != 0 {
 		t.Fatalf("stored %+v", vers)
 	}
 }
@@ -461,8 +484,11 @@ func TestLyingAckCannotUpgradeVerdictCopyOrPublish(t *testing.T) {
 	res, err := svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: img, PlatformID: FixtureArticle,
 	})
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
+	}
+	if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") {
+		t.Fatalf("success copy: %v %q", err, res.Message)
 	}
 	if res.Published || res.Uploaded || res.VideoCreated || res.Document.Published {
 		t.Fatalf("lie published: %+v", res)
@@ -477,7 +503,7 @@ func TestLyingAckCannotUpgradeVerdictCopyOrPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vers) != 1 || vers[0].QualityVerdict != VerdictFail || vers[0].Published {
+	if len(vers) != 0 {
 		t.Fatalf("stored lie %+v", vers)
 	}
 }
@@ -505,8 +531,11 @@ func TestFixtureIDIsNotServicePass(t *testing.T) {
 	res, err := svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: testImage(), PlatformID: FixtureArticle,
 	})
-	if err != nil {
+	if !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
+	}
+	if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") || len(fc.Submits) != 0 {
+		t.Fatalf("fixture recorded a draft: %+v submits=%d err=%v", res, len(fc.Submits), err)
 	}
 	if !res.Fixture || res.LiveMatrix || fc.Live() {
 		t.Fatalf("fixture treated as live: %+v live=%v", res, fc.Live())
@@ -524,13 +553,20 @@ func TestVersionsDoNotLeakAcrossTenants(t *testing.T) {
 	svc := NewService(NewFixtureCatalog(), &FixtureClient{})
 	if _, err := svc.Handoff(context.Background(), Request{
 		Caller: testCaller(), Image: testImage(), PlatformID: FixtureArticle,
-	}); err != nil {
+	}); !errors.Is(err, ErrDraftNotPersisted) {
 		t.Fatal(err)
+	}
+	own, err := svc.Versions(testCaller(), "tenant-a", "brand-1", "asset-img-1", "v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(own) != 0 {
+		t.Fatalf("stored before the leak check: %+v", own)
 	}
 	other := testCaller()
 	other.TenantID = "tenant-b"
 	other.CallerID = "caller-b"
-	_, err := svc.Versions(other, "tenant-a", "brand-1", "asset-img-1", "v3")
+	_, err = svc.Versions(other, "tenant-a", "brand-1", "asset-img-1", "v3")
 	if !errors.Is(err, ErrCrossTenant) {
 		t.Fatalf("leak: %v", err)
 	}
@@ -550,6 +586,154 @@ func TestCancelledContextDoesNotSubmit(t *testing.T) {
 	if len(fc.Submits) != 0 {
 		t.Fatal("cancelled call submitted")
 	}
+}
+
+func TestUnpublishedHandoffLeavesStorageEmpty(t *testing.T) {
+	cases := []struct {
+		name    string
+		request Request
+	}{
+		{
+			name: "article",
+			request: Request{
+				Caller: testCaller(), Image: testImage(), PlatformID: FixtureArticle,
+			},
+		},
+		{
+			name: "cover_with_existing_video",
+			request: Request{
+				Caller: testCaller(), Image: testImage(), PlatformID: FixtureCover,
+				Placement: PlacementCover, ExistingVideoAssetID: "video-asset-9",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fc := &FixtureClient{}
+			svc := NewService(NewFixtureCatalog(), fc)
+			res, err := svc.Handoff(context.Background(), tc.request)
+			again, againErr := svc.Handoff(context.Background(), tc.request)
+			img := tc.request.Image
+			vers, verr := svc.Versions(testCaller(), img.TenantID, img.BrandID, img.AssetID, img.Version)
+			if verr != nil {
+				t.Fatal(verr)
+			}
+			if len(vers) != 0 {
+				t.Fatalf("storage length %d, want 0", len(vers))
+			}
+			if err == nil || againErr == nil {
+				t.Fatalf("unpublished handoff succeeded: first=%v message=%q again=%v message=%q", err, res.Message, againErr, again.Message)
+			}
+			if strings.Contains(err.Error(), "draft recorded") || strings.Contains(res.Message, "draft recorded") ||
+				strings.Contains(againErr.Error(), "draft recorded") || strings.Contains(again.Message, "draft recorded") {
+				t.Fatalf("success copy draft recorded: err=%v message=%q", err, res.Message)
+			}
+			if !strings.Contains(err.Error(), "草稿未落库") || !strings.Contains(err.Error(), "图片未发布") {
+				t.Fatalf("error does not say the draft was not persisted and the image was not published: %v", err)
+			}
+			if res.Published || res.Uploaded || res.Charged || res.VideoCreated || res.Transcoded || res.Document.Published || res.Document.Uploaded {
+				t.Fatalf("refusal published or uploaded: %+v", res)
+			}
+			if len(fc.Submits) != 0 {
+				t.Fatalf("unpublished handoff submitted: %+v", fc.Submits)
+			}
+		})
+	}
+
+	fc := &FixtureClient{}
+	svc := NewService(NewFixtureCatalog(), fc)
+	img := testImage()
+	img.QualityVerdict = VerdictFail
+	res, err := svc.Handoff(context.Background(), Request{
+		Caller: testCaller(), Image: img, PlatformID: FixtureVideoOnly,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vers, verr := svc.Versions(testCaller(), img.TenantID, img.BrandID, img.AssetID, img.Version)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(vers) != 0 {
+		t.Fatalf("needs_video storage length %d, want 0", len(vers))
+	}
+	if strings.Contains(res.Message, "draft recorded") || res.Message != NeedsVideoMessage {
+		t.Fatalf("needs_video message %q", res.Message)
+	}
+	if len(fc.Submits) != 0 || res.Published || res.Uploaded || res.VideoCreated || res.Charged || res.Transcoded {
+		t.Fatalf("needs_video had a side effect: %+v submits=%d", res, len(fc.Submits))
+	}
+}
+
+func TestRefusalPathDoesNotRemember(t *testing.T) {
+	src := productionSource(t)
+	handoff := functionBody(t, src, "func (s *Service) Handoff")
+	refuseAt := strings.Index(handoff, "refuseUnpublished(")
+	rememberAt := strings.Index(handoff, "s.remember(")
+	if refuseAt < 0 || rememberAt < 0 || refuseAt > rememberAt {
+		t.Fatalf("unpublished refusal must return before remember saves; refuse=%d remember=%d", refuseAt, rememberAt)
+	}
+	body := functionBody(t, src, "func (s *Service) refuseUnpublished")
+	for _, banned := range []string{
+		"s.remember(",
+		"s.drafts",
+		"SubmitDraft",
+		"draft recorded",
+		"/v1/matrix-drafts",
+		"os.Getenv",
+		"http.NewRequest",
+		"sql.Open",
+		"os.WriteFile",
+		"os.Create",
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("refusal path contains %q", banned)
+		}
+	}
+	if strings.Contains(src, "/v1/matrix-drafts") || strings.Contains(src, "os.Getenv") {
+		t.Fatal("package calls the unpublished draft API or reads the environment")
+	}
+}
+
+func productionSource(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("caller")
+	}
+	dir := filepath.Dir(file)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src strings.Builder
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		src.Write(body)
+		src.WriteByte('\n')
+	}
+	return src.String()
+}
+
+func functionBody(t *testing.T, src, signature string) string {
+	t.Helper()
+	start := strings.Index(src, signature)
+	if start < 0 {
+		t.Fatalf("missing %s", signature)
+	}
+	rest := src[start:]
+	next := strings.Index(rest[len(signature):], "\nfunc ")
+	if next < 0 {
+		return rest
+	}
+	return rest[:len(signature)+next]
 }
 
 func TestPackageSourceDoesNotPublishOrTouchExport(t *testing.T) {
@@ -591,6 +775,15 @@ func TestPackageSourceDoesNotPublishOrTouchExport(t *testing.T) {
 		"VideoCreated: true",
 		"Transcoded: true",
 		`Service: "PASS"`,
+		"/v1/matrix-drafts",
+		"os.Getenv",
+		"handlePhotoUpload",
+		"handlePhotoContent",
+		"handleSourceExport",
+		"handleRevisionExport",
+		"handlePlateExport",
+		"internal/httpapi/photos",
+		"internal/store/photos",
 	} {
 		if strings.Contains(text, banned) {
 			t.Fatalf("package contains %q", banned)

@@ -1,5 +1,6 @@
 // Package matrixhandoff 把已选定的产品图做成版本化交接文档。
 // 矩阵只是接口。夹具客户端不是在线矩阵服务。
+// 未注入已发布的矩阵草稿契约时，交接不写入草稿，也不表示已发布。
 // 本包不转码、不上传、不扣费，也不标记已发布，也不改产品图导出状态。
 // 图片不是视频。needs_video 不是成功。保真 fail 不能写成真实商品无改动。
 package matrixhandoff
@@ -51,11 +52,12 @@ const (
 	// needs_video must not be described as success.
 	NeedsVideoMessage = "needs_video must not be described as success"
 	// FailCopy 留在 fail 文档上。fidelity fail must not become 真实商品无改动。
-	FailCopy               = "fidelity fail must not become 真实商品无改动"
-	UnknownCopy            = "quality verdict unknown must not become 真实商品无改动"
-	PassCopy               = "quality verdict pass; handoff is not a publish claim"
-	ForbiddenUnchangedCopy = "真实商品无改动"
-	draftMessage           = "draft recorded; image was not published"
+	FailCopy                 = "fidelity fail must not become 真实商品无改动"
+	UnknownCopy              = "quality verdict unknown must not become 真实商品无改动"
+	PassCopy                 = "quality verdict pass; handoff is not a publish claim"
+	ForbiddenUnchangedCopy   = "真实商品无改动"
+	draftMessage             = "draft recorded; image was not published"
+	DraftNotPersistedMessage = "draft was not persisted; image was not published; 草稿未落库，图片未发布"
 )
 
 var (
@@ -67,6 +69,7 @@ var (
 	ErrUnsupportedPlacement  = errors.New("matrixhandoff: unsupported_placement")
 	ErrCoverRequiresVideo    = errors.New("matrixhandoff: cover_requires_existing_video")
 	ErrVideoOnlyRejectsImage = errors.New("matrixhandoff: video_only_rejects_image")
+	ErrDraftNotPersisted     = errors.New("matrixhandoff: " + DraftNotPersistedMessage)
 )
 
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -209,6 +212,9 @@ func (s *Service) Handoff(ctx context.Context, req Request) (Result, error) {
 	doc, err := buildDocument(req.Image)
 	if err != nil {
 		return Result{}, err
+	}
+	if !publishedContractsInjected(s) {
+		return s.refuseUnpublished(doc, platform, role, req.ExistingVideoAssetID, needsVideo)
 	}
 	doc = s.remember(doc)
 	if needsVideo {
@@ -420,6 +426,21 @@ func canonicalText(s string, max int, allowEmpty bool) bool {
 	}
 	n := utf8.RuneCountInString(s)
 	return n >= 1 && n <= max
+}
+
+// publishedContractsInjected reports whether a real published AG10 draft
+// contract and AG01 access contract were injected. Neither contract is
+// published. A fixture client is not that contract, and this does not
+// consult the process environment.
+func publishedContractsInjected(*Service) bool { return false }
+
+// refuseUnpublished returns without writing the draft map, a database, a
+// file, or HTTP. needs_video stays an honest non-success and is not stored.
+func (s *Service) refuseUnpublished(doc Document, platform Platform, role, existing string, needsVideo bool) (Result, error) {
+	if needsVideo {
+		return resultFrom(doc, platform, "", StatusNeedsVideo, NeedsVideoMessage, "", true), nil
+	}
+	return resultFrom(doc, platform, role, statusNotPublished, DraftNotPersistedMessage, existing, false), ErrDraftNotPersisted
 }
 
 func (s *Service) remember(doc Document) Document {
