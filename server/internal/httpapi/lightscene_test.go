@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/config"
+	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
 	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 )
 
@@ -236,6 +237,50 @@ func TestLightSceneCreativeAfterFailureIgnoresModeFlag(t *testing.T) {
 	})
 	if st != http.StatusUnprocessableEntity {
 		t.Fatalf("单独确认也不能在创意路径未接通时出图, got %d %v", st, confirmed)
+	}
+}
+
+func TestLightSceneCreativeSilentEntryUsesProductAxes(t *testing.T) {
+	f := newFixture(t, func(c *config.Config) {
+		c.LightSceneEnabled = true
+		c.LightCreativeEnabled = true
+		c.LightModelCredential = "configured-not-a-secret"
+		c.GenerationEnabled = true
+		c.TaskBaseURL = "http://127.0.0.1:1"
+		c.TaskToken = "task-tok"
+		c.UploadBaseURL = "http://127.0.0.1:1"
+		c.UploadToken = "up"
+	})
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	tenant := f.principal(t, tok)
+	_, _, err := f.st.SaveFidelityReport(t.Context(), tenant, proj, fidelity.Report{
+		Mode: fidelity.ModeFidelity, InputRef: in, InputVersion: "v-hand",
+		Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true,
+		RealGeneration: fidelity.RealGenerationAuthorized, BodySHA256: "hand-axis-fail",
+		Checks: []fidelity.Check{
+			{Name: "aesthetic", Result: "0.99"},
+			{Name: "logo", Result: fidelity.ResultFail},
+			{Name: "packaging_text", Result: fidelity.ResultFail},
+			{Name: "spec", Result: fidelity.ResultFail},
+			{Name: "structure", Result: fidelity.ResultFail},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, silent := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes", tok, map[string]any{
+		"input_id": in, "mode": "creative", "lighting_intent": "戏剧光",
+	})
+	code := ""
+	if errBody, ok := silent["error"].(map[string]any); ok {
+		code, _ = errBody["code"].(string)
+	}
+	if st != http.StatusConflict || code != "silent_creative_forbidden" {
+		t.Fatalf("手造通过结论不能盖过产品轴失败而静默进入创意, got %d %#v", st, silent)
+	}
+	if job, ok := silent["job"].(map[string]any); ok && job["mode"] == "creative" {
+		t.Fatalf("静默创意不得留下创意报价: %#v", silent)
 	}
 }
 
@@ -592,6 +637,82 @@ func TestLightSceneUnknownKeepsSelectedVersion(t *testing.T) {
 	job, _ = again["job"].(map[string]any)
 	if bills.Load() != 0 || posts.Load() != 1 || job["output_version"] != "ver_user" || job["job_status"] != "unknown" {
 		t.Fatalf("刷新和重试不得重复扣费或改版本: posts=%d polls=%d bills=%d %#v", posts.Load(), polls.Load(), bills.Load(), job)
+	}
+}
+
+func TestLightSceneRefreshWithoutCredentialDoesNotCallSupplier(t *testing.T) {
+	const credential = "configured-not-a-secret"
+	var posts, polls, bills atomic.Int32
+	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+			_, _ = w.Write([]byte(`{"task_id":"task_light_drop","status":"pending"}`))
+			return
+		}
+		polls.Add(1)
+		_, _ = w.Write([]byte(`{"task_id":"task_light_drop","status":"failed","result":{"asset_id":"asset_late","model_ref":"model_late","output_version":"ver_late","image":"solid-placeholder"}}`))
+	}))
+	t.Cleanup(taskSrv.Close)
+	billSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bills.Add(1)
+		http.Error(w, "no billing client", http.StatusBadGateway)
+	}))
+	t.Cleanup(billSrv.Close)
+	f := newFixture(t, func(c *config.Config) {
+		c.LightSceneEnabled = true
+		c.LightModelCredential = credential
+		c.GenerationEnabled = true
+		c.TaskBaseURL = taskSrv.URL
+		c.TaskToken = "task-tok"
+		c.UploadBaseURL = "http://127.0.0.1:1"
+		c.UploadToken = "up"
+		c.BillingEnabled = false
+		c.BillingBaseURL = billSrv.URL
+		c.BillingToken = "bill-tok"
+	})
+	f.srv.Tasks = &platform.TaskClient{BaseURL: taskSrv.URL, AppID: "product-image", Token: "task-tok"}
+	f.srv.Billing = &platform.BillingClient{BaseURL: billSrv.URL, AppID: "product-image", Token: "bill-tok"}
+	f.rearm(t)
+	_, tok := f.loginOK(t)
+	proj, in := f.projectWithInput(t, tok)
+	jobID := f.openAndConfirmLight(t, tok, proj, in)
+	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/submit", tok, nil)
+	job, _ := submitted["job"].(map[string]any)
+	if st != http.StatusOK || job["job_status"] != "queued" || posts.Load() != 1 || polls.Load() != 0 {
+		t.Fatalf("有凭证时才提交一次: %d posts=%d polls=%d %#v", st, posts.Load(), polls.Load(), job)
+	}
+	p := f.principal(t, tok)
+	saved, err := f.st.GetLightJob(t.Context(), p, proj, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Selection = "selected"
+	saved.OutputVersion = "ver_user"
+	saved.OutputAssetID = "asset_user"
+	if err := f.st.UpdateLightJob(t.Context(), saved); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.Cfg.LightModelCredential = ""
+	st, refreshed := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/refresh", tok, nil)
+	job, _ = refreshed["job"].(map[string]any)
+	if st != http.StatusOK || polls.Load() != 0 || bills.Load() != 0 || posts.Load() != 1 {
+		t.Fatalf("撤掉凭证后刷新不得调用供应商或扣费: %d posts=%d polls=%d bills=%d %#v", st, posts.Load(), polls.Load(), bills.Load(), job)
+	}
+	if job["job_status"] != "queued" || job["selection"] != "selected" || job["output_version"] != "ver_user" || job["output_asset_id"] != "asset_user" {
+		t.Fatalf("无凭证核对不得覆盖已选定版本: %#v", job)
+	}
+	if job["output_asset_id"] == "asset_late" || job["output_version"] == "ver_late" || job["verified_product"] == true {
+		t.Fatalf("纯色占位不得写成模型结果: %#v", job)
+	}
+	assertLightClosed(t, job)
+	if strings.Contains(fmt.Sprintf("%#v", refreshed), credential) {
+		t.Fatal("凭证不得回传")
+	}
+	_, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/light-scenes/"+jobID+"/submit", tok, nil)
+	job, _ = again["job"].(map[string]any)
+	if posts.Load() != 1 || polls.Load() != 0 || bills.Load() != 0 || job["output_version"] != "ver_user" || job["selection"] != "selected" {
+		t.Fatalf("无凭证再次提交不得重试扣费或改版本: posts=%d polls=%d bills=%d %#v", posts.Load(), polls.Load(), bills.Load(), job)
 	}
 }
 

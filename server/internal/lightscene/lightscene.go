@@ -108,11 +108,13 @@ type Execution struct {
 }
 
 // SubmitInput 决定提交是新任务、原任务返回，还是诚实失败。
+// CredentialConfigured 只表示产品光影模型凭证是否存在，不携带密钥。
 type SubmitInput struct {
-	Quote            Quote
-	GenerationUsable bool
-	ExistingStatus   string
-	SameFingerprint  bool
+	Quote                Quote
+	GenerationUsable     bool
+	CredentialConfigured bool
+	ExistingStatus       string
+	SameFingerprint      bool
 }
 
 // ExportRecord 只引用已有输出版本，不启动新的光影生成。
@@ -237,10 +239,20 @@ func DecideSubmit(in SubmitInput) (Execution, error) {
 		}
 		return base, nil
 	}
-	if !in.GenerationUsable {
+	if !in.GenerationUsable || !in.CredentialConfigured {
 		base.Status = StatusFailed
 		base.Evidence = EvidenceNone
+		base.CallPlatformTask = false
+		base.OutputAssetID = ""
+		base.OutputVersion = ""
+		base.VendorReceiptID = ""
+		base.Selection = ""
+		base.VerifiedProduct = false
+		base.Deliverable = false
+		base.BillingPassed = false
+		base.ProductionGenerationPassed = false
 		base.Pending = append(base.Pending, "没有真实供应商，未执行生成")
+		base.Pending = append(base.Pending, RealGenerationIncomplete)
 		return base, nil
 	}
 	base.Status = StatusQueued
@@ -290,6 +302,13 @@ func SubjectGate(ex Execution, reports []fidelity.Report) Execution {
 			ex.Pending = appendPending(ex.Pending, "主体保真未通过")
 			return ex
 		}
+	}
+	if ProductAxesFailed(reports) {
+		ex.Quality = QualityFail
+		ex.VerifiedProduct = false
+		ex.Deliverable = false
+		ex.Pending = appendPending(ex.Pending, "美观分不能掩盖 Logo、包装、规格或结构")
+		return ex
 	}
 	exact := false
 	for _, report := range reports {
@@ -359,6 +378,34 @@ func AcceptanceSamples() []Sample {
 // AppendPending 追加一条待确认说明。同一句已存在时保持原样。
 func AppendPending(items []string, item string) []string {
 	return appendPending(items, item)
+}
+
+// ProductAxesFailed 判断 Logo、包装文字、规格或结构是否失败。
+// 美观分或其他通过结论不能单独推翻这些轴。SubjectGate 与创意静默入口共用此判断。
+func ProductAxesFailed(reports []fidelity.Report) bool {
+	for _, report := range reports {
+		for _, check := range report.Checks {
+			if !isProductAxis(check.Name) {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(check.Result), fidelity.ResultFail) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isProductAxis(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "logo", "logo_text", "packaging", "packaging_text", "spec", "structure", "shape":
+		return true
+	}
+	switch strings.TrimSpace(name) {
+	case "包装", "包装文字", "规格", "结构":
+		return true
+	}
+	return false
 }
 
 func appendPending(items []string, item string) []string {
