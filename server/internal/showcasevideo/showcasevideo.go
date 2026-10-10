@@ -61,7 +61,8 @@ type Quote struct {
 	VideoURL             string
 }
 
-// SubmitInput 决定是新的失败/待确认，还是回到同一条记录。
+// SubmitInput 决定是新的失败，还是回到同一条记录。
+// VideoProviderUsable 只是调用方的说法。本包没有图生视频客户端，不能据此调用供应商。
 type SubmitInput struct {
 	Quote               Quote
 	VideoProviderUsable bool
@@ -125,7 +126,8 @@ func Fingerprint(tenant, project, imageID, move string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// DecideSubmit 给出提交判定。没有视频供应商时失败；已有失败或待确认则原样返回。
+// DecideSubmit 给出提交判定。没有已接入的图生视频供应商时失败，不调用、不扣费。
+// 已有失败或待确认记录原样返回。调用方声称有供应商，也不能改走文生视频或平台任务。
 func DecideSubmit(in SubmitInput) (Record, error) {
 	if in.Quote.QuoteStatus != QuoteConfirmed {
 		return Record{}, ErrQuoteUnconfirmed
@@ -145,14 +147,8 @@ func DecideSubmit(in SubmitInput) (Record, error) {
 		base.Pending = append(base.Pending, "同一请求仍是原记录")
 		return base, nil
 	}
-	if !in.VideoProviderUsable {
-		base.Status = StatusFailed
-		base.Pending = append(base.Pending, "没有真实视频供应商，未执行生成")
-		return base, nil
-	}
-	base.Status = StatusUnknown
-	base.CallSupplier = true
-	base.Pending = append(base.Pending, "供应商结果待确认")
+	base.Status = StatusFailed
+	base.Pending = append(base.Pending, "没有真实视频供应商，未执行生成")
 	return base, nil
 }
 

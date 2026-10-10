@@ -132,32 +132,41 @@ func TestShowcaseVideoUnknownRefreshDoesNotRegenerate(t *testing.T) {
 	_, tok := f.loginOK(t)
 	proj, imageID := f.projectWithInput(t, tok)
 	jobID := f.openAndConfirmShowcase(t, tok, proj, imageID, "360")
-	st, first := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/submit", tok, nil)
+	st, first := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/submit", tok, map[string]any{
+		"placeholder_url": "https://example.invalid/fake.mp4",
+		"still":           true,
+		"video_bytes":     "",
+	})
 	job, _ := first["job"].(map[string]any)
-	if st != http.StatusOK || job["job_status"] != "unknown" || job["show_video"] != false || job["play_still"] != false {
-		t.Fatalf("供应商不可达应为待确认: %d %#v", st, job)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["show_video"] != false || job["play_still"] != false || job["video_url"] != "" {
+		t.Fatalf("平台任务不是图生视频供应商，应失败且不播放: %d %#v", st, job)
+	}
+	if job["charged"] != false || job["billing_passed"] != false || job["production_authorized"] != false || job["platform_task_id"] != "" {
+		t.Fatalf("失败不能扣费或留下任务: %#v", job)
+	}
+	if job["honesty"] != "没有真实展示视频，不能播放静图或假视频" {
+		t.Fatalf("失败文案被弱化: %#v", job["honesty"])
 	}
 	_, _ = f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/submit", tok, nil)
-	if calls.Load() != 1 {
-		t.Fatalf("待确认后不得再次提交, calls=%d", calls.Load())
-	}
-	st, refreshed := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/refresh", tok, nil)
+	st, refreshed := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/refresh", tok, map[string]any{
+		"video_url": "https://example.invalid/fake.mp4", "job_status": "succeeded",
+	})
 	job, _ = refreshed["job"].(map[string]any)
-	if st != http.StatusOK || job["id"] != jobID || job["job_status"] != "unknown" || job["show_video"] != false || job["video_url"] != "" {
-		t.Fatalf("刷新后仍是同一条待确认: %d %#v", st, job)
+	if st != http.StatusOK || job["id"] != jobID || job["job_status"] != "failed" || job["show_video"] != false || job["play_still"] != false || job["video_url"] != "" {
+		t.Fatalf("刷新后仍应是同一条失败记录: %d %#v", st, job)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("没有图生视频供应商时不得调用平台任务, calls=%d", calls.Load())
 	}
 }
 
 func TestShowcaseVideoSupplierAssetDoesNotVerifyFailure(t *testing.T) {
-	var gets atomic.Int32
+	var calls atomic.Int32
 	taskSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
 			_, _ = w.Write([]byte(`{"task_id":"task_video_1","status":"pending"}`))
-			return
-		}
-		if gets.Add(1) == 1 {
-			_, _ = w.Write([]byte(`{"task_id":"task_video_1","status":"failed"}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"task_id":"task_video_1","status":"succeeded","result":{"asset_id":"filled-video","url":"https://example.invalid/fake.mp4"}}`))
@@ -174,24 +183,33 @@ func TestShowcaseVideoSupplierAssetDoesNotVerifyFailure(t *testing.T) {
 	f.rearm(t)
 	_, tok := f.loginOK(t)
 	proj, imageID := f.projectWithInput(t, tok)
-	jobID := f.openAndConfirmShowcase(t, tok, proj, imageID, "scene")
+	st, created := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos", tok, map[string]any{
+		"product_image_id": imageID, "camera_move": "scene",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("开展示视频 %d %v", st, created)
+	}
+	jobID := created["job"].(map[string]any)["id"].(string)
+	st, early := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/submit", tok, nil)
+	if st != http.StatusConflict {
+		t.Fatalf("未确认报价不得提交, got %d %v", st, early)
+	}
+	st, conf := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/confirm", tok, nil)
+	if st != http.StatusOK {
+		t.Fatalf("确认 %d %v", st, conf)
+	}
 	st, submitted := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/submit", tok, nil)
 	job, _ := submitted["job"].(map[string]any)
-	if st != http.StatusOK || job["platform_task_id"] != "task_video_1" || job["show_video"] != false || job["production_authorized"] != false || job["play_still"] != false {
-		t.Fatalf("受理任务不能当成已出视频: %d %#v", st, job)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["platform_task_id"] != "" || job["show_video"] != false || job["production_authorized"] != false || job["play_still"] != false || job["video_url"] != "" || job["charged"] != false {
+		t.Fatalf("平台任务返回的地址不能当成图生视频: %d %#v", st, job)
 	}
 	st, failed := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/refresh", tok, nil)
 	job, _ = failed["job"].(map[string]any)
-	if st != http.StatusOK || job["job_status"] != "failed" || job["show_video"] != false || job["video_url"] != "" {
-		t.Fatalf("供应商失败应保持失败: %d %#v", st, job)
+	if st != http.StatusOK || job["job_status"] != "failed" || job["show_video"] != false || job["video_url"] != "" || job["id"] != jobID {
+		t.Fatalf("刷新不得把占位结果核销成视频: %d %#v", st, job)
 	}
-	st, again := f.do(t, "POST", "/api/v1/projects/"+proj+"/showcase-videos/"+jobID+"/refresh", tok, nil)
-	job, _ = again["job"].(map[string]any)
-	if st != http.StatusOK || job["id"] != jobID || job["job_status"] != "failed" || job["show_video"] != false || job["play_still"] != false || job["output_is_receipt"] != false {
-		t.Fatalf("失败后不能借输出编号改成成功: %d %#v", st, job)
-	}
-	if gets.Load() != 1 {
-		t.Fatalf("失败记录不应再次向供应商核对, gets=%d", gets.Load())
+	if calls.Load() != 0 {
+		t.Fatalf("不得向平台任务核对展示视频, calls=%d", calls.Load())
 	}
 }
 

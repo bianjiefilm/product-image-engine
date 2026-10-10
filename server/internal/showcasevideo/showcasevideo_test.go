@@ -33,7 +33,7 @@ func TestMissingImageOrUnknownMoveRejected(t *testing.T) {
 	if _, err := Open(OpenInput{TenantID: "ten", ProjectID: "prj", ImageID: "  ", CameraMove: MoveScene}); err != ErrImageRequired {
 		t.Fatalf("空白产品图应拒绝, got %v", err)
 	}
-	for _, move := range []string{"", "zoom", "orbit", "360度", "创意运镜"} {
+	for _, move := range []string{"", "zoom", "orbit", "360度", "创意运镜", "文生视频", "t2v", "text-to-video"} {
 		if _, err := Open(OpenInput{TenantID: "ten", ProjectID: "prj", ImageID: "in_cup", CameraMove: move}); err != ErrMoveNotAllowed {
 			t.Fatalf("运镜 %q 应拒绝, got %v", move, err)
 		}
@@ -116,5 +116,79 @@ func TestFingerprintChangesWithImageOrMove(t *testing.T) {
 	c := Fingerprint("ten", "prj", "out_pack", Move360)
 	if a == "" || a == b || a == c {
 		t.Fatal("不同产品图或运镜必须是不同请求")
+	}
+}
+
+func TestUnconfirmedQuoteDoesNotSubmitOrCharge(t *testing.T) {
+	q, err := Open(OpenInput{TenantID: "ten", ProjectID: "prj", ImageID: "in_cup", CameraMove: Move360})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.QuoteStatus != QuoteUnconfirmed {
+		t.Fatalf("开单后报价应仍未确认: %+v", q)
+	}
+	rec, err := DecideSubmit(SubmitInput{Quote: q, VideoProviderUsable: true})
+	if err != ErrQuoteUnconfirmed {
+		t.Fatalf("未确认报价不得提交, got %v", err)
+	}
+	if rec.CallSupplier || rec.Charged || rec.ShowVideo || rec.PlayStill || rec.VideoURL != "" || rec.Status == StatusFailed {
+		t.Fatalf("拒绝提交时不能调用、扣费或留下视频结果: %+v", rec)
+	}
+}
+
+func TestCallerSupplierFlagDoesNotAuthorizeCall(t *testing.T) {
+	q, err := Open(OpenInput{TenantID: "ten", ProjectID: "prj", ImageID: "in_cup", CameraMove: MoveScene})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.QuoteStatus = QuoteConfirmed
+	rec, err := DecideSubmit(SubmitInput{Quote: q, VideoProviderUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Status != StatusFailed || rec.CallSupplier || rec.Charged || rec.BillingPassed || rec.ProductionAuthorized {
+		t.Fatalf("没有已接入的图生视频时不得调用或扣费: %+v", rec)
+	}
+	if rec.ShowVideo || rec.PlayStill || rec.VideoURL != "" || rec.BillingLabel != BillingPendingLabel {
+		t.Fatalf("调用标记不能变成可播放视频: %+v", rec)
+	}
+	again, err := DecideSubmit(SubmitInput{
+		Quote: q, VideoProviderUsable: true, SameFingerprint: true,
+		ExistingID: "vid_same", ExistingStatus: StatusFailed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != "vid_same" || again.Status != StatusFailed || !again.Idempotent || again.CallSupplier || again.Charged || again.Regenerate {
+		t.Fatalf("同一输入再次提交不得重新调用或扣费: %+v", again)
+	}
+}
+
+func TestStillPlaceholderAndEmptyOutputAreNotVideo(t *testing.T) {
+	q, err := Open(OpenInput{TenantID: "ten", ProjectID: "prj", ImageID: "in_cup", CameraMove: Move360})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.QuoteStatus = QuoteConfirmed
+	rec, err := DecideSubmit(SubmitInput{Quote: q, VideoProviderUsable: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, outputID := range []string{
+		"https://example.invalid/placeholder.mp4",
+		"image/jpeg",
+		"",
+		"   ",
+	} {
+		next := NoteOutputID(rec, outputID)
+		if next.Status != StatusFailed || next.ShowVideo || next.PlayStill || next.VideoURL != "" || next.Charged || next.OutputIsReceipt || next.BillingPassed || next.ProductionAuthorized {
+			t.Fatalf("输出 %q 不能当成视频成功: %+v", outputID, next)
+		}
+		if outputID == "   " && next.OutputAssetID != "" {
+			t.Fatalf("空白输出编号应被丢掉: %+v", next)
+		}
+	}
+	if _, err := ApplyClientClaim(rec, "可播放"); err != ErrRelabelForbidden {
+		t.Fatalf("静图或占位口径不能改成可播放, got %v", err)
 	}
 }

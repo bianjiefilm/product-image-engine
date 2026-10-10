@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BILLING_PENDING, CAMERA_MOVES, canStartShowcase, presentShowcaseJob, sameRecord } from "@/lib/showcase-video";
+import { maySubmitShowcase } from "@/components/showcase-video/submit-guard";
 
 type ImageOpt = { id: string; label: string };
 
@@ -82,17 +83,18 @@ export function ShowcaseVideoPanel({ projectId, images }: { projectId: string; i
         product_image_id: imageId,
         camera_move: cameraMove,
       });
-      const opened = created?.job;
+      let opened = created?.job;
       if (!opened?.id) return;
       remember(opened);
       if (opened.job_status === "quoted" && opened.quote_status !== "confirmed") {
         const confirmed = await send(`/api/projects/${projectId}/showcase-videos/${opened.id}/confirm`);
-        if (confirmed?.job) remember(confirmed.job);
+        if (!confirmed?.job) return;
+        opened = confirmed.job;
+        remember(opened);
       }
-      if ((opened.job_status ?? "quoted") === "quoted") {
-        const submitted = await send(`/api/projects/${projectId}/showcase-videos/${opened.id}/submit`);
-        if (submitted?.job) remember(submitted.job);
-      }
+      if (!maySubmitShowcase(opened)) return;
+      const submitted = await send(`/api/projects/${projectId}/showcase-videos/${opened.id}/submit`);
+      if (submitted?.job) remember(submitted.job);
     } finally {
       setBusy(false);
     }
