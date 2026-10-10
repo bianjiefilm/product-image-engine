@@ -727,6 +727,12 @@ func (s *Server) handleSendReceipt(w http.ResponseWriter, r *http.Request) {
 			"所选输出来自旧需求版本("+out.BriefVersion+"),已采用新版本;请在新版本下重新选择输出后回执")
 		return
 	}
+	if snap.SourceKind == "campaign" {
+		if aerr := s.rejectUnselectedCampaignReceipt(ctx, p.Tenant(), projID, out); aerr != nil {
+			aerr.write(w)
+			return
+		}
+	}
 	// 投递配置 fail-closed:目标未登记 receipt target / 未配置专用密钥 → 拒绝。
 	if s.Registry == nil {
 		writeErr(w, http.StatusServiceUnavailable, "registry_unavailable", "应用登记表未装配,无法解析回执目标")
