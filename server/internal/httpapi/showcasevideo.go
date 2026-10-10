@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
-	"github.com/bianjiefilm/product-image-engine/server/internal/platform"
 	"github.com/bianjiefilm/product-image-engine/server/internal/showcasevideo"
 	"github.com/bianjiefilm/product-image-engine/server/internal/store"
 )
@@ -157,42 +155,30 @@ func (s *Server) handleSubmitShowcaseVideo(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	job.JobStatus = showcasevideo.StatusSubmitting
-	genSt, _ := s.Cfg.GenerationUsable()
-	if genSt != 0 {
-		job.JobStatus = showcasevideo.StatusFailed
-		job.Quality = showcasevideo.QualityUnknown
-		job.OutputAssetID = ""
-		job.Pending = appendPendingShowcase(job.Pending, "没有真实视频供应商，未执行生成")
-		if err := s.St.UpdateShowcaseVideoJob(r.Context(), job); err != nil {
-			writeStoreErr(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.showcaseVideoView(job, false)})
-		return
-	}
-	res, err := s.Tasks.Submit(r.Context(), platform.SubmitRequest{
-		IdempotencyKey: job.Fingerprint,
-		Kind:           "product-image-showcase-video",
-		Payload: map[string]any{
-			"project_id": job.ProjectID, "product_image_id": job.ProductImageID,
-			"camera_move": job.CameraMove, "tenant_id": job.TenantID,
+	rec, err := showcasevideo.DecideSubmit(showcasevideo.SubmitInput{
+		Quote: showcasevideo.Quote{
+			ImageID: job.ProductImageID, CameraMove: job.CameraMove,
+			Fingerprint: job.Fingerprint, BillingLabel: job.BillingLabel,
+			QuoteStatus: job.QuoteStatus,
 		},
 	})
-	if err != nil || strings.TrimSpace(res.TaskID) == "" {
-		job.JobStatus = showcasevideo.StatusUnknown
-		job.OutputAssetID = ""
-		job.Pending = appendPendingShowcase(job.Pending, "供应商结果待确认")
-		if uerr := s.St.UpdateShowcaseVideoJob(r.Context(), job); uerr != nil {
-			writeStoreErr(w, uerr)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.showcaseVideoView(job, false)})
+	if err != nil {
+		writeErr(w, http.StatusConflict, "quote_blocked", err.Error())
 		return
 	}
-	job.JobStatus = showcasevideo.StatusUnknown
-	job.PlatformTaskID = res.TaskID
+	if rec.CallSupplier {
+		rec.Status = showcasevideo.StatusFailed
+	}
+	job.JobStatus = rec.Status
+	if job.JobStatus != showcasevideo.StatusFailed {
+		job.JobStatus = showcasevideo.StatusFailed
+	}
+	job.Quality = rec.Quality
+	job.PlatformTaskID = ""
 	job.OutputAssetID = ""
-	job.Pending = appendPendingShowcase(job.Pending, "供应商已受理，展示视频仍待确认")
+	for _, item := range rec.Pending {
+		job.Pending = appendPendingShowcase(job.Pending, item)
+	}
 	if err := s.St.UpdateShowcaseVideoJob(r.Context(), job); err != nil {
 		writeStoreErr(w, err)
 		return
@@ -203,37 +189,6 @@ func (s *Server) handleSubmitShowcaseVideo(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleRefreshShowcaseVideo(w http.ResponseWriter, r *http.Request) {
 	job, ok := s.loadShowcaseVideo(w, r)
 	if !ok {
-		return
-	}
-	if job.JobStatus == showcasevideo.StatusFailed {
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.showcaseVideoView(job, true)})
-		return
-	}
-	if job.PlatformTaskID == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.showcaseVideoView(job, true)})
-		return
-	}
-	st, err := s.Tasks.Status(r.Context(), job.PlatformTaskID)
-	if err != nil {
-		job.JobStatus = showcasevideo.StatusUnknown
-		job.OutputAssetID = ""
-		job.Pending = appendPendingShowcase(job.Pending, "供应商结果待确认")
-		if uerr := s.St.UpdateShowcaseVideoJob(r.Context(), job); uerr != nil {
-			writeStoreErr(w, uerr)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"job": s.showcaseVideoView(job, true)})
-		return
-	}
-	if st.Status == "failed" {
-		job.JobStatus = showcasevideo.StatusFailed
-	} else {
-		job.JobStatus = showcasevideo.StatusUnknown
-	}
-	job.OutputAssetID = ""
-	job.Pending = appendPendingShowcase(job.Pending, "填上的输出编号不算展示视频")
-	if err := s.St.UpdateShowcaseVideoJob(r.Context(), job); err != nil {
-		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": s.showcaseVideoView(job, true)})
