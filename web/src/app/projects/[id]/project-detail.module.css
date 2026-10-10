@@ -1,0 +1,77 @@
+/* 只给工程详情页。触控目标在本页至少 44px，事实用卡片而不是管理表。 */
+.shell button,
+.shell input:not([type="checkbox"]),
+.shell select,
+.shell summary,
+.shell a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.shell summary,
+.shell a {
+  display: inline-flex;
+  align-items: center;
+}
+
+.shell summary {
+  display: flex;
+  width: 100%;
+}
+
+.shell input[type="checkbox"] {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.check {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.factList {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.factCard {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.factDl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.factDl div {
+  display: grid;
+  grid-template-columns: 7em 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.factDl dt {
+  margin: 0;
+  color: var(--muted);
+}
+
+.factDl dd {
+  margin: 0;
+}
