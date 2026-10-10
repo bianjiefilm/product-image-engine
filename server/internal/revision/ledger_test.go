@@ -1,6 +1,8 @@
 package revision
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -101,6 +103,11 @@ func TestSideBySideRollbackAndExplicitDownstream(t *testing.T) {
 	exported, err := led.Export("V2")
 	if err != nil || exported.VersionID != "V2" || exported.RequiresReupload || exported.AssetRef == "" {
 		t.Fatalf("export = %+v %v", exported, err)
+	}
+	exportedAgain, err := led.Export("V2")
+	raw, mErr := json.Marshal(exported)
+	if err != nil || exportedAgain != exported || mErr != nil || bytes.Contains(raw, []byte("draft")) || bytes.Contains(raw, []byte("matrix")) {
+		t.Fatalf("export is a version ref, not a draft: %s %+v %v", raw, exportedAgain, err)
 	}
 	if _, err := led.Export(""); !errors.Is(err, ErrExplicitVersion) {
 		t.Fatalf("missing version err=%v", err)

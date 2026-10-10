@@ -120,11 +120,27 @@ func TestPartialRevisionSkipsExpensiveStepsAndKeepsSubjectPixels(t *testing.T) {
 		Intent: intent, Provider: Provider{PartialEdit: false}, Acknowledged: true,
 		Original: original, Mask: mask, FullRedraw: hook,
 	})
+	if !errors.Is(err, ErrPartialUnavailable) || hook.calls != 0 || len(got.PNG) != 0 || got.SupplierCalls != 0 || got.Origin != "" || got.SubjectPreserved || got.Plan.CallsSupplier || !got.Plan.Degraded {
+		t.Fatalf("supplier-off result claimed a redraw: err=%v png=%d origin=%s preserved=%v plan=%+v", err, len(got.PNG), got.Origin, got.SubjectPreserved, got.Plan)
+	}
+}
+func TestSupplierOpenStillLocksSubjectWithoutCallingSupplier(t *testing.T) {
+	intent, err := ParseNaturalLanguage("背景简单一点")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hook.calls != 0 || got.SupplierCalls != 0 || got.Plan.CallsSupplier {
-		t.Fatalf("supplier or full redraw ran: hook=%d supplier=%d plan=%v", hook.calls, got.SupplierCalls, got.Plan.CallsSupplier)
+	original := subjectFixture(t)
+	mask := maskCenter(t, 8, 8)
+	hook := &countingRedraw{}
+	got, err := Execute(ExecuteRequest{
+		Intent: intent, Provider: Provider{PartialEdit: true}, Acknowledged: true,
+		Original: original, Mask: mask, FullRedraw: hook,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hook.calls != 0 || got.SupplierCalls != 0 || got.Plan.CallsSupplier || got.Plan.Degraded {
+		t.Fatalf("supplier or full redraw ran: hook=%d supplier=%d plan=%+v", hook.calls, got.SupplierCalls, got.Plan)
 	}
 	for _, step := range ExpensiveSteps {
 		for _, ran := range got.StepsRun {
@@ -132,9 +148,6 @@ func TestPartialRevisionSkipsExpensiveStepsAndKeepsSubjectPixels(t *testing.T) {
 				t.Fatalf("expensive step ran: %s in %v", step, got.StepsRun)
 			}
 		}
-	}
-	if !containsAll(got.Plan.Skipped, ExpensiveSteps) {
-		t.Fatalf("plan skipped = %v", got.Plan.Skipped)
 	}
 	if got.Origin != bgreplace.OriginSubjectLock || !got.SubjectPreserved {
 		t.Fatalf("origin/subject = %s %v", got.Origin, got.SubjectPreserved)
@@ -151,15 +164,15 @@ func TestImpactIsExplainedBeforeExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.RequiresAcknowledgement || plan.ImpactNotice == "" || plan.CallsSupplier {
-		t.Fatalf("plan = %+v", plan)
+	if plan.RequiresAcknowledgement || !plan.Degraded || plan.ImpactNotice == "" || plan.CallsSupplier || len(plan.Steps) != 0 {
+		t.Fatalf("closed supplier must not plan a redraw: %+v", plan)
 	}
-	_, err = Execute(ExecuteRequest{
-		Intent: intent, Provider: Provider{PartialEdit: false}, Acknowledged: false,
+	got, err := Execute(ExecuteRequest{
+		Intent: intent, Provider: Provider{PartialEdit: false}, Acknowledged: true,
 		Original: original, Mask: mask, FullRedraw: hook,
 	})
-	if !errors.Is(err, ErrImpactUnacknowledged) || hook.calls != 0 {
-		t.Fatalf("err=%v calls=%d", err, hook.calls)
+	if !errors.Is(err, ErrPartialUnavailable) || hook.calls != 0 || len(got.PNG) != 0 {
+		t.Fatalf("err=%v calls=%d png=%d", err, hook.calls, len(got.PNG))
 	}
 	ready, err := PlanRevision(intent, Provider{PartialEdit: true})
 	if err != nil || ready.RequiresAcknowledgement || ready.CallsSupplier || ready.SupplierNote == "" {

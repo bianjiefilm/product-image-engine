@@ -52,6 +52,9 @@ func Execute(req ExecuteRequest) (Result, error) {
 	if plan.RequiresAcknowledgement && !req.Acknowledged {
 		return Result{Plan: plan}, ErrImpactUnacknowledged
 	}
+	if pixelAction(req.Intent.Action) && !req.Provider.PartialEdit {
+		return Result{Plan: plan}, ErrPartialUnavailable
+	}
 	if !pixelAction(req.Intent.Action) {
 		return Result{Plan: plan, StepsRun: append([]string{}, plan.Steps...), SupplierCalls: 0}, nil
 	}

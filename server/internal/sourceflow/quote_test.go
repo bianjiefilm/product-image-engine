@@ -68,8 +68,44 @@ func TestSourceQuoteExpiredCannotRepriceSameRun(t *testing.T) {
 	req := request()
 	req.RequestKey = "request-explicit-new"
 	c, e := f.svc.Create(t.Context(), f.actor, f.project.ID, req)
-	if e != nil || c.ID == r.ID || c.Quote == nil || c.Quote.QuoteID == r.Quote.QuoteID {
-		t.Fatal(c, e)
+	if e != nil || c.ID != r.ID || c.TaskKey != r.TaskKey || c.UsageKey != r.UsageKey || c.Intent.RequestKey != r.Intent.RequestKey || c.Quote == nil || c.Quote.QuoteID != r.Quote.QuoteID || f.bill.QuoteAttempts != 1 || f.task.Submits != 0 {
+		t.Fatalf("unchanged input minted a new run: %+v %v submits=%d", c, e, f.task.Submits)
+	}
+}
+func TestUnchangedGenerationReusesConfirmedRunAcrossRequestKeys(t *testing.T) {
+	f := flowFixture(t)
+	r := f.quoted(t)
+	confirmed, e := f.svc.Confirm(t.Context(), f.actor, f.project.ID, r.ID, r.Quote.QuoteID, si.QuoteHash(*r.Quote))
+	if e != nil || confirmed.ConfirmationHash == "" {
+		t.Fatal(confirmed, e)
+	}
+	submits, usage := f.task.Submits, f.bill.UsageCommits
+	req := request()
+	req.RequestKey = "request-after-relogin"
+	again, e := f.svc.Create(t.Context(), f.actor, f.project.ID, req)
+	if e != nil || again.ID != confirmed.ID || again.TaskKey != confirmed.TaskKey || again.UsageKey != confirmed.UsageKey || again.Intent.RequestKey != confirmed.Intent.RequestKey || again.ConfirmationHash != confirmed.ConfirmationHash {
+		t.Fatalf("relogin quote changed keys: %+v %v", again, e)
+	}
+	other := request()
+	other.RequestKey = "request-other-prompt"
+	other.Prompt = "另一句"
+	fresh, e := f.svc.Create(t.Context(), f.actor, f.project.ID, other)
+	if e != nil || fresh.ID == confirmed.ID || fresh.TaskKey == confirmed.TaskKey {
+		t.Fatalf("a different prompt must be its own run: %+v %v", fresh, e)
+	}
+	if f.task.Submits != submits || f.bill.UsageCommits != usage+1 {
+		t.Fatalf("original run was charged again or the new prompt was not recorded: submits=%d usage=%d", f.task.Submits, f.bill.UsageCommits)
+	}
+	cancelled, e := f.svc.Cancel(t.Context(), f.actor, f.project.ID, fresh.ID)
+	if e != nil || !cancelled.CancelRequested || f.task.Submits != submits {
+		t.Fatalf("cancel of the unused prompt run: %+v %v submits=%d", cancelled, e, f.task.Submits)
+	}
+	after := request()
+	after.RequestKey = "request-after-cancel"
+	after.Prompt = "另一句"
+	replaced, e := f.svc.Create(t.Context(), f.actor, f.project.ID, after)
+	if e != nil || replaced.ID == fresh.ID || replaced.ID == confirmed.ID || replaced.TaskKey == fresh.TaskKey {
+		t.Fatalf("a cancelled run was reused: %+v %v", replaced, e)
 	}
 }
 func TestSourceUsageReplayChangedPromptOrPricingConflicts(t *testing.T) {

@@ -124,6 +124,10 @@ func (s *Server) handleCreateRevision(w http.ResponseWriter, r *http.Request) {
 			writeRevisionErr(w, err)
 			return
 		}
+		if plan.Degraded {
+			writePartialUnavailable(w, plan)
+			return
+		}
 		if plan.RequiresAcknowledgement && !body.Acknowledged {
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error": map[string]string{
@@ -402,10 +406,23 @@ func decodeImageField(encoded string) ([]byte, error) {
 	return raw, nil
 }
 
+func writePartialUnavailable(w http.ResponseWriter, plan revision.Plan) {
+	writeJSON(w, http.StatusConflict, map[string]any{
+		"error": map[string]string{
+			"code": "partial_edit_unavailable", "message": plan.ImpactNotice,
+		},
+		"degraded":      true,
+		"redrawn":       false,
+		"impact_notice": plan.ImpactNotice,
+	})
+}
+
 func writeRevisionErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, revision.ErrImpactUnacknowledged):
 		writeErr(w, http.StatusConflict, "impact_unacknowledged", revision.ImpactNotice)
+	case errors.Is(err, revision.ErrPartialUnavailable):
+		writePartialUnavailable(w, revision.Plan{ImpactNotice: revision.ImpactNotice, Degraded: true})
 	case errors.Is(err, revision.ErrPreserveSubject):
 		writeErr(w, http.StatusConflict, "preserve_subject", err.Error())
 	case errors.Is(err, revision.ErrNotExportable):
