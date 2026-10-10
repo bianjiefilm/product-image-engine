@@ -145,8 +145,13 @@ func (f *plateFixture) request(key string) PlateRequest {
 // successful, charged Task whose output is exactly `plate`.
 func (f *plateFixture) succeeded(t *testing.T, key string, plate []byte) si.Run {
 	t.Helper()
+	return f.succeededRequest(t, f.request(key), plate)
+}
+
+func (f *plateFixture) succeededRequest(t *testing.T, req PlateRequest, plate []byte) si.Run {
+	t.Helper()
 	ctx := t.Context()
-	r, e := f.svc.CreatePlate(ctx, f.actor, f.project.ID, f.request(key))
+	r, e := f.svc.CreatePlate(ctx, f.actor, f.project.ID, req)
 	if e != nil || r.Quote == nil {
 		t.Fatal(r, e)
 	}
@@ -356,8 +361,11 @@ func TestDerivePendingIsNotStarvedByPermanentlyFailingRuns(t *testing.T) {
 	plate := gradientPlate(1024, 1024)
 	f.assets.failRuns = map[string]bool{}
 	var all []si.Run
-	for _, k := range []string{"run-a", "run-b", "run-c", "run-d"} {
-		all = append(all, f.succeeded(t, k, plate))
+	backgrounds := []string{"深蓝棚拍甲", "深蓝棚拍乙", "深蓝棚拍丙", "深蓝棚拍丁"}
+	for i, k := range []string{"run-a", "run-b", "run-c", "run-d"} {
+		req := f.request(k)
+		req.BackgroundIntent = backgrounds[i]
+		all = append(all, f.succeededRequest(t, req, plate))
 	}
 	// The loop lists oldest first (updated_at, id): the three smallest ids are the
 	// stuck ones and the largest is the healthy run queued behind them.
@@ -715,5 +723,32 @@ func TestF15ChangedPriceProfileCannotReuseAnOldPlateRun(t *testing.T) {
 	}
 	if f.task.Submits != 0 {
 		t.Fatal("nothing may be dispatched")
+	}
+}
+
+func TestUnchangedPlateReusesRunAcrossRequestKeys(t *testing.T) {
+	f := newPlateFixture(t, "carton-1024x1024")
+	f.svc.OutputRecoveryReady = true
+	r, e := f.svc.CreatePlate(t.Context(), f.actor, f.project.ID, f.request("plate-keep"))
+	if e != nil || r.Quote == nil {
+		t.Fatal(r, e)
+	}
+	confirmed, e := f.svc.Confirm(t.Context(), f.actor, f.project.ID, r.ID, r.Quote.QuoteID, si.QuoteHash(*r.Quote))
+	if e != nil || confirmed.ConfirmationHash == "" {
+		t.Fatal(confirmed, e)
+	}
+	submits, usage := f.task.Submits, f.bill.UsageCommits
+	again, e := f.svc.CreatePlate(t.Context(), f.actor, f.project.ID, f.request("plate-relogin"))
+	if e != nil || again.ID != confirmed.ID || again.TaskKey != confirmed.TaskKey || again.UsageKey != confirmed.UsageKey || again.Intent.RequestKey != confirmed.Intent.RequestKey || again.ConfirmationHash != confirmed.ConfirmationHash {
+		t.Fatalf("same plate input minted a new run: %+v %v", again, e)
+	}
+	other := f.request("plate-other-background")
+	other.BackgroundIntent = "暖白棚拍"
+	fresh, e := f.svc.CreatePlate(t.Context(), f.actor, f.project.ID, other)
+	if e != nil || fresh.ID == confirmed.ID || fresh.TaskKey == confirmed.TaskKey {
+		t.Fatalf("a different background must be its own run: %+v %v", fresh, e)
+	}
+	if f.task.Submits != submits || f.bill.UsageCommits != usage+1 {
+		t.Fatalf("original plate was charged again or the new background was not recorded: submits=%d usage=%d", f.task.Submits, f.bill.UsageCommits)
 	}
 }

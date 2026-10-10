@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import styles from "@/components/ui/ui.module.css";
 import { Button } from "@/components/ui/button";
 import { PlateLockScreen } from "@/components/plate-lock/PlateLockScreen";
-import { SourceImageController, sourceImageAPI, canConfirm, formatMinor, requestState, sourcePath, sourceSegment, pendingHintKey, parseSourceJSON, SourceHTTPError, sourceWritesDenied } from "@/lib/source-image";
+import { SourceImageController, sourceImageAPI, canConfirm, formatMinor, requestState, sourcePath, sourceSegment, pendingHintKey, pickRecoveredRun, parseSourceJSON, SourceHTTPError, sourceWritesDenied } from "@/lib/source-image";
 import type { SourceRunView, SourceCapabilities, SourceScope, SourceModeName } from "@/lib/source-image";
 
 type ScreenProps={ view: SourceRunView | null; capabilities: SourceCapabilities | null; nowUnix: number; projectID: string; busy?: boolean; prompt?: string; notice?: string; deleteArmed?: boolean; history?: SourceRunView[]; nextCursor?: string; pendingKey?: string;
@@ -80,18 +80,20 @@ export function SourceImagePanel({projectId,mode="text_generate",returnEnabled=f
     if(changed) {setHistory([]);setNextCursor("");setArmed(false);repaint();}return s;
   }
   function hint(l:PanelLease): void {ensure(l);const s=verifiedScope.current;if(!s)return;try {const h=c.pendingHint;if(h)sessionStorage.setItem(pendingHintKey(s,mode),JSON.stringify(h));else sessionStorage.removeItem(pendingHintKey(s,mode));}catch {}}
-  async function readHistory(l:PanelLease,cursor?:string): Promise<void> {
+  async function readHistory(l:PanelLease,cursor?:string) {
     const list=await step(l,()=>c.history(cursor));ensure(l);
     setHistory(prev=>cursor ? [...prev,...list.runs.filter(r=>!prev.some(p=>p.run_id === r.run_id))] : list.runs);setNextCursor(list.next_cursor);
+    return list;
   }
   useEffect(()=>{
     mounted.current=true;const l={generation:binding.current.generation,project:binding.current.project};
     setBound(l.project);c.setScope(null);verifiedScope.current=null;setHistory([]);setNextCursor("");setArmed(false);setBusy(false);repaint();
     if(l.project && sourceSegment(l.project)) void (async()=>{try {
-      await authorize(l);await step(l,()=>c.loadCapabilities());await readHistory(l);ensure(l);
+      await authorize(l);await step(l,()=>c.loadCapabilities());const listed=await readHistory(l);ensure(l);
       const run=new URLSearchParams(window.location.search).get(runParam);
       if(run && sourceSegment(run)) await step(l,()=>c.restore(l.project,run));
-      else {try {ensure(l);const raw=sessionStorage.getItem(pendingHintKey(verifiedScope.current!,mode));if(raw)await step(l,()=>c.restoreHint(parseSourceJSON(raw)));}catch(e){ensure(l);void e;}}
+      else {try {ensure(l);const raw=sessionStorage.getItem(pendingHintKey(verifiedScope.current!,mode));if(raw)await step(l,()=>c.restoreHint(parseSourceJSON(raw)));}catch(e){ensure(l);void e;}
+        if(!c.view && listed){const picked=pickRecoveredRun(listed.runs,mode);if(picked)await step(l,()=>c.restore(l.project,picked.run_id));}}
       ensure(l);setLoaded(true);repaint();
     }catch {if(current(l)){invalidate();setHistory([]);setNextCursor("");setLoaded(true);setNotice("当前登录或工程未验证，请重新读取。");repaint();}}})();
     return()=>{if(current(l)){invalidate();mounted.current=false;}};
@@ -159,8 +161,8 @@ export function SourceImagePanel({projectId,mode="text_generate",returnEnabled=f
   if(plateMode)return <PlateLockScreen view={view} capabilities={sameScope ? c.capabilities:null} nowUnix={Math.floor(Date.now()/1000)} projectID={displayed} loading={!loaded && !!displayed} busy={busy && !!operationRunning.current} background={background} inputId={inputId} notice={notice} returnEnabled={returnEnabled} returnAck={ack} returnNotice={returnNotice} uploadSlot={uploadSlot} materialsSlot={materialsSlot} railSlot={railSlot}
     onBackground={v=>local(()=>setBackground(v))} onInput={v=>local(()=>setInputId(v))} onQuote={()=>void operate(quote)} onConfirm={()=>void operate(l=>step(l,()=>c.confirm()))}
     onRefresh={()=>void operate(l=>step(l,()=>c.action("reconcile")))} onSelect={()=>void operate(l=>step(l,()=>c.action("select")))} onReturnAck={v=>local(()=>setAck(v))} onReturn={()=>void operate(returnToSource)}
-    onNew={()=>local(()=>{try {if(operationRunning.current)throw new Error("pending");c.newRequest();hint(rendered);setReturnNotice("");setAck(false);setNotice("");repaint();}catch {setNotice("上一步还没有结束，请稍候。");}})} />;
+    onNew={()=>local(()=>{try {if(operationRunning.current)throw new Error("pending");c.newRequest();hint(rendered);setReturnNotice("");setAck(false);setNotice("已清空当前画面。文字和底板没变时，服务端继续用原来的请求，不会另开一笔费用。");repaint();}catch {setNotice("上一步还没有结束，请稍候。");}})} />;
   return <SourceImageScreen view={view} capabilities={sameScope ? c.capabilities:null} nowUnix={Math.floor(Date.now()/1000)} projectID={displayed} prompt={prompt} busy={busy && !!operationRunning.current} notice={notice} deleteArmed={sameScope && armed} history={history.filter(r=>belongs(r) && r.mode === mode)} nextCursor={sameScope ? nextCursor:""} pendingKey={sameScope ? c.pendingHint?.requestKey:undefined}
     onPrompt={v=>local(()=>setPrompt(v))} onQuote={()=>void operate(quote)} onConfirm={()=>void operate(l=>step(l,()=>c.confirm()))} onRefresh={()=>void operate(l=>step(l,()=>c.restore(l.project,c.view?.run_id ?? "")))} onReload={()=>void operate(async l=>{await readHistory(l);const h=c.pendingHint;if(h)await step(l,()=>c.restoreHint(h));})}
-    onNew={()=>local(()=>{try {if(operationRunning.current)throw new Error("pending");c.newRequest();hint(rendered);setArmed(false);setNotice("下一次获取报价将创建新请求，原请求保留在历史中。");repaint();}catch {setNotice("原动作尚未返回");}})} onAction={name=>void operate(async l=>{await step(l,()=>c.action(name));ensure(l);setArmed(false);})} onArmDelete={()=>local(()=>setArmed(true))} onHistory={run=>void operate(l=>step(l,()=>c.restore(l.project,run)))} onMore={()=>void operate(l=>readHistory(l,nextCursor))} />;
+    onNew={()=>local(()=>{try {if(operationRunning.current)throw new Error("pending");c.newRequest();hint(rendered);setArmed(false);setNotice("已清空当前画面。文字和底板没变时，服务端继续用原来的请求，不会另开一笔费用。");repaint();}catch {setNotice("原动作尚未返回");}})} onAction={name=>void operate(async l=>{await step(l,()=>c.action(name));ensure(l);setArmed(false);})} onArmDelete={()=>local(()=>setArmed(true))} onHistory={run=>void operate(l=>step(l,()=>c.restore(l.project,run)))} onMore={()=>void operate(async l=>{await readHistory(l,nextCursor);})} />;
 }

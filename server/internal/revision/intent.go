@@ -50,6 +50,7 @@ var (
 	ErrBadImage             = errors.New("revision: image rejected")
 	ErrBadBrief             = errors.New("revision: brief rejected")
 	ErrUnknownDownstream    = errors.New("revision: unknown downstream")
+	ErrPartialUnavailable   = errors.New("revision: partial edit supplier is not enabled")
 )
 
 // Intent 是自然语言和点击动作的同一个修改意图。

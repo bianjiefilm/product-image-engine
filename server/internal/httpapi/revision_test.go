@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -39,7 +41,9 @@ func TestSelectiveRevisionFlow(t *testing.T) {
 	if st != http.StatusCreated {
 		t.Fatalf("create project %d %v", st, created)
 	}
-	proj := created["project"].(map[string]any)["id"].(string)
+	project := created["project"].(map[string]any)
+	proj := project["id"].(string)
+	tenantID := project["tenant_id"].(string)
 	base := "/api/v1/projects/" + proj + "/revisions"
 
 	st, byText := f.do(t, "POST", base+"/intent", tok, map[string]any{"text": "背景简单一点"})
@@ -61,7 +65,7 @@ func TestSelectiveRevisionFlow(t *testing.T) {
 		t.Fatalf("plan %d %v", st, plan)
 	}
 	body := plan["plan"].(map[string]any)
-	if body["requires_acknowledgement"] != true || body["impact_notice"] == "" || body["calls_supplier"] != false {
+	if body["requires_acknowledgement"] != false || body["degraded"] != true || body["impact_notice"] == "" || body["calls_supplier"] != false || len(body["steps"].([]any)) != 0 {
 		t.Fatalf("plan = %#v", body)
 	}
 	if hits != 0 {
@@ -69,12 +73,12 @@ func TestSelectiveRevisionFlow(t *testing.T) {
 	}
 
 	st, denied := f.do(t, "POST", base, tok, map[string]any{"text": "背景简单一点", "acknowledged": false})
-	if st != http.StatusConflict || errCode(denied) != "impact_unacknowledged" {
-		t.Fatalf("unacked %d %#v", st, denied)
+	if st != http.StatusConflict || errCode(denied) != "partial_edit_unavailable" || denied["degraded"] != true || denied["redrawn"] != false {
+		t.Fatalf("closed supplier %d %#v", st, denied)
 	}
 	st, listed := f.do(t, "GET", base, tok, nil)
 	if st != http.StatusOK || len(listed["versions"].([]any)) != 0 {
-		t.Fatalf("unacked wrote a version: %d %#v", st, listed)
+		t.Fatalf("closed supplier wrote a version: %d %#v", st, listed)
 	}
 
 	original, mask := revisionFixture(t)
@@ -82,38 +86,22 @@ func TestSelectiveRevisionFlow(t *testing.T) {
 		"text": "背景简单一点", "acknowledged": true, "brief_version": "b1",
 		"original_b64": b64(original), "mask_b64": b64(mask),
 	})
-	if st != http.StatusCreated {
-		t.Fatalf("execute %d %#v", st, made)
+	if st != http.StatusConflict || errCode(made) != "partial_edit_unavailable" || made["redrawn"] != false {
+		t.Fatalf("acknowledged execute still redrew: %d %#v", st, made)
 	}
-	if made["supplier_calls"] != float64(0) || made["origin"] != "subject_lock" || made["subject_preserved"] != true {
-		t.Fatalf("execute body %#v", made)
+	if _, hasVersion := made["version"]; hasVersion || made["origin"] != nil {
+		t.Fatalf("unavailable response claimed a result: %#v", made)
 	}
-	if made["incremental_cost_cents"] != float64(40) {
-		t.Fatalf("stored cost %#v", made["incremental_cost_cents"])
+	st, listed = f.do(t, "GET", base, tok, nil)
+	if st != http.StatusOK || len(listed["versions"].([]any)) != 0 {
+		t.Fatalf("acknowledged closed supplier wrote a version: %d %#v", st, listed)
 	}
-	ran, _ := made["steps_run"].([]any)
-	for _, step := range ran {
-		for _, banned := range revision.ExpensiveSteps {
-			if step == banned {
-				t.Fatalf("expensive step %v", step)
-			}
-		}
-	}
-	v1 := made["version"].(map[string]any)["label"].(string)
-	code, hdr, raw := f.doRaw(t, "GET", base+"/"+v1+"/content", tok, nil)
-	if code != http.StatusOK || hdr.Get("X-Revision-Version") != v1 {
-		t.Fatalf("content %d %s", code, hdr.Get("X-Revision-Version"))
-	}
-	assertHTTPSubject(t, original, mask, raw)
 
-	st, second := f.do(t, "POST", base, tok, map[string]any{
-		"click": "outdoor", "acknowledged": true, "brief_version": "b1",
-		"original_b64": b64(original), "mask_b64": b64(mask),
-	})
-	if st != http.StatusCreated {
-		t.Fatalf("second %d %#v", st, second)
+	v1, v2 := seedRevisionPair(t, f, tenantID, proj, original, mask)
+	code, hdr, raw := f.doRaw(t, "GET", base+"/"+v1+"/content", tok, nil)
+	if code != http.StatusOK || hdr.Get("X-Revision-Version") != v1 || !bytes.Equal(raw, original) {
+		t.Fatalf("content %d %s bytes=%d", code, hdr.Get("X-Revision-Version"), len(raw))
 	}
-	v2 := second["version"].(map[string]any)["label"].(string)
 	st, adopted := f.do(t, "POST", base+"/"+v2+"/adopt", tok, map[string]any{})
 	if st != http.StatusOK || adopted["adopted_label"] != v2 {
 		t.Fatalf("adopt %d %#v", st, adopted)
@@ -164,6 +152,17 @@ func TestSelectiveRevisionFlow(t *testing.T) {
 	if exp["version_id"] != v2 || exp["requires_reupload"] != false || exp["asset_ref"] == "" {
 		t.Fatalf("export %#v", exp)
 	}
+	if _, draft := exp["draft"]; draft {
+		t.Fatalf("export persisted a draft: %#v", exp)
+	}
+	rawExport, err := json.Marshal(exported)
+	if err != nil || bytes.Contains(rawExport, []byte("draft")) || bytes.Contains(rawExport, []byte("matrix")) {
+		t.Fatalf("export document %s %v", rawExport, err)
+	}
+	st, again := f.do(t, "POST", base+"/"+v2+"/export", tok, map[string]any{})
+	if st != http.StatusOK || again["export"].(map[string]any)["content_hash"] != exp["content_hash"] || again["export"].(map[string]any)["asset_ref"] != exp["asset_ref"] {
+		t.Fatalf("second export changed the ref: %#v", again)
+	}
 	st, down := f.do(t, "POST", base+"/"+v2+"/downstream", tok, map[string]any{"target": "matrix"})
 	if st != http.StatusOK {
 		t.Fatalf("downstream %d %#v", st, down)
@@ -182,6 +181,31 @@ func TestSelectiveRevisionFlow(t *testing.T) {
 	if st != http.StatusNotFound {
 		t.Fatalf("cross tenant %d", st)
 	}
+}
+
+func seedRevisionPair(t *testing.T, f *fixture, tenantID, projectID string, left, right []byte) (string, string) {
+	t.Helper()
+	led := revision.NewLedger()
+	bg, err := revision.ParseNaturalLanguage("背景简单一点")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outdoor, err := revision.ParseNaturalLanguage("换成户外")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1, err := led.PutCandidate(left, bg, "recorded", "b1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := led.PutCandidate(right, outdoor, "recorded", "b1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.SaveRevisionLedger(context.Background(), tenantID, projectID, led.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	return v1.Label, v2.Label
 }
 
 func revisionFixture(t *testing.T) ([]byte, []byte) {

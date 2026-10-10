@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SourceImageController, SourceHTTPError, formatMinor, canConfirm, requestState, decodeSourceRun, pendingHintKey } from "@/lib/source-image";
+import { SourceImageController, SourceHTTPError, formatMinor, canConfirm, requestState, decodeSourceRun, pendingHintKey, pickRecoveredRun } from "@/lib/source-image";
 import { quoted, plateDone, sourceAPIFixture, scope, capabilities } from "./source-image-fixture";
 
 function controller(calls: string[]) {
@@ -126,6 +126,33 @@ describe("formal source explicit controller", () => {
     api.find=async(_p,k)=>{calls.push("find:"+k);return null;};
     await c.restoreHint({...scope,requestKey:"request-a"});
     await expect(c.quote(input)).rejects.toThrow();expect(calls).toEqual(["find:request-a","find:request-a"]);
+  });
+  it("quote again on a restored run only reads that run", async () => {
+    const calls: string[] = []; const { c } = controller(calls);
+    await c.restore("proj_a", "sir_a");
+    calls.length = 0;
+    await c.quote(input);
+    expect(calls).toEqual(["get"]);
+    expect(c.view?.run_id).toBe("sir_a");
+    expect(c.view?.request_key).toBe("request-a");
+  });
+  it("accepts the server request key when the same generation is reused", async () => {
+    const calls: string[] = []; const { c, api } = controller(calls);
+    api.create = async (_p, b) => { calls.push("create:" + b.request_key); return { ...quoted(), request_key: "canonical-key", run_id: "sir_kept" }; };
+    await c.quote(input);
+    expect(calls).toEqual(["create:request-a"]);
+    expect(c.view?.request_key).toBe("canonical-key");
+    expect(c.view?.run_id).toBe("sir_kept");
+    expect(c.pendingHint?.requestKey).toBe("canonical-key");
+  });
+  it("relogin prefers the newest confirmed run of this mode", () => {
+    const newer = { ...quoted(), run_id: "sir_new", confirmed: false, request_key: "request-new" };
+    const older = { ...quoted(), run_id: "sir_old", confirmed: true, request_key: "request-old" };
+    const other = { ...quoted(), run_id: "sir_plate", mode: "background_plate_lock" as const, confirmed: true };
+    const cancelled = { ...quoted(), run_id: "sir_cancel", confirmed: true, cancel_requested: true };
+    expect(pickRecoveredRun([newer, older, other, cancelled], "text_generate")?.run_id).toBe("sir_old");
+    expect(pickRecoveredRun([newer, cancelled], "text_generate")?.run_id).toBe("sir_new");
+    expect(pickRecoveredRun([cancelled], "text_generate")).toBeNull();
   });
   it("funds unknown does not become free and refund retains original charge", () => {
     expect(requestState({ ...quoted(), phase: "asset_pending", payment: { ...quoted().payment, status: "unknown" } })).toContain("素材保存中");

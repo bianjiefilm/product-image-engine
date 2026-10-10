@@ -75,6 +75,9 @@ func (s *Service) CreatePlate(ctx context.Context, actor Actor, project string, 
 		Size: s.Profile.Size, Provider: s.Profile.Provider, Model: s.Profile.Model, Capability: s.Profile.Capability,
 		PricingVersion: s.Profile.PricingVersion, Quantity: s.Profile.Quantity, PlateDigest: si.PlateDigest(frozen),
 	}
+	if kept, ok, e := s.reuseGeneration(ctx, intent); e != nil || ok {
+		return kept, e
+	}
 	r, _, e := s.Store.CreateSourcePlateRunForProject(ctx, intent, frozen)
 	if e != nil {
 		return r, e

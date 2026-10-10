@@ -87,7 +87,8 @@ func TestSourceRecoverySelectsAtMostTenDueRows(t *testing.T) {
 	f := flowFixture(t)
 	for i := 0; i < 12; i++ {
 		req := request()
-		req.RequestKey = string(rune('a' + i))
+		req.RequestKey = "request-" + string(rune('a'+i))
+		req.Prompt = "蓝纸盒-" + string(rune('a'+i))
 		r, e := f.svc.Create(t.Context(), f.actor, f.project.ID, req)
 		if e != nil {
 			t.Fatal(e)

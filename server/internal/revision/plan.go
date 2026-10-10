@@ -26,10 +26,13 @@ var ExpensiveSteps = []string{
 	StepNewUpload,
 }
 
-// ImpactNotice 在供应商不能局部编辑时、执行前展示。
-const ImpactNotice = "供应商不能局部编辑。若把整图交给供应商，影响范围是整张画布，而不只是所点区域。确认前不会执行。确认后只替换蒙版以外的像素，主体像素锁回原图，本次不调用供应商。"
+// ImpactNotice 在供应商局部修改未开启时展示。它不承诺会改像素。
+const ImpactNotice = "局部修改供应商没有打开。不会改图，不会把原图或纯色占位说成已经局部重绘，也不会因此扣费。"
 
-// SupplierUnknownNote 说明本构建没有真实供应商局部编辑。
+// SupplierClosedNote 说明本次不会执行，也不会留下伪造成果。
+const SupplierClosedNote = "局部修改供应商未开启。本次不执行，不产生新版本。"
+
+// SupplierUnknownNote 说明能力标记打开时本构建仍不调用供应商。
 const SupplierUnknownNote = "真实供应商局部编辑仍是 UNKNOWN；本次使用确定性底板并锁回主体，不调用供应商。"
 
 // Provider 只描述能力。本构建即使 PartialEdit 为真也不调用供应商。
@@ -47,6 +50,7 @@ type Plan struct {
 	IncrementalCostCents    int64    `json:"incremental_cost_cents"`
 	CallsSupplier           bool     `json:"calls_supplier"`
 	SupplierNote            string   `json:"supplier_note,omitempty"`
+	Degraded                bool     `json:"degraded,omitempty"`
 }
 
 // PlanRevision 只计划。不读像素，不扣费，不调用供应商。
@@ -66,12 +70,16 @@ func PlanRevision(intent Intent, provider Provider) (Plan, error) {
 	}
 	switch intent.Action {
 	case ActionSimplifyBackground, ActionOutdoor, ActionBrightenKeepProduct:
+		if !provider.PartialEdit {
+			plan.Degraded = true
+			plan.ImpactNotice = ImpactNotice
+			plan.SupplierNote = SupplierClosedNote
+			plan.Steps = []string{}
+			plan.Skipped = append(plan.Skipped, StepDeterministicPlate, StepSubjectLock, StepVersionRecord)
+			break
+		}
 		plan.Steps = []string{StepDeterministicPlate, StepSubjectLock, StepVersionRecord}
 		plan.SupplierNote = SupplierUnknownNote
-		if !provider.PartialEdit {
-			plan.ImpactNotice = ImpactNotice
-			plan.RequiresAcknowledgement = true
-		}
 	case ActionRollback, ActionAdopt:
 		plan.Steps = []string{StepPointerMove}
 	case ActionSendDownstream:

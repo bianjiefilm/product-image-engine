@@ -184,6 +184,10 @@ export function sourceWritesDenied(c: SourceCapabilities | null, name: SourceMod
 }
 export function validBackground(v: string): boolean { return v.length>0 && v === v.trim() && Array.from(v).length<=200 && !/[\u0000-\u001f\u007f]/.test(v); }
 export const pendingHintKey = (s: SourceScope, mode: SourceModeName="text_generate"): string => (mode === "text_generate" ? "source-image-pending:" : "plate-lock-pending:") + JSON.stringify([s.userID,s.accountID,s.projectID]);
+export function pickRecoveredRun(runs: SourceRunView[], mode: SourceModeName): SourceRunView | null {
+  const open = runs.filter(r => r.mode === mode && !r.deleted && !r.cancel_requested);
+  return open.find(r => r.confirmed) ?? open[0] ?? null;
+}
 export function sourcePath(project: string, run?: string, action?: "content" | "export" | "return"): string {
   if(!sourceSegment(project) || run !== undefined && !sourceSegment(run)) throw new Error("invalid_source_path");
   return `/api/projects/${encodeURIComponent(project)}/source-image-runs${run ? "/"+encodeURIComponent(run) : ""}${action ? "/"+action : ""}`;
@@ -249,14 +253,16 @@ export class SourceImageController {
   private begin(projectID: string, modeName: SourceModeName, prepare: () => (requestKey: string) => SourceCreate): Promise<void> { return this.coalesce(async()=>{
     const s=this.current(), epoch=this.epoch; if(projectID !== s.projectID || this.capabilities?.modes.find(m=>m.mode === modeName)?.can_quote !== true) throw new Error("当前工程不允许获取正式报价");
     const make=prepare();
-    if(this.view && !this.pending) throw new Error("已有原请求，请显式重新生成");
+    if(this.view && !this.pending) { const current=this.view; const found=await this.api.get(s.projectID,current.run_id); if(epoch !== this.epoch) throw new Error("登录范围已改变"); this.rememberOriginal(found,current,epoch); return; }
     const body: SourceCreate=make(this.pending?.hint.requestKey ?? this.uuid());
     if(!sourceSegment(body.request_key)) throw new Error("请求键不合法");
     if(this.pending?.input && JSON.stringify(body) !== JSON.stringify(this.pending.input)) throw new Error("原请求内容不一致，请保留原请求或显式重新生成");
     if(!this.pending) this.pending={ hint:{...s,requestKey:body.request_key},input:body,attempted:false };
     if(this.pending.attempted) { const found=await this.api.find(s.projectID,body.request_key); if(epoch !== this.epoch) throw new Error("登录范围已改变"); if(found) { if(found.request_key !== body.request_key) throw new Error("原请求键不一致"); this.remember(found,epoch); return; } if(this.pending.input === null) throw new Error("原请求内容未知，只能读取原请求；新生成须另行明确操作"); }
     this.pending.input=body; this.pending.attempted=true;
-    const v=await this.api.create(s.projectID,body); if(v.request_key !== body.request_key) throw new Error("原请求事实不一致"); this.remember(v,epoch);
+    const v=await this.api.create(s.projectID,body); if(epoch !== this.epoch) throw new Error("登录范围已改变"); if(!sourceSegment(v.request_key) || v.project_id !== s.projectID) throw new Error("原请求事实不一致");
+    this.pending={ hint:{...s,requestKey:v.request_key}, input:{...body,request_key:v.request_key}, attempted:true };
+    this.remember(v,epoch);
   }); }
   confirm(): Promise<void> { return this.coalesce(async()=>{ const s=this.current(), v=this.view, epoch=this.epoch;
     if(!v || this.capabilities?.modes.find(m=>m.mode === v.mode)?.can_confirm !== true || !canConfirm(v,this.now()) || this.shownQuote !== JSON.stringify(v.quote)) throw new Error("原报价未验证、已过期或已改变");

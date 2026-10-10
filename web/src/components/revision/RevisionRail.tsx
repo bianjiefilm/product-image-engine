@@ -17,6 +17,7 @@ type PlanView = {
   requires_acknowledgement?: boolean;
   incremental_cost_cents?: number;
   calls_supplier?: boolean;
+  degraded?: boolean;
 };
 
 const CLICKS = [
@@ -78,6 +79,7 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
   const [notice, setNotice] = useState("");
   const [cost, setCost] = useState<number | null>(null);
   const [needsAck, setNeedsAck] = useState(false);
+  const [degraded, setDegraded] = useState(false);
   const [ack, setAck] = useState(false);
   const [click, setClick] = useState("");
   const [text, setText] = useState("");
@@ -156,6 +158,14 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
         return;
       }
       const view = planBody?.plan;
+      setDegraded(view?.degraded === true);
+      if (view?.degraded === true) {
+        setCost(null);
+        setNeedsAck(false);
+        setAck(false);
+        setNotice("这一处现在不能改。原图保持原样，没有新的结果，也不会另扣费用。");
+        return;
+      }
       const cents = view?.incremental_cost_cents ?? intentBody?.incremental_cost_cents;
       setCost(typeof cents === "number" ? cents : null);
       setNeedsAck(view?.requires_acknowledgement === true);
@@ -167,7 +177,7 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
   }
 
   async function execute() {
-    if (!projectId || !click || !original || !mask) return;
+    if (!projectId || !click || degraded || !original || !mask) return;
     if (needsAck && !ack) return;
     setBusy(true);
     setNotice("");
@@ -184,8 +194,10 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
         }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setNotice(publicMessage(data?.error?.message ?? data?.impact_notice ?? "没有改成"));
+      if (!res.ok || data?.degraded === true || data?.redrawn === false) {
+        setNotice(data?.degraded === true || data?.redrawn === false
+          ? "这一处现在不能改。原图保持原样，没有新的结果，也不会另扣费用。"
+          : publicMessage(data?.error?.message ?? data?.impact_notice ?? "没有改成"));
         return;
       }
       setNotice("已留下新版本。商品主体按锁定范围保持。这不是外部重画。");
@@ -333,7 +345,7 @@ export function RevisionRail({ projectId }: { projectId?: string }) {
             </div>
           </form>
           {cost !== null ? <p>这一处的费用 {costLabel(cost)}。金额来自服务端，这里不加、不改。</p> : null}
-          {click ? (
+          {click && !degraded ? (
             <>
               <p>{notice || "确认前不会改图。"}</p>
               <label htmlFor="revision-original">商品原图（PNG）</label>
