@@ -54,6 +54,22 @@
   background: var(--bg);
 }
 
+.briefBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.briefBar .factDl {
+  flex: 1 1 220px;
+}
+
+.briefBar .media-actions {
+  margin: 0;
+}
+
 .factDl {
   display: grid;
   gap: 8px;

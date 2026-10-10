@@ -47,6 +47,31 @@ function technicalStackSplit(source: string): { outside: string; tablesOutside: 
   return { outside, tablesOutside, tablesInside };
 }
 
+function stripAllDetails(source: string): string {
+  const src = stripComments(source);
+  let depth = 0;
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    if (src.startsWith("<details", i)) {
+      const end = src.indexOf(">", i);
+      const open = src.slice(i, end + 1);
+      depth += 1;
+      if (open.endsWith("/>")) depth -= 1;
+      i = end + 1;
+      continue;
+    }
+    if (src.startsWith("</details>", i)) {
+      depth = Math.max(0, depth - 1);
+      i += "</details>".length;
+      continue;
+    }
+    if (depth === 0) out += src[i];
+    i += 1;
+  }
+  return out;
+}
+
 function fromBench(source: string): string {
   const at = source.indexOf("const benchMaterials");
   expect(at).toBeGreaterThan(0);
@@ -90,6 +115,13 @@ describe("项目页主路径不是管理表", () => {
       expect(slice, heading).toContain(listTag);
       expect(slice, heading).not.toContain("<table");
     }
+  });
+
+  it("去掉所有 details 内部之后，保存简报和挂接素材仍在", () => {
+    const stripped = stripAllDetails(source);
+    // 「尚未挂接素材」含同一子串，必须认按钮文本本身。
+    expect(stripped).toContain(">挂接素材<");
+    expect(stripped).toContain("保存简报");
   });
 
   it("主按钮在表单字段之前", () => {

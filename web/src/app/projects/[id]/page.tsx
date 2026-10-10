@@ -642,28 +642,30 @@ export default function ProjectDetailPage() {
 
       <div className="card">
         <h2>简报</h2>
-        <dl className={styles.factDl}>
-          <div>
-            <dt>状态</dt>
-            <dd><span className="pill">{projectStatusLabel(project.status)}</span></dd>
-          </div>
-          <div>
-            <dt>用途</dt>
-            <dd>{project.usage_kind || "未填写"}</dd>
-          </div>
-          <div>
-            <dt>尺寸</dt>
-            <dd>{project.width_px}×{project.height_px} px</dd>
-          </div>
-        </dl>
-        <details>
-          <summary>改简报</summary>
         <form onSubmit={save}>
-          <div className="media-actions">
-            <button className="primary" type="submit" disabled={saving}>
-              {saving ? "保存中…" : "保存简报"}
-            </button>
+          <div className={styles.briefBar}>
+            <dl className={styles.factDl}>
+              <div>
+                <dt>状态</dt>
+                <dd><span className="pill">{projectStatusLabel(project.status)}</span></dd>
+              </div>
+              <div>
+                <dt>用途</dt>
+                <dd>{project.usage_kind || "未填写"}</dd>
+              </div>
+              <div>
+                <dt>尺寸</dt>
+                <dd>{project.width_px}×{project.height_px} px</dd>
+              </div>
+            </dl>
+            <div className="media-actions">
+              <button className="primary" type="submit" disabled={saving}>
+                {saving ? "保存中…" : "保存简报"}
+              </button>
+            </div>
           </div>
+          <details>
+            <summary>改简报</summary>
           <div className="row">
             <div>
               <label htmlFor="proj-name">名称</label>
@@ -721,8 +723,8 @@ export default function ProjectDetailPage() {
               />
             </div>
           </div>
+          </details>
         </form>
-        </details>
         {notice ? <PublicFact raw={notice} /> : null}
       </div>
 
@@ -784,6 +786,7 @@ export default function ProjectDetailPage() {
             <button className="primary" type="submit" disabled={!photoFile || photoBusy}>
               {photoBusy ? "上传中…" : "上传并挂接"}
             </button>
+            <button type="submit" form="proj-attach-form">挂接素材</button>
           </div>
           <div className="row">
             <div>
@@ -799,10 +802,7 @@ export default function ProjectDetailPage() {
         </form>
         <details data-technical="true">
           <summary>已有素材引用</summary>
-        <form onSubmit={addInput} className="mt-12">
-          <div className="media-actions">
-            <button type="submit">挂接素材</button>
-          </div>
+        <form id="proj-attach-form" onSubmit={addInput} className="mt-12">
           <div className="row">
             <div>
               <label>平台 asset_id</label>
