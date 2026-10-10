@@ -288,6 +288,10 @@ func (s *Server) handleRefreshLightScene(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
 		return
 	}
+	if !s.Cfg.LightRealModelConfigured() {
+		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
+		return
+	}
 	if job.PlatformTaskID == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"job": s.lightView(job, true)})
 		return

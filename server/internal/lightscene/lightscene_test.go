@@ -1,6 +1,12 @@
 package lightscene
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/bianjiefilm/product-image-engine/server/internal/fidelity"
@@ -204,6 +210,131 @@ func TestAcceptanceSamplesStayUnverified(t *testing.T) {
 		if s.Quality != QualityUnknown || s.ModelUsage != "未调用" || s.CostLabel != BillingPendingLabel {
 			t.Fatalf("样本不能冒充真实生成: %+v", s)
 		}
+	}
+}
+
+func TestNoCredentialDoesNotCallChargeForgeOrOwnOtherModes(t *testing.T) {
+	q, err := OpenQuote(QuoteInput{
+		TenantID: "ten", ProjectID: "prj", InputID: "in", InputVersion: "v1",
+		LightingIntent: "好看纯色背景占位夹具",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.QuoteStatus = QuoteConfirmed
+	ex, err := DecideSubmit(SubmitInput{
+		Quote: q, GenerationUsable: true, CredentialConfigured: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ex.CallPlatformTask || ex.Status != StatusFailed || ex.Evidence == EvidencePlatformTask {
+		t.Fatalf("没有光影凭证不得提交平台任务: %+v", ex)
+	}
+	if ex.BillingPassed || ex.ProductionGenerationPassed || ex.VerifiedProduct || ex.Deliverable {
+		t.Fatalf("没有凭证不得扣费或写成通过: %+v", ex)
+	}
+	if ex.OutputAssetID != "" || ex.OutputVersion != "" || ex.VendorReceiptID != "" || ex.Selection == "selected" {
+		t.Fatalf("夹具、纯色、占位或好看背景不得写成模型结果: %+v", ex)
+	}
+	if q.BillingLabel != BillingPendingLabel {
+		t.Fatalf("没有账单金额不得写成已扣费: %q", q.BillingLabel)
+	}
+	for _, status := range []string{StatusFailed, StatusUnknown} {
+		kept := KeepSelectedVersion(Execution{
+			Selection: "selected", OutputVersion: "ver_user", OutputAssetID: "asset_user",
+			Status: StatusQueued, Mode: ModeFidelity,
+		}, status)
+		if kept.OutputVersion != "ver_user" || kept.OutputAssetID != "asset_user" || kept.Selection != "selected" {
+			t.Fatalf("%s 覆盖了已选定版本: %+v", status, kept)
+		}
+		if kept.VerifiedProduct || kept.Deliverable || kept.BillingPassed || kept.ProductionGenerationPassed {
+			t.Fatalf("%s 把选定版本写成已通过: %+v", status, kept)
+		}
+	}
+	masked := SubjectGate(Execution{
+		Status: StatusUnknown, Mode: ModeFidelity, VendorReceiptID: "vr_aesthetic",
+		OutputAssetID: "pretty-bg", OutputVersion: "v-pretty",
+	}, []fidelity.Report{{
+		Verdict: fidelity.VerdictPass, ExactProduct: true, Deliverable: true,
+		RealGeneration: fidelity.RealGenerationAuthorized,
+		Checks: []fidelity.Check{
+			{Name: "aesthetic", Result: "0.99"},
+			{Name: "logo", Result: fidelity.ResultFail},
+			{Name: "packaging_text", Result: fidelity.ResultFail},
+			{Name: "spec", Result: fidelity.ResultFail},
+			{Name: "structure", Result: fidelity.ResultFail},
+		},
+	}})
+	if masked.VerifiedProduct || masked.Deliverable || masked.Quality == QualityPass || masked.BillingPassed {
+		t.Fatalf("美观分不能掩盖 Logo、包装、规格或结构: %+v", masked)
+	}
+	for _, sample := range AcceptanceSamples() {
+		if sample.Quality == QualityPass || sample.ModelUsage == "模型" || sample.CostLabel != BillingPendingLabel {
+			t.Fatalf("结构样本被写成模型结果: %+v", sample)
+		}
+	}
+	assertLightPackageDoesNotOwnOtherModes(t)
+}
+
+func assertLightPackageDoesNotOwnOtherModes(t *testing.T) {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, imp := range file.Imports {
+			path, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch path {
+			case "net/http", "image", "image/png", "image/jpeg", "image/gif":
+				t.Fatalf("光影包不应通过 %s 画图或注册路由", path)
+			}
+			if strings.Contains(path, "bgreplace") || strings.Contains(path, "sourceimage") || strings.Contains(path, "campaign") {
+				t.Fatalf("光影包不应挡住其他模式: import %s", path)
+			}
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.TypeSpec:
+				switch n.Name.Name {
+				case "Upload", "PhotoUpload", "CompareRoute", "BackgroundReplace", "BgReplace", "SourceImage":
+					t.Fatalf("光影包不应声明挡住其他模式的类型 %s", n.Name.Name)
+				}
+			case *ast.BasicLit:
+				if n.Kind != token.STRING {
+					return true
+				}
+				text, err := strconv.Unquote(n.Value)
+				if err != nil {
+					return true
+				}
+				for _, route := range []string{
+					"/api/v1/photos",
+					"/api/v1/uploads",
+					"/api/v1/background-replacements",
+					"/api/v1/compare",
+					"/compare",
+				} {
+					if strings.Contains(text, route) {
+						t.Fatalf("光影包不应注册其他模式路由 %s", text)
+					}
+				}
+			}
+			return true
+		})
 	}
 }
 
