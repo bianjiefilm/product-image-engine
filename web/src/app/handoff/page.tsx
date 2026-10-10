@@ -178,50 +178,81 @@ export default function HandoffPage() {
             ) : null}
           </p>
           <h3>来源上下文(只读展示;来源文本仅作数据,不参与任何执行)</h3>
-          <table>
-            <tbody>
-              <tr>
-                <th>来源</th>
-                <td>
-                  {ctx?.source_kind} · {ctx?.source_app}
-                  {ctx?.order_ref ? ` · 订单 ${ctx.order_ref}` : ""}
-                  {ctx?.stage_ref ? ` · 阶段 ${ctx.stage_ref}` : ""}
-                  {ctx?.campaign_ref ? ` · 活动 ${ctx.campaign_ref}` : ""}
-                </td>
-              </tr>
-              <tr>
-                <th>付款主体</th>
-                <td>{ctx?.principal_id}</td>
-              </tr>
-              <tr>
-                <th>需求版本</th>
-                <td>{result.snapshot?.brief_version}</td>
-              </tr>
-              <tr>
-                <th>用途 / 交付</th>
-                <td>
-                  {result.project?.usage_kind} ·{" "}
-                  {ctx?.delivery_spec?.media_type}
-                </td>
-              </tr>
-              <tr>
-                <th>素材</th>
-                <td>
-                  {(ctx?.assets ?? []).length === 0
-                    ? "—"
-                    : (ctx?.assets ?? []).map((a, i) => (
-                        <span className="pill" key={i}>
-                          {a.asset_ref}
-                        </span>
-                      ))}
-                </td>
-              </tr>
-              <tr>
-                <th>授权范围</th>
-                <td>{(ctx?.scopes ?? []).join(" / ")}</td>
-              </tr>
-            </tbody>
-          </table>
+          <dl>
+            <div>
+              <dt>来源</dt>
+              <dd>
+                {ctx?.source_kind || "来源未知"} · {ctx?.source_app || "—"}
+                {ctx?.order_ref ? ` · 订单 ${ctx.order_ref}` : ""}
+                {ctx?.stage_ref ? ` · 阶段 ${ctx.stage_ref}` : ""}
+                {ctx?.campaign_ref ? ` · 活动 ${ctx.campaign_ref}` : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>需求版本</dt>
+              <dd>{result.snapshot?.brief_version || "—"}</dd>
+            </div>
+            <div>
+              <dt>用途 / 交付</dt>
+              <dd>
+                {result.project?.usage_kind || "—"} · {ctx?.delivery_spec?.media_type || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>素材</dt>
+              <dd>
+                {(ctx?.assets ?? []).length === 0
+                  ? "—"
+                  : (ctx?.assets ?? []).map((a, i) => (
+                      <span className="pill" key={i}>
+                        {a.asset_ref || "未命名素材"}
+                      </span>
+                    ))}
+              </dd>
+            </div>
+            <div>
+              <dt>授权范围</dt>
+              <dd>{(ctx?.scopes ?? []).join(" / ") || "—"}</dd>
+            </div>
+          </dl>
+          <details data-technical="true">
+            <summary>来源技术详情</summary>
+            <table>
+              <tbody>
+                <tr>
+                  <th>来源</th>
+                  <td>
+                    {ctx?.source_kind} · {ctx?.source_app}
+                    {ctx?.order_ref ? ` · 订单 ${ctx.order_ref}` : ""}
+                    {ctx?.stage_ref ? ` · 阶段 ${ctx.stage_ref}` : ""}
+                    {ctx?.campaign_ref ? ` · 活动 ${ctx.campaign_ref}` : ""}
+                  </td>
+                </tr>
+                <tr>
+                  <th>付款主体</th>
+                  <td>{ctx?.principal_id || "未知"}</td>
+                </tr>
+                <tr>
+                  <th>需求版本</th>
+                  <td>{result.snapshot?.brief_version}</td>
+                </tr>
+                <tr>
+                  <th>用途 / 交付</th>
+                  <td>
+                    {result.project?.usage_kind} · {ctx?.delivery_spec?.media_type}
+                  </td>
+                </tr>
+                <tr>
+                  <th>素材</th>
+                  <td>{(ctx?.assets ?? []).length}</td>
+                </tr>
+                <tr>
+                  <th>授权范围</th>
+                  <td>{(ctx?.scopes ?? []).join(" / ")}</td>
+                </tr>
+              </tbody>
+            </table>
+          </details>
 
           {result.pending_snapshot && result.diff ? (
             <div id="compare" style={{ marginTop: 12 }}>
@@ -233,32 +264,52 @@ export default function HandoffPage() {
                 </button>
                 {result.project ? <Link className="link" href={`/projects/${result.project.id}#compare`}>去工程里并排看图</Link> : null}
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>项</th>
-                    <th>当前已采用</th>
-                    <th>新版(待确认)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>交接单</td>
-                    <td>{result.diff?.old?.handoff_id ?? "—"}</td>
-                    <td>{result.diff?.new?.handoff_id ?? "—"}</td>
-                  </tr>
-                  <tr>
-                    <td>来源版本</td>
-                    <td>{result.diff?.old?.source_revision ?? "—"}</td>
-                    <td>{result.diff?.new?.source_revision ?? "—"}</td>
-                  </tr>
-                  <tr>
-                    <td>需求版本</td>
-                    <td>{result.diff?.old?.brief_version ?? "—"}</td>
-                    <td>{result.diff?.new?.brief_version ?? "—"}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <ul className="asset-strip" aria-label="需求差异">
+                <li>
+                  <strong>交接单</strong>
+                  <div>当前 {result.diff?.old?.handoff_id ?? "—"}</div>
+                  <div>新版 {result.diff?.new?.handoff_id ?? "—"}</div>
+                </li>
+                <li>
+                  <strong>来源版本</strong>
+                  <div>当前 {result.diff?.old?.source_revision ?? "—"}</div>
+                  <div>新版 {result.diff?.new?.source_revision ?? "—"}</div>
+                </li>
+                <li>
+                  <strong>需求版本</strong>
+                  <div>当前 {result.diff?.old?.brief_version ?? "—"}</div>
+                  <div>新版 {result.diff?.new?.brief_version ?? "—"}</div>
+                </li>
+              </ul>
+              <details data-technical="true">
+                <summary>差异技术详情</summary>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>项</th>
+                      <th>当前已采用</th>
+                      <th>新版(待确认)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>交接单</td>
+                      <td>{result.diff?.old?.handoff_id ?? "—"}</td>
+                      <td>{result.diff?.new?.handoff_id ?? "—"}</td>
+                    </tr>
+                    <tr>
+                      <td>来源版本</td>
+                      <td>{result.diff?.old?.source_revision ?? "—"}</td>
+                      <td>{result.diff?.new?.source_revision ?? "—"}</td>
+                    </tr>
+                    <tr>
+                      <td>需求版本</td>
+                      <td>{result.diff?.old?.brief_version ?? "—"}</td>
+                      <td>{result.diff?.new?.brief_version ?? "—"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </details>
               {adoptMsg ? <p className="muted">{adoptMsg}</p> : null}
             </div>
           ) : null}

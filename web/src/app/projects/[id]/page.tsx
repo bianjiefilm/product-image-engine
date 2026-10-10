@@ -7,7 +7,8 @@ import { usePublishWorkbench } from "@/components/eco-nav/workbench";
 import { SubjectFidelityPanel } from "@/components/SubjectFidelityPanel";
 import { sourceLabel } from "@/lib/eco-nav";
 import { jsonBody, jsonHeaders } from "@/lib/api-client";
-import { projectSourceLabel } from "@/lib/project-labels";
+import { projectSourceLabel, projectStatusLabel } from "@/lib/project-labels";
+import styles from "./project-detail.module.css";
 import { BackgroundReplacePanel } from "@/components/background-replace/Panel";
 import { LightScenePanel } from "@/components/light-scene/Panel";
 import { ShowcaseVideoPanel } from "@/components/showcase-video/Panel";
@@ -113,6 +114,53 @@ interface VariantItem {
   created_at: string;
 }
 
+function versionFact(status: string): string {
+  if (status === "adopted") return "已采用";
+  if (!status) return "未采用";
+  if (status === "failed" || status === "error" || status === "rejected") return "失败";
+  return "状态未知";
+}
+
+function receiptFact(status: string): string {
+  if (status === "delivered") return "已送达";
+  if (status === "failed") return "回执失败";
+  if (status === "pending") return "待送达";
+  return "状态未知";
+}
+
+const TECHNICAL_LEAK = /provider|qwen|\bmodel\b|sha256|run_id|\bdebug\b/i;
+
+function publicOrTechnical(raw: string): { show: string; technical: string } {
+  if (!raw) return { show: "", technical: "" };
+  if (TECHNICAL_LEAK.test(raw)) {
+    return {
+      show: "失败原因含技术细节，已放进技术详情。没有伪造成功，也没有另扣费用。",
+      technical: raw,
+    };
+  }
+  return { show: raw, technical: "" };
+}
+
+function PublicFact({ raw, tone = "warn" }: { raw: string; tone?: "warn" | "plain" }) {
+  const fact = publicOrTechnical(raw);
+  if (!fact.show) return null;
+  return (
+    <>
+      {tone === "plain" ? (
+        <span className="muted">{fact.show}</span>
+      ) : (
+        <div className="banner warn" role="alert">{fact.show}</div>
+      )}
+      {fact.technical ? (
+        <details data-technical="true">
+          <summary>技术详情</summary>
+          <p className="muted">{fact.technical}</p>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
 // 工程详情:用途/尺寸/已选输入/任务与费用事实;返回来源入口(无来源也可完整用)。
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -138,6 +186,8 @@ export default function ProjectDetailPage() {
     snapshot_size: 0,
     snapshot_content_type: "image/png",
   });
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachHint, setAttachHint] = useState("");
   const [balance, setBalance] = useState<string>("");
 
   // ---- 跨应用续接(HUI-1745 I1):来源绑定 / 待采用新版 / 成果回执 ----
@@ -265,6 +315,12 @@ export default function ProjectDetailPage() {
 
   async function addInput(e: React.FormEvent) {
     e.preventDefault();
+    if (!newInput.platform_asset_id.trim()) {
+      setAttachHint("请先填写素材编号，再挂接。");
+      setAttachOpen(true);
+      return;
+    }
+    setAttachHint("");
     setNotice("");
     const res = await fetch(`/api/projects/${id}/inputs`, {
       method: "POST",
@@ -543,10 +599,17 @@ export default function ProjectDetailPage() {
   );
 
   if (loadError) {
+    const opened = publicOrTechnical(loadError);
     return (
-      <section id="recovery" className="card" aria-label="出错与恢复" data-state="error">
+      <section id="recovery" className={`card ${styles.shell}`} aria-label="出错与恢复" data-state="error">
         <h2>这个工程没有打开</h2>
-        <div className="banner" role="alert">{loadError}</div>
+        <div className="banner" role="alert">{opened.show}</div>
+        {opened.technical ? (
+          <details data-technical="true">
+            <summary>技术详情</summary>
+            <p className="muted">{opened.technical}</p>
+          </details>
+        ) : null}
         <p className="muted">不会重新做图，也不会再扣一次。</p>
         <div className="media-actions">
           <Link className="link" href="/projects">返回工程列表</Link>
@@ -555,7 +618,11 @@ export default function ProjectDetailPage() {
       </section>
     );
   }
-  if (!project) return <div className="card muted" data-state="loading">加载中…</div>;
+  if (!project) return <div className={`card muted ${styles.shell}`} data-state="loading">加载中…</div>;
+
+  const sourceKind = bindingAgg?.source_context?.source_kind ?? "";
+  const sourceApp = bindingAgg?.source_context?.source_app ?? "";
+  const principalId = bindingAgg?.source_context?.principal_id ?? "";
 
   const benchMaterials = (
     <>
@@ -584,11 +651,29 @@ export default function ProjectDetailPage() {
       <div className="card">
         <h2>简报</h2>
         <form onSubmit={save}>
-          <div className="media-actions">
-            <button className="primary" type="submit" disabled={saving}>
-              {saving ? "保存中…" : "保存简报"}
-            </button>
+          <div className={styles.briefBar}>
+            <dl className={styles.factDl}>
+              <div>
+                <dt>状态</dt>
+                <dd><span className="pill">{projectStatusLabel(project.status)}</span></dd>
+              </div>
+              <div>
+                <dt>用途</dt>
+                <dd>{project.usage_kind || "未填写"}</dd>
+              </div>
+              <div>
+                <dt>尺寸</dt>
+                <dd>{project.width_px}×{project.height_px} px</dd>
+              </div>
+            </dl>
+            <div className="media-actions">
+              <button className="primary" type="submit" disabled={saving}>
+                {saving ? "保存中…" : "保存简报"}
+              </button>
+            </div>
           </div>
+          <details>
+            <summary>改简报</summary>
           <div className="row">
             <div>
               <label htmlFor="proj-name">名称</label>
@@ -646,8 +731,9 @@ export default function ProjectDetailPage() {
               />
             </div>
           </div>
+          </details>
         </form>
-        {notice ? <div className="banner warn">{notice}</div> : null}
+        {notice ? <PublicFact raw={notice} /> : null}
       </div>
 
       <div className="card">
@@ -667,7 +753,7 @@ export default function ProjectDetailPage() {
             ))}
           </ul>
         )}
-        <details>
+        <details data-technical="true">
           <summary>素材引用</summary>
         {inputs.length === 0 ? null : (
           <table>
@@ -708,6 +794,8 @@ export default function ProjectDetailPage() {
             <button className="primary" type="submit" disabled={!photoFile || photoBusy}>
               {photoBusy ? "上传中…" : "上传并挂接"}
             </button>
+            <button type="submit" form="proj-attach-form">挂接素材</button>
+            {attachHint ? <p className={styles.attachHint} role="status">{attachHint}</p> : null}
           </div>
           <div className="row">
             <div>
@@ -721,9 +809,13 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         </form>
-        <details>
+        <details
+          data-technical="true"
+          open={attachOpen}
+          onToggle={(e) => setAttachOpen(e.currentTarget.open)}
+        >
           <summary>已有素材引用</summary>
-        <form onSubmit={addInput} className="mt-12">
+        <form id="proj-attach-form" onSubmit={addInput} className="mt-12">
           <div className="row">
             <div>
               <label>平台 asset_id</label>
@@ -732,7 +824,6 @@ export default function ProjectDetailPage() {
                 onChange={(e) =>
                   setNewInput({ ...newInput, platform_asset_id: e.target.value })
                 }
-                required
               />
             </div>
             <div>
@@ -754,9 +845,6 @@ export default function ProjectDetailPage() {
                 }
               />
             </div>
-            <div className="flex-0">
-              <button type="submit">挂接素材</button>
-            </div>
           </div>
         </form>
         <p className="muted mb-0">
@@ -769,7 +857,7 @@ export default function ProjectDetailPage() {
   );
 
   return (
-    <div>
+    <div className={styles.shell}>
       <SourceImagePanel
         mode="background_plate_lock"
         projectId={id ?? ""}
@@ -804,11 +892,11 @@ export default function ProjectDetailPage() {
         images={[
           ...inputs.map((item) => ({
             id: item.id,
-            label: item.snapshot_name || item.platform_asset_id || item.id,
+            label: item.snapshot_name || "未命名素材",
           })),
           ...outputs.map((item) => ({
             id: item.id,
-            label: item.file_name || item.platform_asset_id || item.id,
+            label: item.file_name || "未命名成果",
           })),
         ]}
       />
@@ -820,131 +908,105 @@ export default function ProjectDetailPage() {
 
       <div className="card">
         <h2>任务与费用事实</h2>
+        <div className="media-actions">
+          <button className="primary" onClick={submitGeneration}>提交生成</button>
+          <button onClick={loadBalance}>读取费用事实</button>
+        </div>
+        {balance ? <PublicFact raw={balance} tone="plain" /> : null}
         {versions.length === 0 ? (
           <p className="muted">暂无输出版本。</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>版本</th>
-                <th>状态</th>
-                <th>创建时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((v) => (
-                <tr key={v.id}>
-                  <td>v{v.version_no}</td>
-                  <td>{v.status === "adopted" ? "已采用" : v.status || "未采用"}</td>
-                  <td className="muted">{v.created_at}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className={styles.factList} aria-label="输出版本">
+            {versions.map((v) => (
+              <li key={v.id} className={styles.factCard}>
+                <strong>v{v.version_no}</strong>
+                <span className="pill">{versionFact(v.status)}</span>
+                <span className="muted">{v.created_at || "时间未知"}</span>
+              </li>
+            ))}
+          </ul>
         )}
-        <div className="row mt-12">
-          <div className="flex-0">
-            <button className="primary" onClick={submitGeneration}>提交生成</button>
-          </div>
-          <div className="flex-0">
-            <button onClick={loadBalance}>读取费用事实</button>
-          </div>
-          <div className="flex-2">
-            {balance ? <span className="muted">{balance}</span> : null}
-          </div>
-        </div>
         <p className="muted mb-0">
           生成能力与计费开关默认关闭;失败时这里只会展示真实原因,不会伪造成功。
         </p>
+        <details data-technical="true">
+          <summary>版本技术详情</summary>
+          {versions.length === 0 ? (
+            <p className="muted">暂无输出版本。</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>版本</th>
+                  <th>状态</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versions.map((v) => (
+                  <tr key={v.id}>
+                    <td>v{v.version_no}</td>
+                    <td>{v.status || "未采用"}</td>
+                    <td className="muted">{v.created_at || "时间未知"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </details>
       </div>
 
       {binding && bindingAgg ? (
         <div className="card">
           <h2>来源信息(跨应用续接)</h2>
-          <table>
-            <tbody>
-              <tr>
-                <th>来源</th>
-                <td>
-                  <span className="pill">
-                    {bindingAgg.source_context?.source_kind} ·{" "}
-                    {bindingAgg.source_context?.source_app}
-                  </span>{" "}
-                  {bindingAgg.source_context?.order_ref ? (
-                    <span className="pill">
-                      订单 {bindingAgg.source_context.order_ref}
-                      {bindingAgg.source_context.stage_ref
-                        ? ` · 阶段 ${bindingAgg.source_context.stage_ref}`
-                        : ""}
-                    </span>
-                  ) : null}
-                  {bindingAgg.source_context?.campaign_ref ? (
-                    <span className="pill">
-                      活动 {bindingAgg.source_context.campaign_ref}
-                    </span>
-                  ) : null}
-                </td>
-              </tr>
-              <tr>
-                <th>付款主体</th>
-                <td>{bindingAgg.source_context?.principal_id ?? "—"}</td>
-              </tr>
-              <tr>
-                <th>需求版本</th>
-                <td>
-                  {bindingAgg.snapshots?.find(
-                    (s) => s.id === binding.current_snapshot_id
-                  )?.brief_version ?? "—"}
-                </td>
-              </tr>
-              <tr>
-                <th>用途 / 交付</th>
-                <td>
-                  {binding.purpose} ·{" "}
-                  {bindingAgg.source_context?.delivery_spec?.media_type ?? "—"}
-                </td>
-              </tr>
-              <tr>
-                <th>素材(交接输入)</th>
-                <td>
-                  {(bindingAgg.source_context?.assets ?? []).length === 0
-                    ? "—"
-                    : (bindingAgg.source_context?.assets ?? []).map((a, i) => (
-                        <span className="pill" key={i}>
-                          {a.asset_ref}
-                        </span>
-                      ))}
-                </td>
-              </tr>
-              <tr>
-                <th>授权范围</th>
-                <td>
-                  {(bindingAgg.source_context?.scopes ?? []).join(" / ") || "—"}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="row mt-12">
-            <div className="flex-0">
-              <button onClick={goBackToSource}>返回来源</button>
-            </div>
+          <div className="media-actions">
+            <button onClick={goBackToSource}>返回来源</button>
             {returnURL ? (
-              <div className="flex-0">
-                <a className="link" href={returnURL} target="_blank" rel="noreferrer">
-                  打开来源应用 ↗
-                </a>
-              </div>
+              <a className="link" href={returnURL} target="_blank" rel="noreferrer">
+                打开来源应用 ↗
+              </a>
             ) : null}
-            <div className="flex-2">
-              <span className="muted">
-                来源文本仅作数据展示;续接编辑在本工程进行。
-              </span>
-            </div>
           </div>
+          <dl className={styles.factDl}>
+            <div>
+              <dt>来源</dt>
+              <dd><span className="pill">{projectSourceLabel(sourceKind) || "来源未知"}</span></dd>
+            </div>
+            <div>
+              <dt>订单</dt>
+              <dd>{bindingAgg.source_context?.order_ref || "无"}</dd>
+            </div>
+            <div>
+              <dt>阶段</dt>
+              <dd>{bindingAgg.source_context?.stage_ref || "无"}</dd>
+            </div>
+            <div>
+              <dt>活动</dt>
+              <dd>{bindingAgg.source_context?.campaign_ref || "无"}</dd>
+            </div>
+            <div>
+              <dt>需求版本</dt>
+              <dd>
+                {bindingAgg.snapshots?.find((s) => s.id === binding.current_snapshot_id)?.brief_version || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>用途</dt>
+              <dd>{binding.purpose || "—"}</dd>
+            </div>
+            <div>
+              <dt>交付</dt>
+              <dd>{bindingAgg.source_context?.delivery_spec?.media_type || "—"}</dd>
+            </div>
+            <div>
+              <dt>素材</dt>
+              <dd>{(bindingAgg.source_context?.assets ?? []).length} 个</dd>
+            </div>
+          </dl>
+          <p className="muted">来源文本仅作数据展示;续接编辑在本工程进行。</p>
           {pendingSnap ? (
             <div className="banner warn mt-8">
-              来源需求已有新版({pendingSnap.brief_version},handoff{" "}
-              {pendingSnap.handoff_id})待确认。
+              来源需求已有新版({pendingSnap.brief_version})待确认。
               <button onClick={adoptPending} className="banner-action">
                 确认并采用新版
               </button>
@@ -953,6 +1015,39 @@ export default function ProjectDetailPage() {
               </span>
             </div>
           ) : null}
+          <details data-technical="true">
+            <summary>来源技术详情</summary>
+            <table>
+              <tbody>
+                <tr>
+                  <th>来源</th>
+                  <td>{sourceKind || "—"} · {sourceApp || "—"}</td>
+                </tr>
+                <tr>
+                  <th>付款主体</th>
+                  <td>{principalId || "—"}</td>
+                </tr>
+                <tr>
+                  <th>交接</th>
+                  <td>{pendingSnap?.handoff_id || "—"}</td>
+                </tr>
+                <tr>
+                  <th>素材引用</th>
+                  <td>
+                    {(bindingAgg.source_context?.assets ?? []).length === 0
+                      ? "—"
+                      : (bindingAgg.source_context?.assets ?? []).map((a, i) => (
+                          <span className="pill" key={i}>{a.asset_ref || "—"}</span>
+                        ))}
+                  </td>
+                </tr>
+                <tr>
+                  <th>授权范围</th>
+                  <td>{(bindingAgg.source_context?.scopes ?? []).join(" / ") || "—"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </details>
         </div>
       ) : (
         <div className="card">
@@ -973,8 +1068,13 @@ export default function ProjectDetailPage() {
           明确选择输出版本后登记(合法 PNG,经平台资产设施);回传来源只发送既有成果的
           不可变引用与任务事实,回执失败不追加生成任务、不扣费。
         </p>
-        <form onSubmit={registerOutput} className="row">
-          <div className="flex-2">
+        <form onSubmit={registerOutput}>
+          <div className="media-actions">
+            <button className="primary" type="submit" disabled={!outputFile}>
+              登记成果
+            </button>
+          </div>
+          <div>
             <label htmlFor="output-file">选择成果文件(仅 PNG)</label>
             <input
               id="output-file"
@@ -983,79 +1083,96 @@ export default function ProjectDetailPage() {
               onChange={(e) => setOutputFile(e.target.files?.[0] ?? null)}
             />
           </div>
-          <div className="flex-0">
-            <button className="primary" type="submit" disabled={!outputFile}>
-              登记成果
-            </button>
-          </div>
         </form>
         {outputs.length === 0 ? (
           <p className="muted">尚未登记成果。</p>
         ) : (
-          <table className="mt-12">
-            <thead>
-              <tr>
-                <th>文件</th>
-                <th>资产引用</th>
-                <th>需求版本</th>
-                <th>大小</th>
-                <th>登记时间</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {outputs.map((o) => {
-                const rcpt = receipts.find((r) => r.output_id === o.id);
-                return (
-                  <tr key={o.id}>
-                    <td>{o.file_name || "—"}</td>
-                    <td>{o.platform_asset_id}</td>
-                    <td>{o.brief_version || "—"}</td>
-                    <td>{o.result_size}</td>
-                    <td className="muted">{o.created_at}</td>
-                    <td>
-                      {binding ? (
-                        rcpt ? (
-                          <span>
-                            <span className="pill">
-                              回执 {rcpt.status}
-                              {rcpt.attempts > 1 ? ` ×${rcpt.attempts}` : ""}
-                            </span>{" "}
-                            {rcpt.status !== "delivered" ? (
-                              <button onClick={() => resendReceipt(rcpt.id)}>
-                                重传
-                              </button>
-                            ) : null}
-                          </span>
-                        ) : (
-                          <button onClick={() => sendReceipt(o.id)}>
-                            回传来源
-                          </button>
-                        )
-                      ) : (
-                        <span className="muted">无来源,不回传</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ul className={styles.factList} aria-label="已登记成果">
+            {outputs.map((o) => {
+              const rcpt = receipts.find((r) => r.output_id === o.id);
+              return (
+                <li key={o.id} className={styles.factCard}>
+                  <strong>{o.file_name || "未命名成果"}</strong>
+                  <span>需求版本 {o.brief_version || "—"}</span>
+                  <span>大小 {o.result_size}</span>
+                  <span className="muted">{o.created_at || "时间未知"}</span>
+                  {binding ? (
+                    rcpt ? (
+                      <span>
+                        <span className="pill">
+                          {receiptFact(rcpt.status)}
+                          {rcpt.attempts > 1 ? ` ×${rcpt.attempts}` : ""}
+                        </span>{" "}
+                        {rcpt.status !== "delivered" ? (
+                          <button onClick={() => resendReceipt(rcpt.id)}>重传</button>
+                        ) : null}
+                      </span>
+                    ) : (
+                      <button onClick={() => sendReceipt(o.id)}>回传来源</button>
+                    )
+                  ) : (
+                    <span className="muted">无来源,不回传</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
-        {srcNotice ? (
-          <div className="banner warn mt-8">
-            {srcNotice}
-          </div>
-        ) : null}
+        <details data-technical="true">
+          <summary>成果技术详情</summary>
+          {outputs.length === 0 ? (
+            <p className="muted">尚未登记成果。</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>文件</th>
+                  <th>资产引用</th>
+                  <th>需求版本</th>
+                  <th>大小</th>
+                  <th>登记时间</th>
+                  <th>回执</th>
+                  <th>失败原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outputs.map((o) => {
+                  const rcpt = receipts.find((r) => r.output_id === o.id);
+                  return (
+                    <tr key={o.id}>
+                      <td>{o.file_name || "—"}</td>
+                      <td>{o.platform_asset_id || "—"}</td>
+                      <td>{o.brief_version || "—"}</td>
+                      <td>{o.result_size}</td>
+                      <td className="muted">{o.created_at || "时间未知"}</td>
+                      <td>{rcpt ? `${rcpt.status || "状态未知"} ×${rcpt.attempts}` : "无回执"}</td>
+                      <td>{rcpt?.last_error || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </details>
+        {srcNotice ? <PublicFact raw={srcNotice} /> : null}
       </div>
 
       {sizePresets ? (
         <div className="card">
           <h2>尺寸适配(电商规格)</h2>
+          <div className="media-actions">
+            <button
+              className="primary"
+              onClick={generateVariants}
+              disabled={saBusy || !saFile || !saSource || saSelected.length === 0}
+            >
+              {saBusy ? "生成中…" : `生成 ${saSelected.length} 个变体`}
+            </button>
+          </div>
           <p className="muted mt-4">
             纯确定性变换(等比缩放 + 白底填充 / 居中裁切),不调用 AI、不产生任务与费用。
             预设为公开常见规格整理,商家可自定义覆盖;以各平台当时官方要求为准。
-            成果登记只存平台引用,生成时请重新提供对应源 PNG(服务端按 sha256 校验一致性)。
+            成果登记只存平台引用,生成时请重新提供对应源 PNG,服务端会核对与已登记成果是否为同一文件。
           </p>
           <div className="row">
             <div>
@@ -1100,7 +1217,7 @@ export default function ProjectDetailPage() {
               {sizePresets.map((p) => (
                 <label
                   key={p.name}
-                  className="muted flex-none"
+                  className={`muted flex-none ${styles.check}`}
                 >
                   <input
                     type="checkbox"
@@ -1114,61 +1231,60 @@ export default function ProjectDetailPage() {
               ))}
             </div>
           </div>
-          <div className="mt-12">
-            <button
-              className="primary"
-              onClick={generateVariants}
-              disabled={saBusy || !saFile || !saSource || saSelected.length === 0}
-            >
-              {saBusy ? "生成中…" : `生成 ${saSelected.length} 个变体`}
-            </button>
-          </div>
-          {saNotice ? (
-            <div className="banner warn mt-8">
-              {saNotice}
-            </div>
-          ) : null}
+          {saNotice ? <PublicFact raw={saNotice} /> : null}
           {variants.length > 0 ? (
-            <table className="mt-12">
-              <thead>
-                <tr>
-                  <th>缩略名</th>
-                  <th>预设</th>
-                  <th>尺寸</th>
-                  <th>模式</th>
-                  <th>大小</th>
-                  <th>时间</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {variants.map((v) => (
-                  <tr key={v.id}>
-                    <td>{v.file_name || v.id}</td>
-                    <td>
-                      <span className="pill">{v.preset_name}</span>
-                    </td>
-                    <td>
-                      {v.variant_width}×{v.variant_height}
-                    </td>
-                    <td>{v.variant_mode === "cover" ? "裁切" : "白底"}</td>
-                    <td>{v.result_size}</td>
-                    <td className="muted">{v.created_at}</td>
-                    <td>
-                      <a
-                        className="link"
-                        href={`/api/projects/${id}/size-adapt/${v.id}/download`}
-                      >
-                        下载
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ul className={styles.factList} aria-label="尺寸变体">
+              {variants.map((v) => (
+                <li key={v.id} className={styles.factCard}>
+                  <strong>{v.file_name || "未命名变体"}</strong>
+                  <span className="pill">{v.preset_name}</span>
+                  <span>{v.variant_width}×{v.variant_height}</span>
+                  <span>{v.variant_mode === "cover" ? "裁切" : "白底"}</span>
+                  <span>大小 {v.result_size}</span>
+                  <span className="muted">{v.created_at || "时间未知"}</span>
+                  <a className="link" href={`/api/projects/${id}/size-adapt/${v.id}/download`}>下载</a>
+                </li>
+              ))}
+            </ul>
           ) : (
             <p className="muted">尚无尺寸变体。</p>
           )}
+          <details data-technical="true">
+            <summary>尺寸技术详情</summary>
+            <p className="muted">服务端按 sha256 与登记成果绑定校验。不一致就不会当成同一张成果。</p>
+            {variants.length > 0 ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>缩略名</th>
+                    <th>预设</th>
+                    <th>尺寸</th>
+                    <th>模式</th>
+                    <th>大小</th>
+                    <th>时间</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {variants.map((v) => (
+                    <tr key={v.id}>
+                      <td>{v.file_name || v.id}</td>
+                      <td><span className="pill">{v.preset_name}</span></td>
+                      <td>{v.variant_width}×{v.variant_height}</td>
+                      <td>{v.variant_mode === "cover" ? "裁切" : "白底"}</td>
+                      <td>{v.result_size}</td>
+                      <td className="muted">{v.created_at || "时间未知"}</td>
+                      <td>
+                        <a className="link" href={`/api/projects/${id}/size-adapt/${v.id}/download`}>下载</a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">尚无尺寸变体。</p>
+            )}
+          </details>
         </div>
       ) : null}
       </div>
