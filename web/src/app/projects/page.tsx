@@ -111,6 +111,11 @@ export default function ProjectsPage() {
         </div>
         {showCreate ? (
           <form onSubmit={create} className="mt-12">
+            <div className="media-actions">
+              <button className="primary" type="submit" disabled={creating}>
+                {creating ? "创建中…" : "创建"}
+              </button>
+            </div>
             <div className="row">
               <div>
                 <label>工程名称</label>
@@ -177,11 +182,6 @@ export default function ProjectsPage() {
                 </div>
               ) : null}
             </div>
-            <div className="mt-12">
-              <button className="primary" type="submit" disabled={creating}>
-                {creating ? "创建中…" : "创建"}
-              </button>
-            </div>
           </form>
         ) : null}
         {error ? (
@@ -197,33 +197,17 @@ export default function ProjectsPage() {
         ) : projects.length === 0 ? (
           <span className="muted" data-state="empty">还没有工程。<Link className="link" href="/start">去开始做产品图</Link></span>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>状态</th>
-                <th>用途</th>
-                <th>尺寸</th>
-                <th>来源</th>
-                <th>更新时间</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <ul className="asset-strip" aria-label="工程">
               {projects.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <Link className="link" href={`/projects/${p.id}`}>
-                      {p.name}
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="pill">{projectStatusLabel(p.status)}</span>
-                  </td>
-                  <td>{p.usage_kind || "—"}</td>
-                  <td>
-                    {p.width_px}×{p.height_px}
-                  </td>
-                  <td>
+                <li key={p.id}>
+                  <Link className="link" href={`/projects/${p.id}`}>
+                    {p.name}
+                  </Link>
+                  <div><span className="pill">{projectStatusLabel(p.status)}</span></div>
+                  <div>{p.usage_kind || "—"}</div>
+                  <div>{p.width_px}×{p.height_px}</div>
+                  <div>
                     {p.source_type ? (
                       <span className="pill">
                         {projectSourceLabel(p.source_type)}
@@ -232,12 +216,39 @@ export default function ProjectsPage() {
                     ) : (
                       "—"
                     )}
-                  </td>
-                  <td className="muted">{p.updated_at}</td>
-                </tr>
+                  </div>
+                  <div className="muted">{p.updated_at || "时间未知"}</div>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+            <details data-technical="true">
+              <summary>工程技术详情</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>用途</th>
+                    <th>尺寸</th>
+                    <th>来源</th>
+                    <th>更新时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td>{p.status || "状态未知"}</td>
+                      <td>{p.usage_kind || "—"}</td>
+                      <td>{p.width_px}×{p.height_px}</td>
+                      <td>{p.source_type || "—"}{p.source_ref ? ` · ${p.source_ref}` : ""}</td>
+                      <td className="muted">{p.updated_at}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          </>
         )}
       </div>
     </div>

@@ -339,47 +339,66 @@ export default function BatchesPage() {
         ) : batches.length === 0 ? (
           <span className="muted">还没有批次,在上方建批后开始。</span>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>状态</th>
-                <th>进度(成功/总数)</th>
-                <th>失败</th>
-                <th>受阻</th>
-                <th>更新时间</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <ul className="asset-strip" aria-label="批次">
               {batches.map((b) => (
-                <tr key={b.id}>
-                  <td>{b.name}</td>
-                  <td>
+                <li key={b.id}>
+                  <strong>{b.name}</strong>
+                  <div>
                     {STATUS_TEXT[b.status] ?? b.status}
                     {b.error_code ? ` (${b.error_code})` : ""}
-                  </td>
-                  <td>
+                  </div>
+                  <div>
                     {b.counts?.succeeded ?? 0}/{b.counts?.total ?? 0}
-                  </td>
-                  <td>{b.counts?.failed ?? 0}</td>
-                  <td>{b.counts?.blocked ?? 0}</td>
-                  <td className="muted">{b.updated_at}</td>
-                  <td>
-                    <button
-                      onClick={async () => {
-                        setNote("");
-                        setError("");
-                        await loadDetail(b.id);
-                      }}
-                    >
-                      查看
-                    </button>
-                  </td>
-                </tr>
+                  </div>
+                  <div>失败 {b.counts?.failed ?? 0}</div>
+                  <div>受阻 {b.counts?.blocked ?? 0}</div>
+                  <div className="muted">{b.updated_at || "时间未知"}</div>
+                  <button
+                    onClick={async () => {
+                      setNote("");
+                      setError("");
+                      await loadDetail(b.id);
+                    }}
+                  >
+                    查看
+                  </button>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+            <details data-technical="true">
+              <summary>批次技术详情</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>进度(成功/总数)</th>
+                    <th>失败</th>
+                    <th>受阻</th>
+                    <th>更新时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batches.map((b) => (
+                    <tr key={b.id}>
+                      <td>{b.name}</td>
+                      <td>
+                        {b.status || "状态未知"}
+                        {b.error_code ? ` (${b.error_code})` : ""}
+                      </td>
+                      <td>
+                        {b.counts?.succeeded ?? 0}/{b.counts?.total ?? 0}
+                      </td>
+                      <td>{b.counts?.failed ?? 0}</td>
+                      <td>{b.counts?.blocked ?? 0}</td>
+                      <td className="muted">{b.updated_at}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          </>
         )}
       </div>
 
@@ -413,34 +432,55 @@ export default function BatchesPage() {
           {items.length === 0 ? (
             <span className="muted">加载中…</span>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>文件</th>
-                  <th>状态</th>
-                  <th>错误码</th>
-                  <th>尝试</th>
-                  <th>成果</th>
-                  <th>变体</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              <ul className="asset-strip" aria-label="批次条目">
                 {items.map((it) => (
-                  <tr key={it.id}>
-                    <td>{it.input_name}</td>
-                    <td>{ITEM_STATUS_TEXT[it.status] ?? it.status}</td>
-                    <td className="muted">{it.error_code || "—"}</td>
-                    <td>{it.attempts}</td>
-                    <td>{it.output_id ? "已登记" : "—"}</td>
-                    <td className="muted">
+                  <li key={it.id}>
+                    <strong>{it.input_name || "未命名文件"}</strong>
+                    <div>{ITEM_STATUS_TEXT[it.status] ?? it.status}</div>
+                    <div className="muted">{it.error_code || "—"}</div>
+                    <div>尝试 {it.attempts}</div>
+                    <div>{it.output_id ? "已登记" : "—"}</div>
+                    <div className="muted">
                       {(it.size_variant_ids?.length ?? 0) > 0
                         ? `${it.size_variant_ids.length} 个`
                         : it.variants_note || "—"}
-                    </td>
-                  </tr>
+                    </div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+              <details data-technical="true">
+                <summary>条目技术详情</summary>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>文件</th>
+                      <th>状态</th>
+                      <th>错误码</th>
+                      <th>尝试</th>
+                      <th>成果</th>
+                      <th>变体</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it) => (
+                      <tr key={it.id}>
+                        <td>{it.input_name}</td>
+                        <td>{it.status || "状态未知"}</td>
+                        <td className="muted">{it.error_code || "—"}</td>
+                        <td>{it.attempts}</td>
+                        <td>{it.output_id ? "已登记" : "—"}</td>
+                        <td className="muted">
+                          {(it.size_variant_ids?.length ?? 0) > 0
+                            ? `${it.size_variant_ids.length} 个`
+                            : it.variants_note || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            </>
           )}
           <p className="muted" style={{ marginBottom: 0 }}>
             在途批次每 5 秒自动收集;失败项可重试(生成新任务);受阻项请先修复
