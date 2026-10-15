@@ -2,7 +2,6 @@
 // 真源=public-ai production-manifest.json（web/src/lib/eco-nav/registry/ 逐字节
 // vendored，见同目录 SOURCE.txt）。客户端不再内联 NEXT_PUBLIC_ECO_APP_LAUNCHES。
 import { describe, expect, it } from "vitest";
-import { NextRequest } from "next/server";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,7 +56,7 @@ describe("登记真源（production-manifest.json vendored）", () => {
 
 describe("GET /api/eco-nav/launches", () => {
   it("返回登记真源的可发射行（含 app_id/display_name），无 .invalid、无本应用行", async () => {
-    const res = await launchesGET(new NextRequest("http://localhost:3000/api/eco-nav/launches"));
+    const res = await launchesGET();
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       launches: { app_id: string; display_name: string; target_id: string; url: string }[];
